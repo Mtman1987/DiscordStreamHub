@@ -2,6 +2,7 @@ app = "discord-stream-hub"
 primary_region = "iad"
 
 [build]
+  dockerfile = "Dockerfile"
 
 [http_service]
   internal_port = 3000
