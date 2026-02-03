@@ -24,6 +24,7 @@ import { AdminRoleSettings } from './_components/admin-role-settings';
 import { UISettingsCard } from './_components/ui-settings';
 import { MemberProcessingCard } from './_components/member-processing-card';
 import { TwitchLinkingCard } from './_components/twitch-linking-card';
+import { TwitchOAuthCard } from './_components/twitch-oauth-card';
 import { cn } from '@/lib/utils';
 
 
@@ -239,6 +240,20 @@ export default function SettingsPage() {
                     </Button>
                 </CardFooter>
             </Card>
+            
+            <Card>
+                <CardHeader>
+                    <CardTitle className="font-headline">Test Banner</CardTitle>
+                    <CardDescription>Preview commander banner</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <img 
+                        src="https://storage.googleapis.com/studio-9468926194-e03ac.firebasestorage.app/banners/mtman1987.gif" 
+                        alt="Commander Banner" 
+                        className="w-full rounded-lg"
+                    />
+                </CardContent>
+            </Card>
           {guildId && <AdminRoleSettings serverId={guildId} />}
         </div>
         
@@ -252,6 +267,7 @@ export default function SettingsPage() {
             <>
               <MemberProcessingCard serverId={guildId} />
               <TwitchLinkingCard serverId={guildId} />
+              <TwitchOAuthCard serverId={guildId} />
             </>
           )}
         </div>

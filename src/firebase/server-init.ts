@@ -2,11 +2,13 @@
 import admin from 'firebase-admin';
 import { getFirestore, Firestore } from 'firebase-admin/firestore';
 import { getAuth, Auth } from 'firebase-admin/auth';
+import { getStorage, Storage } from 'firebase-admin/storage';
 import * as fs from 'fs';
 import * as path from 'path';
 
 let db: Firestore;
 let auth: Auth;
+let storage: Storage;
 let app: admin.app.App;
 
 try {
@@ -19,6 +21,7 @@ try {
       admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
         projectId: 'studio-9468926194-e03ac',
+        storageBucket: 'studio-9468926194-e03ac.firebasestorage.app'
       });
       console.log('[Firebase Admin] Initialized with environment variable.');
     } 
@@ -34,6 +37,7 @@ try {
       admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
         projectId: 'studio-9468926194-e03ac',
+        storageBucket: 'studio-9468926194-e03ac.firebasestorage.app'
       });
       console.log('[Firebase Admin] Initialized with service account file.');
     }
@@ -42,6 +46,7 @@ try {
   app = admin.app();
   db = getFirestore();
   auth = getAuth();
+  storage = getStorage();
 
 } catch (error) {
   console.error('[Firebase Admin] CRITICAL: SDK initialization failed.', error);
@@ -49,7 +54,8 @@ try {
   // Any calls will fail, but this surfaces the init error clearly.
   db = {} as Firestore;
   auth = {} as Auth;
+  storage = {} as Storage;
   app = {} as admin.app.App;
 }
 
-export { db, auth, app };
+export { db, auth, storage, app };

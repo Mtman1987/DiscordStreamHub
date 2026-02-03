@@ -174,10 +174,52 @@ class DiscordSyncService {
     }
   }
 
-  async sendShoutout(serverId: string, channelId: string, shoutoutData: any): Promise<void> {
+  async deleteMessage(serverId: string, channelId: string, messageId: string): Promise<void> {
     try {
       const botToken = await this.getBotToken(serverId);
-      await fetch(`${this.baseUrl}/channels/${channelId}/messages`, {
+      const response = await fetch(`${this.baseUrl}/channels/${channelId}/messages/${messageId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bot ${botToken}`,
+        },
+      });
+
+      if (!response.ok && response.status !== 404) {
+        throw new Error(`Failed to delete message: ${response.statusText}`);
+      }
+
+      console.log(`Deleted message ${messageId} from channel ${channelId}`);
+    } catch (error) {
+      console.error('Failed to delete message:', error);
+    }
+  }
+
+  async editMessage(serverId: string, channelId: string, messageId: string, messageData: any): Promise<void> {
+    try {
+      const botToken = await this.getBotToken(serverId);
+      const response = await fetch(`${this.baseUrl}/channels/${channelId}/messages/${messageId}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bot ${botToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(messageData),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to edit message: ${response.statusText}`);
+      }
+
+      console.log(`Edited message ${messageId} in channel ${channelId}`);
+    } catch (error) {
+      console.error('Failed to edit message:', error);
+    }
+  }
+
+  async sendShoutout(serverId: string, channelId: string, shoutoutData: any): Promise<string | null> {
+    try {
+      const botToken = await this.getBotToken(serverId);
+      const response = await fetch(`${this.baseUrl}/channels/${channelId}/messages`, {
         method: 'POST',
         headers: {
           'Authorization': `Bot ${botToken}`,
@@ -186,10 +228,16 @@ class DiscordSyncService {
         body: JSON.stringify(shoutoutData),
       });
 
-      console.log(`Shoutout sent to channel ${channelId}`);
+      if (!response.ok) {
+        throw new Error(`Failed to send message: ${response.statusText}`);
+      }
+
+      const message = await response.json();
+      console.log(`Shoutout sent to channel ${channelId}, messageId: ${message.id}`);
+      return message.id;
     } catch (error) {
       console.error('Failed to send shoutout:', error);
-      throw error;
+      return null;
     }
   }
 
@@ -245,7 +293,7 @@ export async function syncServerData(serverId: string, botToken?: string): Promi
   return discordSyncService.syncServerData(serverId, botToken);
 }
 
-export async function sendShoutout(serverId: string, channelId: string, shoutoutData: any): Promise<void> {
+export async function sendShoutout(serverId: string, channelId: string, shoutoutData: any): Promise<string | null> {
   return discordSyncService.sendShoutout(serverId, channelId, shoutoutData);
 }
 
@@ -261,7 +309,11 @@ export async function updateRoleMappings(serverId: string, mappings: Record<stri
   return discordSyncService.updateRoleMappings(serverId, mappings);
 }
 
-export async function getRoleMappings(serverId: string): Promise<Record<string, string>> {
-  return discordSyncService.getRoleMappings(serverId);
+export async function deleteDiscordMessage(serverId: string, channelId: string, messageId: string): Promise<void> {
+  return discordSyncService.deleteMessage(serverId, channelId, messageId);
+}
+
+export async function editDiscordMessage(serverId: string, channelId: string, messageId: string, messageData: any): Promise<void> {
+  return discordSyncService.editMessage(serverId, channelId, messageId, messageData);
 }
 

@@ -1,0 +1,15 @@
+{
+  "name": "twitch-video-url-finder",
+  "version": "1.0.5",
+  "description": "Super simple way to download Twitch clips",
+  "repository": "arturkuma/twitch-video-url-finder",
+  "main": "index.js",
+  "scripts": {
+    "lint": "eslint ./"
+  },
+  "author": "arturkuma",
+  "license": "MIT",
+  "dependencies": {
+    "puppeteer": "^10.2.0"
+  }
+}

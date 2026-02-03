@@ -130,9 +130,9 @@ class TwitchApiService {
     }
   }
 
-  async getClipsForUser(userId: string, limit: number = 5): Promise<TwitchClip[]> {
+  async getClipsForUser(userId: string, limit: number = 20): Promise<TwitchClip[]> {
     try {
-      const data = await this.makeApiCall(`clips?broadcaster_id=${userId}&first=${limit}&started_at=${new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()}`);
+      const data = await this.makeApiCall(`clips?broadcaster_id=${userId}&first=${limit}`);
       return data.data || [];
     } catch (error) {
       console.error(`Error fetching clips for user ${userId}:`, error);

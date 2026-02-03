@@ -3,277 +3,278 @@
 import { db } from '@/firebase/server-init';
 import { getUserByLogin, getClipsForUser } from './twitch-api-service';
 import { convertClipToGif } from './gif-conversion-service';
-import { generateFileName, deleteGif } from './firebase-storage-service';
-import { isCommunityGroup, isVipGroup } from './group-utils';
-
-interface ClipPool {
-  vipClips: CachedClip[];
-  communityClips: CachedClip[];
-  lastVipUpload: string;
-  lastCommunityUpload: string;
-  currentVipIndex: number;
-  currentCommunityIndex: number;
-}
+import { deleteGif } from './firebase-storage-service';
+import { getClipVideoUrl } from './clip-url-finder';
 
 interface CachedClip {
   clipId: string;
-  clipUrl: string;
   gifUrl: string;
-  firebaseFileName: string;
-  streamerName: string;
+  twitchLogin: string;
   title: string;
   createdAt: string;
   cachedAt: string;
 }
 
-class ClipRotationService {
-  private readonly CLIPS_PER_DAY = 5;
-  private readonly UPLOAD_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
-  private readonly CLEANUP_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
-
-  async manageClipRotation(serverId: string): Promise<void> {
-    const poolRef = db.collection('servers').doc(serverId).collection('clipPools').doc('main');
-    const poolDoc = await poolRef.get();
-    
-    let pool: ClipPool = poolDoc.exists ? poolDoc.data() as ClipPool : {
-      vipClips: [],
-      communityClips: [],
-      lastVipUpload: '',
-      lastCommunityUpload: '',
-      currentVipIndex: 0,
-      currentCommunityIndex: 0,
-    };
-
-    // Check if we need new VIP clips
-    if (this.shouldUploadNewClips(pool.lastVipUpload)) {
-      await this.uploadVipClips(serverId, pool);
-    }
-
-    // Check if we need new Community clips
-    if (this.shouldUploadNewClips(pool.lastCommunityUpload)) {
-      await this.uploadCommunityClips(serverId, pool);
-    }
-
-    // Cleanup old clips
-    await this.cleanupOldClips(pool);
-
-    // Rotate current clips (every 5 minutes)
-    this.rotateClips(pool);
-
-    // Save updated pool
-    await poolRef.set(pool);
-  }
-
-  private shouldUploadNewClips(lastUpload: string): boolean {
-    if (!lastUpload) return true;
-    return Date.now() - new Date(lastUpload).getTime() > this.UPLOAD_COOLDOWN_MS;
-  }
-
-  private async uploadVipClips(serverId: string, pool: ClipPool): Promise<void> {
+export async function bulkFetchClips(serverId: string): Promise<void> {
+  console.log('[ClipFetching] Starting bulk clip fetch (10 per person)');
+  
+  const crewAndPartners = await getCrewAndPartners(serverId);
+  console.log(`[ClipFetching] Found ${crewAndPartners.length} Crew/Partners members`);
+  
+  for (let i = 0; i < crewAndPartners.length; i++) {
+    const user = crewAndPartners[i];
     try {
-      const vipUsers = await this.getOnlineVipUsers(serverId);
-      const newClips: CachedClip[] = [];
+      console.log(`[ClipFetching] Processing ${i + 1}/${crewAndPartners.length}: ${user.twitchLogin}`);
+      
+      const twitchUser = await getUserByLogin(user.twitchLogin);
+      if (!twitchUser) {
+        console.log(`[ClipFetching] Twitch user not found: ${user.twitchLogin}`);
+        continue;
+      }
 
-      for (const user of vipUsers.slice(0, this.CLIPS_PER_DAY)) {
-        const twitchUser = await getUserByLogin(user.username.toLowerCase());
-        if (!twitchUser) continue;
-
-        const clips = await getClipsForUser(twitchUser.id, 3);
-        if (clips.length === 0) continue;
-
-        const bestClip = clips[0]; // Most recent clip
+      const clips = await getClipsForUser(twitchUser.id, 50);
+      console.log(`[ClipFetching] Found ${clips.length} clips for ${user.twitchLogin}`);
+      
+      let successCount = 0;
+      for (const clip of clips) {
+        if (successCount >= 10) break;
+        
         const gifUrl = await convertClipToGif(
-          bestClip.url,
-          bestClip.id,
-          user.username,
-          bestClip.duration,
+          clip.url,
+          clip.id,
+          user.twitchLogin,
+          Math.min(clip.duration, 60),
           'stream',
           { serverId }
         );
-        
-        if (gifUrl) {
-          const fileName = await generateFileName(bestClip.id, user.username);
-          newClips.push({
-            clipId: bestClip.id,
-            clipUrl: bestClip.url,
+
+        if (gifUrl && !gifUrl.includes('tenor.com')) {
+          await saveClip(serverId, user.discordUserId, {
+            clipId: clip.id,
             gifUrl,
-            firebaseFileName: fileName,
-            streamerName: user.username,
-            title: bestClip.title,
-            createdAt: bestClip.created_at,
-            cachedAt: new Date().toISOString(),
+            twitchLogin: user.twitchLogin,
+            title: clip.title,
+            createdAt: clip.created_at,
+            cachedAt: new Date().toISOString()
           });
+          successCount++;
         }
-      }
-
-      pool.vipClips = [...pool.vipClips, ...newClips];
-      pool.lastVipUpload = new Date().toISOString();
-      console.log(`Uploaded ${newClips.length} new VIP clips`);
-
-    } catch (error) {
-      console.error('Error uploading VIP clips:', error);
-    }
-  }
-
-  private async uploadCommunityClips(serverId: string, pool: ClipPool): Promise<void> {
-    try {
-      const communityUsers = await this.getOnlineCommunityUsers(serverId);
-      const newClips: CachedClip[] = [];
-
-      for (const user of communityUsers.slice(0, this.CLIPS_PER_DAY)) {
-        const twitchUser = await getUserByLogin(user.username.toLowerCase());
-        if (!twitchUser) continue;
-
-        const clips = await getClipsForUser(twitchUser.id, 3);
-        if (clips.length === 0) continue;
-
-        const bestClip = clips[0];
-        const gifUrl = await convertClipToGif(
-          bestClip.url,
-          bestClip.id,
-          user.username,
-          bestClip.duration,
-          'stream',
-          { serverId }
-        );
         
-        if (gifUrl) {
-          const fileName = await generateFileName(bestClip.id, user.username);
-          newClips.push({
-            clipId: bestClip.id,
-            clipUrl: bestClip.url,
-            gifUrl,
-            firebaseFileName: fileName,
-            streamerName: user.username,
-            title: bestClip.title,
-            createdAt: bestClip.created_at,
-            cachedAt: new Date().toISOString(),
-          });
-        }
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
-
-      pool.communityClips = [...pool.communityClips, ...newClips];
-      pool.lastCommunityUpload = new Date().toISOString();
-      console.log(`Uploaded ${newClips.length} new Community clips`);
-
+      
+      console.log(`[ClipFetching] ✅ Completed ${user.twitchLogin}`);
+      
+      // Rate limit: 2 seconds between users
+      await new Promise(resolve => setTimeout(resolve, 2000));
     } catch (error) {
-      console.error('Error uploading Community clips:', error);
+      console.error(`[ClipFetching] ❌ Error for ${user.twitchLogin}:`, error);
     }
   }
+  
+  console.log('[ClipFetching] 🎉 Bulk fetch complete!');
+}
 
-  private async cleanupOldClips(pool: ClipPool): Promise<void> {
-    const cutoffTime = Date.now() - this.CLEANUP_AGE_MS;
-
-    // Cleanup VIP clips
-    const expiredVipClips = pool.vipClips.filter(clip => 
-      new Date(clip.cachedAt).getTime() < cutoffTime
-    );
+export async function fetchNewClipOnLive(serverId: string, userId: string, twitchLogin: string): Promise<void> {
+  try {
+    const clipCount = await getClipCount(serverId, userId);
     
-    for (const clip of expiredVipClips) {
-      await deleteGif(clip.firebaseFileName);
+    // If no clips, fetch all 10
+    if (clipCount === 0) {
+      console.log(`[ClipFetching] New user ${twitchLogin}, fetching 10 clips`);
+      await fetchAllClipsForUser(serverId, userId, twitchLogin);
+      return;
     }
+
+    // Otherwise check daily limit
+    const lastFetch = await getLastClipFetch(serverId, userId);
+    const now = Date.now();
     
-    pool.vipClips = pool.vipClips.filter(clip => 
-      new Date(clip.cachedAt).getTime() >= cutoffTime
-    );
-
-    // Cleanup Community clips
-    const expiredCommunityClips = pool.communityClips.filter(clip => 
-      new Date(clip.cachedAt).getTime() < cutoffTime
-    );
-    
-    for (const clip of expiredCommunityClips) {
-      await deleteGif(clip.firebaseFileName);
+    if (lastFetch && now - lastFetch < 24 * 60 * 60 * 1000) {
+      console.log(`[ClipFetching] ${twitchLogin} already fetched today`);
+      return;
     }
-    
-    pool.communityClips = pool.communityClips.filter(clip => 
-      new Date(clip.cachedAt).getTime() >= cutoffTime
-    );
 
-    if (expiredVipClips.length > 0 || expiredCommunityClips.length > 0) {
-      console.log(`Cleaned up ${expiredVipClips.length} VIP and ${expiredCommunityClips.length} Community clips`);
-    }
-  }
+    const twitchUser = await getUserByLogin(twitchLogin);
+    if (!twitchUser) return;
 
-  private rotateClips(pool: ClipPool): void {
-    if (pool.vipClips.length > 0) {
-      pool.currentVipIndex = (pool.currentVipIndex + 1) % pool.vipClips.length;
-    }
-    
-    if (pool.communityClips.length > 0) {
-      pool.currentCommunityIndex = (pool.currentCommunityIndex + 1) % pool.communityClips.length;
-    }
-  }
+    const clips = await getClipsForUser(twitchUser.id, 20);
+    if (clips.length === 0) return;
 
-  async getCurrentVipClip(serverId: string): Promise<CachedClip | null> {
-    const poolDoc = await db.collection('servers').doc(serverId).collection('clipPools').doc('main').get();
-    if (!poolDoc.exists) return null;
-
-    const pool = poolDoc.data() as ClipPool;
-    return pool.vipClips[pool.currentVipIndex] || null;
-  }
-
-  async getCurrentCommunityClip(serverId: string): Promise<CachedClip | null> {
-    const poolDoc = await db.collection('servers').doc(serverId).collection('clipPools').doc('main').get();
-    if (!poolDoc.exists) return null;
-
-    const pool = poolDoc.data() as ClipPool;
-    // Community spotlight includes both community and VIP clips
-    const allClips = [...pool.communityClips, ...pool.vipClips];
-    return allClips[pool.currentCommunityIndex % allClips.length] || null;
-  }
-
-  async getVipClipForUser(serverId: string, username: string): Promise<CachedClip | null> {
-    const poolDoc = await db.collection('servers').doc(serverId).collection('clipPools').doc('main').get();
-    if (!poolDoc.exists) return null;
-
-    const pool = poolDoc.data() as ClipPool;
-    return pool.vipClips.find(clip => 
-      clip.streamerName.toLowerCase() === username.toLowerCase()
-    ) || null;
-  }
-
-  private async getOnlineVipUsers(serverId: string): Promise<any[]> {
-    const snapshot = await db
-      .collection('servers')
-      .doc(serverId)
-      .collection('users')
-      .where('isOnline', '==', true)
+    // Get existing clip IDs
+    const existingClips = await db.collection('servers').doc(serverId)
+      .collection('users').doc(userId)
+      .collection('clips')
       .get();
+    const existingIds = new Set(existingClips.docs.map(d => d.id));
+    
+    // Find first clip we don't have
+    const newClip = clips.find(c => !existingIds.has(c.id));
+    if (!newClip) return;
+    
+    const gifUrl = await convertClipToGif(
+      newClip.url,
+      mp4Url,
+      newClip.id,
+      twitchLogin,
+      Math.min(newClip.duration, 60),
+      'stream',
+      { serverId }
+    );
 
-    return snapshot.docs
-      .map(doc => doc.data())
-      .filter(user => isVipGroup(user.group));
-  }
-
-  private async getOnlineCommunityUsers(serverId: string): Promise<any[]> {
-    const snapshot = await db
-      .collection('servers')
-      .doc(serverId)
-      .collection('users')
-      .where('isOnline', '==', true)
-      .get();
-
-    return snapshot.docs
-      .map(doc => doc.data())
-      .filter(user => isCommunityGroup(user.group));
+    if (gifUrl) {
+      // Only delete if we have 5 or more clips (safety buffer)
+      const currentCount = await getClipCount(serverId, userId);
+      if (currentCount >= 5) {
+        await deleteOldestClip(serverId, userId);
+      }
+      
+      await saveClip(serverId, userId, {
+        clipId: newClip.id,
+        gifUrl,
+        twitchLogin,
+        title: newClip.title,
+        createdAt: newClip.created_at,
+        cachedAt: new Date().toISOString()
+      });
+      
+      await setLastClipFetch(serverId, userId, now);
+      console.log(`[ClipFetching] Fetched new clip for ${twitchLogin}`);
+    }
+  } catch (error) {
+    console.error(`[ClipFetching] Error for ${twitchLogin}:`, error);
   }
 }
 
-const clipRotationService = new ClipRotationService();
+async function fetchAllClipsForUser(serverId: string, userId: string, twitchLogin: string): Promise<void> {
+  const twitchUser = await getUserByLogin(twitchLogin);
+  if (!twitchUser) return;
 
-export async function manageClipRotation(serverId: string): Promise<void> {
-  return clipRotationService.manageClipRotation(serverId);
+  const clips = await getClipsForUser(twitchUser.id, 50);
+  
+  if (clips.length === 0) {
+    console.log(`[ClipFetching] ${twitchLogin} has no clips available`);
+    return;
+  }
+  
+  console.log(`[ClipFetching] ${twitchLogin} has ${clips.length} clips available`);
+  
+  let successCount = 0;
+  for (const clip of clips) {
+    if (successCount >= 10) break;
+    
+    const gifUrl = await convertClipToGif(
+      clip.url,
+      mp4Url,
+      clip.id,
+      twitchLogin,
+      Math.min(clip.duration, 60),
+      'stream',
+      { serverId }
+    );
+
+    if (gifUrl && !gifUrl.includes('tenor.com')) {
+      await saveClip(serverId, userId, {
+        clipId: clip.id,
+        gifUrl,
+        twitchLogin,
+        title: clip.title,
+        createdAt: clip.created_at,
+        cachedAt: new Date().toISOString()
+      });
+      successCount++;
+    }
+  }
+  
+  await setLastClipFetch(serverId, userId, Date.now());
+  console.log(`[ClipFetching] Fetched ${successCount} clips for new user ${twitchLogin}`);
+}
+
+async function getClipCount(serverId: string, userId: string): Promise<number> {
+  const snapshot = await db.collection('servers').doc(serverId)
+    .collection('users').doc(userId)
+    .collection('clips')
+    .get();
+  return snapshot.size;
+}
+
+async function saveClip(serverId: string, userId: string, clip: CachedClip): Promise<void> {
+  await db.collection('servers').doc(serverId)
+    .collection('users').doc(userId)
+    .collection('clips').doc(clip.clipId)
+    .set(clip);
+}
+
+async function deleteOldestClip(serverId: string, userId: string): Promise<void> {
+  const clipsSnapshot = await db.collection('servers').doc(serverId)
+    .collection('users').doc(userId)
+    .collection('clips')
+    .orderBy('cachedAt', 'asc')
+    .limit(1)
+    .get();
+
+  if (!clipsSnapshot.empty) {
+    const oldestDoc = clipsSnapshot.docs[0];
+    const data = oldestDoc.data() as CachedClip;
+    
+    // Extract filename from gifUrl
+    const urlParts = data.gifUrl.split('/');
+    const filename = urlParts[urlParts.length - 1].replace('.gif', '');
+    await deleteGif(filename);
+    
+    await oldestDoc.ref.delete();
+  }
+}
+
+async function getLastClipFetch(serverId: string, userId: string): Promise<number | null> {
+  const doc = await db.collection('servers').doc(serverId)
+    .collection('users').doc(userId).get();
+  return doc.data()?.lastClipFetch || null;
+}
+
+async function setLastClipFetch(serverId: string, userId: string, timestamp: number): Promise<void> {
+  await db.collection('servers').doc(serverId)
+    .collection('users').doc(userId)
+    .update({ lastClipFetch: timestamp });
+}
+
+export async function getCurrentClipForUser(serverId: string, userId: string): Promise<CachedClip | null> {
+  const stateDoc = await db.collection('servers').doc(serverId)
+    .collection('users').doc(userId)
+    .collection('shoutoutState').doc('current').get();
+  
+  const currentIndex = stateDoc.data()?.currentClipIndex || 0;
+  
+  const clipsSnapshot = await db.collection('servers').doc(serverId)
+    .collection('users').doc(userId)
+    .collection('clips')
+    .orderBy('cachedAt', 'desc')
+    .get();
+
+  if (clipsSnapshot.empty) return null;
+  
+  const clips = clipsSnapshot.docs.map(doc => doc.data() as CachedClip);
+  return clips[currentIndex % clips.length] || null;
 }
 
 export async function getCurrentVipClip(serverId: string): Promise<CachedClip | null> {
-  return clipRotationService.getCurrentVipClip(serverId);
+  const crewAndPartners = await getCrewAndPartners(serverId);
+  if (crewAndPartners.length === 0) return null;
+  
+  const randomUser = crewAndPartners[Math.floor(Math.random() * crewAndPartners.length)];
+  return getCurrentClipForUser(serverId, randomUser.discordUserId);
 }
 
-export async function getCurrentCommunityClip(serverId: string): Promise<CachedClip | null> {
-  return clipRotationService.getCurrentCommunityClip(serverId);
-}
+async function getCrewAndPartners(serverId: string) {
+  const snapshot = await db.collection('servers').doc(serverId)
+    .collection('users')
+    .get();
 
-export async function getVipClipForUser(serverId: string, username: string): Promise<CachedClip | null> {
-  return clipRotationService.getVipClipForUser(serverId, username);
+  return snapshot.docs
+    .map(doc => ({
+      discordUserId: doc.id,
+      twitchLogin: doc.data().twitchLogin,
+      group: doc.data().group
+    }))
+    .filter(u => u.twitchLogin && (u.group === 'Crew' || u.group === 'Partners' || u.group === 'Vip'));
 }

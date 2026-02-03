@@ -1,85 +1,122 @@
-
 'use server';
 
 import { db } from '@/firebase/server-init';
-import { isCommunityGroup } from './group-utils';
+import { fetchNewClipOnLive, getCurrentClipForUser } from './clip-rotation-service';
+import { sendShoutout } from '@/lib/discord-sync-service';
+import { getStreamByLogin } from './twitch-api-service';
 
-const PLACEHOLDER_GIF = 'https://media.tenor.com/yG_mD8bW32EAAAAd/star-wars-celebration-lightsaber.gif';
-
-interface SpotlightData {
-  streamerName: string;
-  cardGifUrl: string;
-  mp4Url?: string;
-  lastUpdated: string;
-  streamData: {
-    title: string;
-    game: string;
-    viewers: number;
-    avatarUrl: string;
-    isMature?: boolean;
-  };
-  clipMeta?: {
-    source: 'new' | 'cache';
-    recordedAt?: string;
-  };
-  discordMessageId?: string;
-}
-
-export async function updateCommunitySpotlight(serverId: string): Promise<void> {
+export async function manageCommunitySpotlight(serverId: string): Promise<void> {
   try {
-    const usersRef = db.collection('servers').doc(serverId).collection('users');
-    const snapshot = await usersRef.where('isOnline', '==', true).get();
-    
-    const communityDocs = snapshot.docs.filter(doc => isCommunityGroup(doc.data().group));
-    const onlineMembers = communityDocs
-      .map(doc => ({
-        username: doc.data().username as string | undefined,
-        avatarUrl: doc.data().avatarUrl as string | undefined,
-      }))
-      .filter(member => Boolean(member.username)) as { username: string; avatarUrl?: string }[];
+    const communityChannelId = await getCommunityChannelId(serverId);
+    if (!communityChannelId) return;
 
-    if (onlineMembers.length === 0) {
-      console.log('[Spotlight] No online community members for spotlight.');
+    const liveMembers = await getLiveCommunityMembers(serverId);
+    if (liveMembers.length === 0) {
+      await clearSpotlight(serverId, communityChannelId);
       return;
     }
 
-    // Pick a random online streamer for the spotlight
-    const randomMember = onlineMembers[Math.floor(Math.random() * onlineMembers.length)];
+    const currentSpotlight = await getCurrentSpotlight(serverId);
+    const nextIndex = (currentSpotlight?.currentIndex || 0) % liveMembers.length;
+    const spotlightMember = liveMembers[nextIndex];
 
-    const newSpotlightData: SpotlightData = {
-      streamerName: randomMember.username,
-      cardGifUrl: PLACEHOLDER_GIF,
-      lastUpdated: new Date().toISOString(),
-      streamData: {
-        title: 'Live Now!',
-        game: 'Vibing',
-        viewers: 0,
-        avatarUrl: randomMember.avatarUrl || '',
+    // Fetch clip if needed (respects 24hr limit)
+    await fetchNewClipOnLive(serverId, spotlightMember.discordUserId, spotlightMember.twitchLogin);
+
+    // Get their clip
+    const clip = await getCurrentClipForUser(serverId, spotlightMember.discordUserId);
+
+    // Get stream info
+    const stream = await getStreamByLogin(spotlightMember.twitchLogin);
+    if (!stream) return;
+
+    // Generate spotlight card
+    const embed = {
+      title: `⭐ COMMUNITY SPOTLIGHT ⭐`,
+      description: `**${stream.user_name}** is LIVE!\n\n**${stream.title}**\n🎮 ${stream.game_name}\n👥 ${stream.viewer_count} viewers`,
+      url: `https://twitch.tv/${spotlightMember.twitchLogin}`,
+      color: 0xFFD700, // Gold
+      image: clip?.gifUrl ? {
+        url: clip.gifUrl
+      } : {
+        url: stream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080')
       },
+      footer: {
+        text: 'Twitch • Community Spotlight'
+      },
+      timestamp: new Date().toISOString()
     };
 
-    const spotlightRef = db.collection('servers').doc(serverId).collection('spotlight').doc('current');
-    await spotlightRef.set(newSpotlightData, { merge: true });
+    // Delete old spotlight message if exists
+    if (currentSpotlight?.messageId) {
+      const { deleteDiscordMessage } = await import('./discord-sync-service');
+      await deleteDiscordMessage(serverId, communityChannelId, currentSpotlight.messageId);
+    }
 
-    console.log(`[Spotlight] SIMPLIFIED: Updated community spotlight to ${randomMember.username}`);
+    // Post new spotlight
+    const messageId = await sendShoutout(serverId, communityChannelId, { embeds: [embed] });
 
+    // Save spotlight state
+    await saveSpotlight(serverId, {
+      messageId,
+      currentIndex: nextIndex + 1,
+      userId: spotlightMember.discordUserId,
+      lastUpdated: new Date()
+    });
+
+    console.log(`[CommunitySpotlight] Spotlighting ${spotlightMember.twitchLogin}`);
   } catch (error) {
-    console.error('[Spotlight] SIMPLIFIED: Error updating community spotlight:', error);
+    console.error('[CommunitySpotlight] Error:', error);
   }
 }
 
-export async function getCurrentSpotlight(serverId: string): Promise<SpotlightData | null> {
-  try {
-    const spotlightRef = db.collection('servers').doc(serverId).collection('spotlight').doc('current');
-    const doc = await spotlightRef.get();
-    
-    if (!doc.exists) {
-      return null;
-    }
+async function getLiveCommunityMembers(serverId: string) {
+  const snapshot = await db.collection('servers').doc(serverId)
+    .collection('users')
+    .where('group', 'in', ['Honored Guests', 'Everyone Else'])
+    .get();
 
-    return doc.data() as SpotlightData;
-  } catch (error) {
-    console.error('Error getting current spotlight:', error);
-    return null;
+  const members = [];
+  for (const doc of snapshot.docs) {
+    const data = doc.data();
+    const shoutoutState = await db.collection('servers').doc(serverId)
+      .collection('users').doc(doc.id)
+      .collection('shoutoutState').doc('current').get();
+    
+    if (shoutoutState.exists && shoutoutState.data()?.isLive && data.twitchLogin) {
+      members.push({
+        discordUserId: doc.id,
+        twitchLogin: data.twitchLogin,
+        group: data.group
+      });
+    }
   }
+  
+  return members;
+}
+
+async function getCommunityChannelId(serverId: string): Promise<string | null> {
+  const doc = await db.collection('servers').doc(serverId).get();
+  return doc.data()?.communityChannelId || null;
+}
+
+async function getCurrentSpotlight(serverId: string) {
+  const doc = await db.collection('servers').doc(serverId)
+    .collection('spotlight').doc('current').get();
+  return doc.exists ? doc.data() : null;
+}
+
+async function saveSpotlight(serverId: string, data: any) {
+  await db.collection('servers').doc(serverId)
+    .collection('spotlight').doc('current').set(data);
+}
+
+async function clearSpotlight(serverId: string, channelId: string) {
+  const current = await getCurrentSpotlight(serverId);
+  if (current?.messageId) {
+    const { deleteDiscordMessage } = await import('./discord-sync-service');
+    await deleteDiscordMessage(serverId, channelId, current.messageId);
+  }
+  await db.collection('servers').doc(serverId)
+    .collection('spotlight').doc('current').delete();
 }

@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { margin: 0; background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; }
+    video { width: 640px; height: 360px; }
+  </style>
+</head>
+<body>
+  <video id="clip" autoplay muted></video>
+  <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const videoUrl = urlParams.get('url');
+    if (videoUrl) {
+      document.getElementById('clip').src = decodeURIComponent(videoUrl);
+    }
+  </script>
+</body>
+</html>
