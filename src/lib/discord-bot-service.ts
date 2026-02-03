@@ -54,3 +54,24 @@ export async function postAllShoutoutsToDiscord(serverId: string, usersToPost: D
     }
   }
 }
+
+export async function sendDiscordMessage(channelId: string, messageData: any): Promise<void> {
+  const botToken = process.env.DISCORD_BOT_TOKEN;
+  if (!botToken) {
+    throw new Error('DISCORD_BOT_TOKEN is not configured');
+  }
+
+  const response = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bot ${botToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(messageData),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Discord API error: ${response.status} - ${error}`);
+  }
+}
