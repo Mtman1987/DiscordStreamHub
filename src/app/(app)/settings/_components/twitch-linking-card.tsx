@@ -3,33 +3,50 @@
 import * as React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
 import { Loader2, Link } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { getChannels } from '@/lib/discord-sync-service';
 
 export function TwitchLinkingCard({ serverId }: { serverId: string }) {
   const { toast } = useToast();
   const [isDispatching, setIsDispatching] = React.useState(false);
+  const [channels, setChannels] = React.useState<any[]>([]);
+  const [selectedChannel, setSelectedChannel] = React.useState('');
+
+  React.useEffect(() => {
+    if (serverId) {
+      loadChannels();
+    }
+  }, [serverId]);
+
+  const loadChannels = async () => {
+    try {
+      const channelData = await getChannels(serverId);
+      setChannels(channelData);
+    } catch (error) {
+      console.error('Error loading channels:', error);
+    }
+  };
 
   const handleDispatchEmbed = async () => {
+    if (!selectedChannel) {
+      toast({
+        title: "Channel Required",
+        description: "Please select a Discord channel.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsDispatching(true);
 
     try {
-      const channelId = prompt('Enter the Discord channel ID to send the embed to:');
-
-      if (!channelId) {
-        toast({
-          title: "Channel Required",
-          description: "Please enter a valid Discord channel ID.",
-          variant: "destructive",
-        });
-        setIsDispatching(false);
-        return;
-      }
-
       const response = await fetch('/api/discord/dispatch-embed', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ serverId, channelId })
+        body: JSON.stringify({ serverId, channelId: selectedChannel })
       });
 
       if (response.ok) {
@@ -67,10 +84,27 @@ export function TwitchLinkingCard({ serverId }: { serverId: string }) {
           Dispatch a linking embed to Discord for members to connect their Twitch accounts.
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-4">
+        <div className="space-y-2">
+          <Label>Select Channel</Label>
+          <Select value={selectedChannel} onValueChange={setSelectedChannel}>
+            <SelectTrigger>
+              <SelectValue placeholder="Choose a channel" />
+            </SelectTrigger>
+            <SelectContent>
+              {channels.map(channel => (
+                <SelectItem key={channel.id} value={channel.id}>
+                  #{channel.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        
         <Button
           onClick={handleDispatchEmbed}
-          disabled={isDispatching}
+          disabled={isDispatching || !selectedChannel}
+          className="w-full"
         >
           {isDispatching ? (
             <>

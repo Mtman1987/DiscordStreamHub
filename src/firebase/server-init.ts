@@ -7,29 +7,39 @@ import * as path from 'path';
 
 let db: Firestore;
 let auth: Auth;
+let app: admin.app.App;
 
 try {
   if (!admin.apps.length) {
-    console.log('[Firebase Admin] Initializing SDK with service account...');
+    console.log('[Firebase Admin] Initializing SDK...');
     
-    // Construct the absolute path to the service account key in the project root
-    const keyPath = path.resolve(process.cwd(), 'studio-9468926194-e03ac-firebase-adminsdk-fbsvc-75298e056b.json');
-    
-    if (!fs.existsSync(keyPath)) {
-      throw new Error(`Service account key not found at: ${keyPath}`);
-    }
+    // Try environment variable first (for production)
+    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+      const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+        projectId: 'studio-9468926194-e03ac',
+      });
+      console.log('[Firebase Admin] Initialized with environment variable.');
+    } 
+    // Fall back to service account file (for local dev)
+    else {
+      const keyPath = path.resolve(process.cwd(), 'studio-9468926194-e03ac-firebase-adminsdk-fbsvc-28f637ffb4.json');
+      
+      if (!fs.existsSync(keyPath)) {
+        throw new Error(`Service account key not found. Set FIREBASE_SERVICE_ACCOUNT env var or place file at: ${keyPath}`);
+      }
 
-    const serviceAccount = JSON.parse(fs.readFileSync(keyPath, 'utf8'));
-    
-    // Initialize with the explicit service account credential
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-      projectId: 'studio-9468926194-e03ac', // Explicitly use the database project ID
-    });
-    
-    console.log('[Firebase Admin] SDK initialized successfully with service account credential.');
+      const serviceAccount = JSON.parse(fs.readFileSync(keyPath, 'utf8'));
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+        projectId: 'studio-9468926194-e03ac',
+      });
+      console.log('[Firebase Admin] Initialized with service account file.');
+    }
   }
   
+  app = admin.app();
   db = getFirestore();
   auth = getAuth();
 
@@ -39,7 +49,7 @@ try {
   // Any calls will fail, but this surfaces the init error clearly.
   db = {} as Firestore;
   auth = {} as Auth;
+  app = {} as admin.app.App;
 }
 
-export { db, auth };
-export const app = admin.app();
+export { db, auth, app };

@@ -5,8 +5,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Loader2, Users, Link, MessageSquare, CheckCircle, XCircle } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
+import { Loader2, Users, Link, MessageSquare, CheckCircle, Send } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { getChannels } from '@/lib/discord-sync-service';
 
 interface ProcessedMemberData {
   totalMembers: number;
@@ -27,8 +30,26 @@ interface ProcessedMemberData {
 export function MemberProcessingCard({ serverId }: { serverId: string }) {
   const { toast } = useToast();
   const [isProcessing, setIsProcessing] = React.useState(false);
+  const [isBatchLinking, setIsBatchLinking] = React.useState(false);
   const [processedData, setProcessedData] = React.useState<ProcessedMemberData | null>(null);
   const [isGeneratingEmbed, setIsGeneratingEmbed] = React.useState<string | null>(null);
+  const [channels, setChannels] = React.useState<any[]>([]);
+  const [selectedChannel, setSelectedChannel] = React.useState('');
+
+  React.useEffect(() => {
+    if (serverId) {
+      loadChannels();
+    }
+  }, [serverId]);
+
+  const loadChannels = async () => {
+    try {
+      const channelData = await getChannels(serverId);
+      setChannels(channelData);
+    } catch (error) {
+      console.error('Error loading channels:', error);
+    }
+  };
 
   const handleProcessMembers = async () => {
     setIsProcessing(true);
@@ -65,50 +86,105 @@ export function MemberProcessingCard({ serverId }: { serverId: string }) {
     }
   };
 
-  const handleGenerateEmbed = async (type: 'unmatched' | 'vip' | 'raid-pile' | 'everyone-else') => {
-    setIsGeneratingEmbed(type);
+  const handleBatchLink = async () => {
+    setIsBatchLinking(true);
     try {
-      let action: string;
-      let group: string | undefined;
-
-      if (type === 'unmatched') {
-        action = 'unmatched-embed';
-      } else {
-        action = 'template-embed';
-        group = type === 'vip' ? 'VIP' : type === 'raid-pile' ? 'Raid Pile' : 'Everyone Else';
-      }
-
-      const response = await fetch('/api/discord/process-members', {
+      const response = await fetch('/api/discord/batch-link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ serverId, action, ...(group && { group }) })
+        body: JSON.stringify({ serverId })
       });
 
       if (response.ok) {
         const result = await response.json();
-        // Copy embed data to clipboard for manual use
-        await navigator.clipboard.writeText(JSON.stringify(result.embed, null, 2));
         toast({
-          title: "Embed Generated",
-          description: `${type === 'unmatched' ? 'Unmatched users' : `${group} template`} embed copied to clipboard.`,
+          title: "Batch Linking Complete",
+          description: `Linked: ${result.linked}, Not Found: ${result.notFound.length}`,
         });
+        // Refresh the processed data
+        handleProcessMembers();
       } else {
         const error = await response.json();
         toast({
-          title: "Generation Failed",
-          description: error.error || "Failed to generate embed.",
+          title: "Batch Linking Failed",
+          description: error.error || "Failed to batch link.",
           variant: "destructive",
         });
       }
     } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to generate embed.",
+        description: "Failed to batch link accounts.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsBatchLinking(false);
+    }
+  };
+
+  const handlePostEmbed = async (type: 'crew' | 'partners' | 'raid-pile' | 'honored-guests' | 'everyone-else') => {
+    if (!selectedChannel) {
+      toast({
+        title: "Channel Required",
+        description: "Please select a channel first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsGeneratingEmbed(type);
+    try {
+      const group = type === 'crew' ? 'Crew' : type === 'partners' ? 'Partners' : type === 'raid-pile' ? 'Raid Pile' : type === 'honored-guests' ? 'Honored Guests' : 'Everyone Else';
+
+      const response = await fetch('/api/discord/post-template', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ serverId, channelId: selectedChannel, group })
+      });
+
+      if (response.ok) {
+        toast({
+          title: "Template Posted",
+          description: `${group} template posted to Discord.`,
+        });
+      } else {
+        const error = await response.json();
+        toast({
+          title: "Post Failed",
+          description: error.error || "Failed to post template.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to post embed.",
         variant: "destructive",
       });
     } finally {
       setIsGeneratingEmbed(null);
     }
+  };
+
+  const handleShowUnmatched = () => {
+    if (!processedData) {
+      toast({
+        title: "Process Members First",
+        description: "Click 'Process Members' to see unmatched users.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const userList = processedData.unmatchedUsers
+      .map(u => `${u.displayName} (@${u.username})`)
+      .join('\n');
+
+    navigator.clipboard.writeText(userList);
+    toast({
+      title: "Unmatched Users Copied",
+      description: `${processedData.unmatchedUsers.length} usernames copied to clipboard.`,
+    });
   };
 
   return (
@@ -119,7 +195,7 @@ export function MemberProcessingCard({ serverId }: { serverId: string }) {
           Member Processing
         </CardTitle>
         <CardDescription>
-          Process Discord members to identify Twitch links and generate shoutout embeds.
+          Process Discord members to identify Twitch links and post template embeds.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -138,6 +214,24 @@ export function MemberProcessingCard({ serverId }: { serverId: string }) {
               <>
                 <Users className="mr-2 h-4 w-4" />
                 Process Members
+              </>
+            )}
+          </Button>
+          <Button
+            onClick={handleBatchLink}
+            disabled={isBatchLinking}
+            variant="secondary"
+            className="flex-1"
+          >
+            {isBatchLinking ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Linking...
+              </>
+            ) : (
+              <>
+                <Link className="mr-2 h-4 w-4" />
+                Auto-Link Accounts
               </>
             )}
           </Button>
@@ -169,59 +263,97 @@ export function MemberProcessingCard({ serverId }: { serverId: string }) {
         )}
 
         <div className="space-y-4">
-          <h4 className="font-medium">Generate Embeds</h4>
+          <div className="space-y-2">
+            <Label>Select Channel for Templates</Label>
+            <Select value={selectedChannel} onValueChange={setSelectedChannel}>
+              <SelectTrigger>
+                <SelectValue placeholder="Choose a channel" />
+              </SelectTrigger>
+              <SelectContent>
+                {channels.map(channel => (
+                  <SelectItem key={channel.id} value={channel.id}>
+                    #{channel.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <h4 className="font-medium">Actions</h4>
           <div className="grid grid-cols-2 gap-2">
             <Button
               variant="outline"
-              onClick={() => handleGenerateEmbed('unmatched')}
-              disabled={isGeneratingEmbed === 'unmatched'}
-              className="justify-start"
+              onClick={handleShowUnmatched}
+              disabled={!processedData}
+              className="justify-start col-span-2"
             >
-              {isGeneratingEmbed === 'unmatched' ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Link className="mr-2 h-4 w-4" />
-              )}
-              Unmatched Users
+              <Link className="mr-2 h-4 w-4" />
+              Copy Unmatched Users List
             </Button>
             <Button
               variant="outline"
-              onClick={() => handleGenerateEmbed('vip')}
-              disabled={isGeneratingEmbed === 'vip'}
-              className="justify-start"
+              onClick={() => handlePostEmbed('crew')}
+              disabled={isGeneratingEmbed === 'crew' || !selectedChannel}
+              className="justify-start col-span-2"
             >
-              {isGeneratingEmbed === 'vip' ? (
+              {isGeneratingEmbed === 'crew' ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
-                <MessageSquare className="mr-2 h-4 w-4" />
+                <Send className="mr-2 h-4 w-4" />
               )}
-              VIP Template
+              Crew Template
             </Button>
             <Button
               variant="outline"
-              onClick={() => handleGenerateEmbed('raid-pile')}
-              disabled={isGeneratingEmbed === 'raid-pile'}
+              onClick={() => handlePostEmbed('partners')}
+              disabled={isGeneratingEmbed === 'partners' || !selectedChannel}
+              className="justify-start col-span-2"
+            >
+              {isGeneratingEmbed === 'partners' ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="mr-2 h-4 w-4" />
+              )}
+              Partners Template
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => handlePostEmbed('raid-pile')}
+              disabled={isGeneratingEmbed === 'raid-pile' || !selectedChannel}
               className="justify-start"
             >
               {isGeneratingEmbed === 'raid-pile' ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
-                <MessageSquare className="mr-2 h-4 w-4" />
+                <Send className="mr-2 h-4 w-4" />
               )}
               Raid Pile Template
             </Button>
             <Button
               variant="outline"
-              onClick={() => handleGenerateEmbed('everyone-else')}
-              disabled={isGeneratingEmbed === 'everyone-else'}
+              onClick={() => handlePostEmbed('honored-guests')}
+              disabled={isGeneratingEmbed === 'honored-guests' || !selectedChannel}
+              className="justify-start"
+            >
+              {isGeneratingEmbed === 'honored-guests' ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="mr-2 h-4 w-4" />
+              )}
+              Honored Guests Template
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => handlePostEmbed('everyone-else')}
+              disabled={isGeneratingEmbed === 'everyone-else' || !selectedChannel}
               className="justify-start"
             >
               {isGeneratingEmbed === 'everyone-else' ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
-                <MessageSquare className="mr-2 h-4 w-4" />
+                <Send className="mr-2 h-4 w-4" />
               )}
-              Everyone Else Template
+              Mountaineer Shoutout
             </Button>
           </div>
         </div>

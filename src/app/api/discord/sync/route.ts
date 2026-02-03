@@ -13,10 +13,16 @@ async function fetchFromDiscord(endpoint: string, botToken: string) {
 }
 
 async function getBotToken(): Promise<string> {
+    // Try environment variable first
+    if (process.env.DISCORD_BOT_TOKEN) {
+        return process.env.DISCORD_BOT_TOKEN;
+    }
+    
+    // Fall back to Firestore
     try {
         const secretDoc = await db.collection('secrets').doc('DISCORD_BOT_TOKEN').get();
         if (!secretDoc.exists) {
-            throw new Error('DISCORD_BOT_TOKEN not found in secrets collection');
+            throw new Error('DISCORD_BOT_TOKEN not found in secrets collection or environment');
         }
         const token = secretDoc.data()?.value;
         if (!token) {
@@ -25,7 +31,7 @@ async function getBotToken(): Promise<string> {
         return token;
     } catch (error) {
         console.error('Error fetching bot token:', error);
-        throw new Error('Failed to retrieve Discord Bot Token from database');
+        throw new Error('Failed to retrieve Discord Bot Token');
     }
 }
 

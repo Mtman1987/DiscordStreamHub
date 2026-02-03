@@ -18,7 +18,7 @@ import { Users, ArrowRight } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 
 type GroupCardProps = {
-  groupName: 'VIP' | 'Community' | 'Raid Train' | 'Raid Pile';
+  groupName: 'VIP' | 'Partners' | 'Crew' | 'Community' | 'Raid Train' | 'Raid Pile';
   description: string;
   href: string;
   users: UserProfile[] | undefined;
@@ -27,6 +27,8 @@ type GroupCardProps = {
 
 const groupIconMap = {
     VIP: <Users className="h-8 w-8 text-yellow-400" />,
+    Partners: <Users className="h-8 w-8 text-yellow-400" />,
+    Crew: <Users className="h-8 w-8 text-cyan-400" />,
     Community: <Users className="h-8 w-8 text-blue-400" />,
     'Raid Train': <Users className="h-8 w-8 text-orange-400" />,
     'Raid Pile': <Users className="h-8 w-8 text-red-400" />,
@@ -35,7 +37,9 @@ const groupIconMap = {
 function GroupCard({ groupName, description, href, users, isLoading }: GroupCardProps) {
     const memberCount = React.useMemo(() => {
         if (!users) return '...';
-        return users.filter(u => u.group === groupName).length;
+        // Map display names to database group names
+        const dbGroupName = groupName === 'Partners' ? 'VIP' : groupName === 'Crew' ? 'Crew' : groupName;
+        return users.filter(u => u.group?.toLowerCase() === dbGroupName.toLowerCase()).length;
     }, [users, groupName]);
 
   return (
@@ -90,8 +94,15 @@ export default function ShoutoutsPage() {
         <h2 className="text-2xl font-headline text-primary">Group Management</h2>
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
           <GroupCard
-            groupName="VIP"
-            description="Your most valued supporters."
+            groupName="Crew"
+            description="Space Mountain crew and staff members."
+            href="/shoutouts/crew"
+            users={allUsers}
+            isLoading={isLoadingUsers}
+          />
+          <GroupCard
+            groupName="Partners"
+            description="Official Space Mountain streaming partners."
             href="/shoutouts/vip"
             users={allUsers}
             isLoading={isLoadingUsers}

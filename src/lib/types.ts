@@ -20,8 +20,9 @@ export interface UserProfile {
   avatarUrl: string;
   isOnline: boolean;
   topic?: string;
-  group: 'VIP' | 'Community' | 'Raid Train' | 'Raid Pile';
+  group: 'VIP' | 'Community' | 'Raid Train' | 'Raid Pile' | 'Crew';
   roles: string[];
+  partnerDiscordLink?: string; // Custom Discord invite link for partners
   dailyShoutout?: any; // This will be the Discord Embed JSON
   shoutoutGeneratedAt?: Timestamp;
   lastTwitchData?: {

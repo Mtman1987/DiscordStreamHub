@@ -224,12 +224,39 @@ const mockVipClip = {
 };
 
 function VipMemberCard({ streamer }: { streamer: UserProfile }) {
+    const { toast } = useToast();
+    const firestore = useFirestore();
+    const [serverId, setServerId] = React.useState<string | null>(null);
+    const [discordLink, setDiscordLink] = React.useState(streamer.partnerDiscordLink || 'https://discord.gg/spacemountain');
+    const [isSavingLink, setIsSavingLink] = React.useState(false);
+
+    React.useEffect(() => {
+        const storedServerId = localStorage.getItem('discordServerId');
+        if (storedServerId) setServerId(storedServerId);
+    }, []);
+
+    const handleSaveDiscordLink = async () => {
+        if (!firestore || !serverId || !streamer.id) return;
+        
+        setIsSavingLink(true);
+        try {
+            const userDocRef = doc(firestore, 'servers', serverId, 'users', streamer.id);
+            await updateDoc(userDocRef, { partnerDiscordLink: discordLink });
+            toast({ title: 'Success', description: 'Discord link saved!' });
+        } catch (error) {
+            console.error('Failed to save Discord link:', error);
+            toast({ variant: 'destructive', title: 'Error', description: 'Could not save Discord link.' });
+        } finally {
+            setIsSavingLink(false);
+        }
+    };
+
     const handlePostShoutout = () => {
         // This will eventually be a server action
         if (streamer.dailyShoutout) {
-            console.log('--- Posting VIP Shoutout for', streamer.username, '---');
+            console.log('--- Posting Partner Shoutout for', streamer.username, '---');
             console.log(JSON.stringify(streamer.dailyShoutout, null, 2));
-            alert(`VIP Shoutout for ${streamer.username} logged to console!`);
+            alert(`Partner Shoutout for ${streamer.username} logged to console!`);
         } else {
             alert(`No AI-generated shoutout available for ${streamer.username}.`);
         }
@@ -279,8 +306,27 @@ function VipMemberCard({ streamer }: { streamer: UserProfile }) {
                 <CardContent className="p-0 mt-4 flex-1 space-y-4">
                     <div className="bg-muted/50 p-3 rounded-md text-sm text-muted-foreground flex-1">
                         <p className="line-clamp-4">
-                            {streamer.dailyShoutout?.description || 'A unique shoutout message will be generated when this VIP goes live.'}
+                            {streamer.dailyShoutout?.description || 'A unique shoutout message will be generated when this partner goes live.'}
                         </p>
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor={`discord-link-${streamer.id}`} className="text-xs">Partner Discord Link</Label>
+                        <div className="flex gap-2">
+                            <Input
+                                id={`discord-link-${streamer.id}`}
+                                value={discordLink}
+                                onChange={(e) => setDiscordLink(e.target.value)}
+                                placeholder="https://discord.gg/spacemountain"
+                                className="text-sm"
+                            />
+                            <Button
+                                size="sm"
+                                onClick={handleSaveDiscordLink}
+                                disabled={isSavingLink}
+                            >
+                                {isSavingLink ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save'}
+                            </Button>
+                        </div>
                     </div>
                      <div className="grid grid-cols-3 gap-2 w-full text-xs text-center">
                         <div className="flex flex-col items-center gap-1 bg-secondary p-2 rounded-md">
@@ -303,7 +349,7 @@ function VipMemberCard({ streamer }: { streamer: UserProfile }) {
                 <CardFooter className="p-0 mt-4">
                      <Button onClick={handlePostShoutout} className="w-full">
                         <Send className="mr-2 h-4 w-4" />
-                        Post VIP Shoutout
+                        Post Partner Shoutout
                     </Button>
                 </CardFooter>
             </div>
@@ -445,8 +491,11 @@ export default function GroupDetailPage() {
   const group = Array.isArray(params.group) ? params.group[0] : params.group;
   const isCommunityPage = group === 'community';
   const isVipPage = group === 'vip';
+  const isCrewPage = group === 'crew';
 
   const groupName =
+    group === 'vip' ? 'Partners' : // Display as Partners but use VIP in database
+    group === 'crew' ? 'Crew' :
     group
       ?.split('-')
       .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
@@ -530,7 +579,11 @@ export default function GroupDetailPage() {
     }
     // --- END MOCK DATA ---
 
-    const groupMembers = mutableUsers.filter((u) => u.group === groupName);
+    const groupMembers = mutableUsers.filter((u) => {
+      // Map 'Partners' display name back to 'VIP' for database queries
+      const dbGroupName = groupName === 'Partners' ? 'VIP' : groupName;
+      return u.group === dbGroupName;
+    });
     const online = groupMembers.filter(u => u.isOnline);
     const offline = groupMembers.filter(u => !u.isOnline);
     const community = mutableUsers.filter(u => u.group === 'Community');
@@ -643,16 +696,16 @@ export default function GroupDetailPage() {
         </div>
       )}
 
-      {/* RENDER VIP LAYOUT */}
-      {!isLoadingUsers && isVipPage && (
+      {/* RENDER CREW LAYOUT */}
+      {!isLoadingUsers && isCrewPage && (
         <div className="space-y-8">
-            {/* Online VIPs */}
+            {/* Online Crew */}
             <div>
                 <h2 className="text-2xl font-headline text-primary mb-2">
-                    Online VIPs ({onlineUsers.length})
+                    Online Crew ({onlineUsers.length})
                 </h2>
                 <p className="text-muted-foreground">
-                    Your most valued supporters, currently live. Each member has a featured clip.
+                    Space Mountain crew and staff members, currently live.
                 </p>
             </div>
             {onlineUsers.length > 0 ? (
@@ -665,24 +718,24 @@ export default function GroupDetailPage() {
                  <Card className="flex flex-col items-center justify-center py-20 text-center">
                     <CardHeader>
                         <Star className="mx-auto h-12 w-12 text-muted-foreground" />
-                        <CardTitle className="mt-4">No VIPs Currently Live</CardTitle>
-                        <CardDescription>When a VIP member goes live, their card will appear here.</CardDescription>
+                        <CardTitle className="mt-4">No Crew Currently Live</CardTitle>
+                        <CardDescription>When a crew member goes live, their card will appear here.</CardDescription>
                     </CardHeader>
                 </Card>
             )}
 
             <Separator />
             
-            {/* Offline VIPs */}
+            {/* Offline Crew */}
             <Accordion type="single" collapsible className="w-full" defaultValue="offline-vips">
                 <AccordionItem value="offline-vips">
                     <AccordionTrigger>
                         <div className="flex flex-col items-start">
                             <h2 className="text-2xl font-headline text-primary">
-                                Offline VIPs ({offlineUsers.length})
+                                Offline Crew ({offlineUsers.length})
                             </h2>
                             <p className="text-sm text-muted-foreground font-normal">
-                                Click to see all offline VIP members.
+                                Click to see all offline crew members.
                             </p>
                         </div>
                     </AccordionTrigger>
@@ -698,7 +751,74 @@ export default function GroupDetailPage() {
                                         </div>
                                     ) : (
                                         <p className="py-10 text-center text-muted-foreground">
-                                        No offline VIPs found.
+                                        No offline crew found.
+                                        </p>
+                                    )}
+                                </ScrollArea>
+                            </CardContent>
+                        </Card>
+                    </AccordionContent>
+                </AccordionItem>
+            </Accordion>
+        </div>
+      )}
+
+      {/* RENDER PARTNERS LAYOUT */}
+      {!isLoadingUsers && isVipPage && (
+        <div className="space-y-8">
+            {/* Online Partners */}
+            <div>
+                <h2 className="text-2xl font-headline text-primary mb-2">
+                    Online Partners ({onlineUsers.length})
+                </h2>
+                <p className="text-muted-foreground">
+                    Your official Cosmic Raid partners, currently live. Each member has a featured clip.
+                </p>
+            </div>
+            {onlineUsers.length > 0 ? (
+                <div className="grid grid-cols-1 gap-6">
+                    {onlineUsers.map(streamer => (
+                        <VipMemberCard key={streamer.id} streamer={streamer} />
+                    ))}
+                </div>
+            ) : (
+                 <Card className="flex flex-col items-center justify-center py-20 text-center">
+                    <CardHeader>
+                        <Star className="mx-auto h-12 w-12 text-muted-foreground" />
+                        <CardTitle className="mt-4">No Partners Currently Live</CardTitle>
+                        <CardDescription>When a partner goes live, their card will appear here.</CardDescription>
+                    </CardHeader>
+                </Card>
+            )}
+
+            <Separator />
+            
+            {/* Offline Partners */}
+            <Accordion type="single" collapsible className="w-full" defaultValue="offline-vips">
+                <AccordionItem value="offline-vips">
+                    <AccordionTrigger>
+                        <div className="flex flex-col items-start">
+                            <h2 className="text-2xl font-headline text-primary">
+                                Offline Partners ({offlineUsers.length})
+                            </h2>
+                            <p className="text-sm text-muted-foreground font-normal">
+                                Click to see all offline partner members.
+                            </p>
+                        </div>
+                    </AccordionTrigger>
+                    <AccordionContent>
+                        <Card>
+                            <CardContent className="p-4">
+                                <ScrollArea className="h-72">
+                                    {offlineUsers.length > 0 ? (
+                                        <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 gap-x-4 gap-y-6 pr-4">
+                                        {offlineUsers.map((streamer) => (
+                                            <OfflineStreamerTile key={streamer.id} streamer={streamer} />
+                                        ))}
+                                        </div>
+                                    ) : (
+                                        <p className="py-10 text-center text-muted-foreground">
+                                        No offline partners found.
                                         </p>
                                     )}
                                 </ScrollArea>

@@ -2,7 +2,6 @@
 
 import { db } from '@/firebase/server-init';
 import { getUserByLogin } from '@/lib/twitch-api-service';
-import { getBotToken, makeDiscordRequest } from '@/lib/discord-sync-service';
 
 interface TwitchAccount {
   id: string;
@@ -44,10 +43,15 @@ class TwitchLinkingService {
       console.log(`[TwitchLinking] Attempting to link ${usersToLink.length} users`);
 
       // Process users in batches to avoid rate limits
-      const batchSize = 10;
+      const batchSize = 5;
       for (let i = 0; i < usersToLink.length; i += batchSize) {
         const batch = usersToLink.slice(i, i + batchSize);
         await Promise.all(batch.map(user => this.linkSingleUser(serverId, user, result)));
+        
+        // Wait 2 seconds between batches to avoid rate limits
+        if (i + batchSize < usersToLink.length) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
       }
 
     } catch (error) {
@@ -90,15 +94,11 @@ class TwitchLinkingService {
   }
 
   private async findTwitchAccount(serverId: string, discordUserId: string, displayName: string, username: string): Promise<TwitchAccount | null> {
-    // Method 1: Check Discord connections API
-    const connectedAccount = await this.checkDiscordConnections(serverId, discordUserId);
-    if (connectedAccount) return connectedAccount;
-
-    // Method 2: Try exact display name match
+    // Try exact display name match
     const exactMatch = await this.tryTwitchUsername(displayName);
     if (exactMatch) return exactMatch;
 
-    // Method 3: Try username variations
+    // Try username variations
     const variations = this.generateUsernameVariations(displayName, username);
     for (const variation of variations) {
       const match = await this.tryTwitchUsername(variation);
@@ -108,32 +108,13 @@ class TwitchLinkingService {
     return null;
   }
 
-  private async checkDiscordConnections(serverId: string, discordUserId: string): Promise<TwitchAccount | null> {
-    try {
-      const botToken = await getBotToken(serverId);
-      const connections = await makeDiscordRequest(serverId, `/users/${discordUserId}/connections`);
-
-      const twitchConnection = connections.find((conn: any) => conn.type === 'twitch' && conn.verified);
-      if (twitchConnection) {
-        // Get Twitch user details
-        const twitchUser = await getUserByLogin(twitchConnection.name);
-        if (twitchUser) {
-          return {
-            id: twitchUser.id,
-            login: twitchUser.login,
-            displayName: twitchUser.display_name,
-            profileImageUrl: twitchUser.profile_image_url
-          };
-        }
-      }
-    } catch (error) {
-      console.error('[TwitchLinking] Error checking Discord connections:', error);
-    }
-    return null;
-  }
-
   private async tryTwitchUsername(username: string): Promise<TwitchAccount | null> {
     try {
+      // Skip invalid usernames (spaces, special chars, etc)
+      if (!/^[a-zA-Z0-9_]{1,25}$/.test(username)) {
+        return null;
+      }
+      
       const user = await getUserByLogin(username.toLowerCase());
       if (user) {
         return {
@@ -144,7 +125,7 @@ class TwitchLinkingService {
         };
       }
     } catch (error) {
-      // Username not found, continue
+      // Username not found or invalid, continue
     }
     return null;
   }
