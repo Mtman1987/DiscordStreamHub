@@ -175,6 +175,8 @@ export async function updateUserGroupAction(prevState: any, formData: FormData) 
             throw new Error('Missing server ID, user ID, or new group.');
         }
 
+        console.log('[updateUserGroupAction] Setting group to:', newGroup);
+
         const userRef = db.collection('servers').doc(serverId).collection('users').doc(userId);
         await userRef.update({ group: newGroup });
 
@@ -194,6 +196,8 @@ export async function updateUsersByRoleAction(prevState: any, formData: FormData
         if (!serverId || !roleName || !newGroup) {
             throw new Error('Missing server ID, role name, or new group.');
         }
+
+        console.log('[updateUsersByRoleAction] Setting group to:', newGroup, 'for role:', roleName);
 
         const usersRef = db.collection('servers').doc(serverId).collection('users');
         const snapshot = await usersRef.where('roles', 'array-contains', roleName).get();

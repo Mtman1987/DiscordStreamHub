@@ -487,19 +487,24 @@ export default function GroupDetailPage() {
   const { toast } = useToast();
   const firestore = useFirestore();
   const [serverId, setServerId] = React.useState<string | null>(null);
+  const [selectedChannelId, setSelectedChannelId] = React.useState<string>('');
+  const [isSavingChannel, setIsSavingChannel] = React.useState(false);
+  const [channels, setChannels] = React.useState<Array<{id: string, name: string}>>([]);
 
   const group = Array.isArray(params.group) ? params.group[0] : params.group;
   const isCommunityPage = group === 'community';
-  const isVipPage = group === 'vip';
+  const isPartnersPage = group === 'partners';
   const isCrewPage = group === 'crew';
 
   const groupName =
-    group === 'vip' ? 'Partners' : // Display as Partners but use VIP in database
     group === 'crew' ? 'Crew' :
-    group
-      ?.split('-')
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ') || 'Group';
+    group === 'partners' ? 'Partners' :
+    group === 'community' ? 'Community' :
+    group === 'raid-train' ? 'Raid Train' :
+    group === 'raid-pile' ? 'Raid Pile' :
+    'Unknown';
+
+  console.log('[GroupPage] URL group param:', group, '→ groupName:', groupName);
 
   const [editingStreamer, setEditingStreamer] = React.useState<UserProfile | null>(null);
   const [isSaving, setIsSaving] = React.useState(false);
@@ -513,8 +518,33 @@ export default function GroupDetailPage() {
     const storedServerId = localStorage.getItem('discordServerId');
     if (storedServerId) {
       setServerId(storedServerId);
+      
+      // Load channels
+      if (firestore) {
+        const channelsRef = doc(firestore, 'servers', storedServerId, 'config', 'channels');
+        import('firebase/firestore').then(async ({ getDoc }) => {
+          const docSnap = await getDoc(channelsRef);
+          if (docSnap.exists()) {
+            const channelList = docSnap.data().list || [];
+            console.log('[GroupPage] Loaded channels:', channelList);
+            setChannels(channelList);
+          } else {
+            console.log('[GroupPage] No channels document found');
+          }
+        });
+        
+        // Load saved channel for this group
+        const groupConfigRef = doc(firestore, 'servers', storedServerId, 'config', 'groupChannels');
+        import('firebase/firestore').then(async ({ getDoc }) => {
+          const docSnap = await getDoc(groupConfigRef);
+          if (docSnap.exists()) {
+            const savedChannel = docSnap.data()[groupName];
+            if (savedChannel) setSelectedChannelId(savedChannel);
+          }
+        });
+      }
     }
-  }, []);
+  }, [firestore, groupName]);
 
   // Fetch all users for the server once.
   const usersCollectionRef = useMemoFirebase(() => {
@@ -528,61 +558,8 @@ export default function GroupDetailPage() {
   const { members, onlineUsers, offlineUsers, communityMembers, allRoles } = React.useMemo(() => {
     let mutableUsers = allUsers ? [...allUsers] : [];
 
-    // --- MOCK DATA FOR VIP DEMO ---
-    if (isVipPage && !isLoadingUsers) {
-      const mockOnlineVip: UserProfile = {
-        id: 'mock-pondy',
-        discordUserId: 'mock-pondy',
-        username: 'pondy_WLRUS',
-        avatarUrl:
-          'https://images.unsplash.com/photo-1527980965255-d3b416303d12?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw1fHxhdmF0YXJ8ZW58MHx8fHwxNzYzNTQ0MjM3fDA&ixlib=rb-4.1.0&q=80&w=1080',
-        isOnline: true,
-        topic: 'Streaming some Star Citizen and chatting!',
-        group: 'VIP',
-        roles: ['VIP', 'trade alliance officer'],
-        dailyShoutout: {
-          description:
-            "Our esteemed Trade Alliance Officer, **pondy_WLRUS**, is now live! Broadcasting from the cockpit, he's navigating the verse and engaging in high-stakes trade runs. Tune in and join the convoy!",
-        },
-      };
-
-      const mockOfflineVip1: UserProfile = {
-        id: 'mock-vip-2',
-        discordUserId: 'mock-vip-2',
-        username: 'Starlight_Drifter',
-        avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde',
-        isOnline: false,
-        group: 'VIP',
-        roles: ['VIP'],
-      };
-      
-      const mockOfflineVip2: UserProfile = {
-        id: 'mock-vip-3',
-        discordUserId: 'mock-vip-3',
-        username: 'Cosmic_Comet',
-        avatarUrl: 'https://images.unsplash.com/photo-1586297135537-94bc9ba060aa',
-        isOnline: false,
-        group: 'VIP',
-        roles: ['VIP'],
-      };
-
-      // Add the mock users to the list if not already present
-      if (!mutableUsers.find((u) => u.id === mockOnlineVip.id)) {
-        mutableUsers.push(mockOnlineVip);
-      }
-      if (!mutableUsers.find((u) => u.id === mockOfflineVip1.id)) {
-        mutableUsers.push(mockOfflineVip1);
-      }
-       if (!mutableUsers.find((u) => u.id === mockOfflineVip2.id)) {
-        mutableUsers.push(mockOfflineVip2);
-      }
-    }
-    // --- END MOCK DATA ---
-
     const groupMembers = mutableUsers.filter((u) => {
-      // Map 'Partners' display name back to 'VIP' for database queries
-      const dbGroupName = groupName === 'Partners' ? 'VIP' : groupName;
-      return u.group === dbGroupName;
+      return u.group === groupName;
     });
     const online = groupMembers.filter(u => u.isOnline);
     const offline = groupMembers.filter(u => !u.isOnline);
@@ -596,8 +573,26 @@ export default function GroupDetailPage() {
     const sortedRoles = Array.from(roles).sort();
 
     return { members: groupMembers, onlineUsers: online, offlineUsers: offline, communityMembers: community, allRoles: sortedRoles };
-  }, [allUsers, groupName, isVipPage, isLoadingUsers]);
+  }, [allUsers, groupName, isPartnersPage, isLoadingUsers]);
 
+
+  const handleSaveChannel = async () => {
+    if (!firestore || !serverId || !selectedChannelId) return;
+    
+    setIsSavingChannel(true);
+    try {
+      const groupConfigRef = doc(firestore, 'servers', serverId, 'config', 'groupChannels');
+      await import('firebase/firestore').then(({ setDoc }) => 
+        setDoc(groupConfigRef, { [groupName]: selectedChannelId }, { merge: true })
+      );
+      toast({ title: 'Success', description: `Channel saved for ${groupName} group.` });
+    } catch (error) {
+      console.error('Failed to save channel:', error);
+      toast({ variant: 'destructive', title: 'Error', description: 'Could not save channel.' });
+    } finally {
+      setIsSavingChannel(false);
+    }
+  };
 
   const handleEditClick = (streamer: UserProfile) => {
     setEditingStreamer(streamer);
@@ -679,6 +674,24 @@ export default function GroupDetailPage() {
         title={`${groupName} Group`}
         description={`Manage the members and shoutouts for the ${groupName} group.`}
       >
+        <div className="flex items-center gap-2">
+          <Select value={selectedChannelId} onValueChange={setSelectedChannelId}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="Select channel..." />
+            </SelectTrigger>
+            <SelectContent>
+              {channels.map(channel => (
+                <SelectItem key={channel.id} value={channel.id}>
+                  #{channel.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button onClick={handleSaveChannel} disabled={isSavingChannel || !selectedChannelId}>
+            {isSavingChannel ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            Save Channel
+          </Button>
+        </div>
         {serverId && <ManageMembersDialog groupName={groupName} communityMembers={communityMembers} allRoles={allRoles} serverId={serverId} currentPath={pathname} />}
         <Button asChild variant="outline">
           <Link href="/shoutouts">
@@ -764,7 +777,7 @@ export default function GroupDetailPage() {
       )}
 
       {/* RENDER PARTNERS LAYOUT */}
-      {!isLoadingUsers && isVipPage && (
+      {!isLoadingUsers && isPartnersPage && (
         <div className="space-y-8">
             {/* Online Partners */}
             <div>
@@ -933,7 +946,7 @@ export default function GroupDetailPage() {
       )}
 
       {/* RENDER SIMPLE MANAGEMENT LAYOUT for Raid Train, Raid Pile, etc. */}
-      {!isLoadingUsers && !isCommunityPage && !isVipPage && (
+      {!isLoadingUsers && !isCommunityPage && !isPartnersPage && !isCrewPage && (
         <Card>
           <CardHeader>
             <CardTitle>Group Members ({members.length})</CardTitle>

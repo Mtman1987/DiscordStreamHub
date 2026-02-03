@@ -37,9 +37,7 @@ const groupIconMap = {
 function GroupCard({ groupName, description, href, users, isLoading }: GroupCardProps) {
     const memberCount = React.useMemo(() => {
         if (!users) return '...';
-        // Map display names to database group names
-        const dbGroupName = groupName === 'Partners' ? 'VIP' : groupName === 'Crew' ? 'Crew' : groupName;
-        return users.filter(u => u.group?.toLowerCase() === dbGroupName.toLowerCase()).length;
+        return users.filter(u => u.group === groupName).length;
     }, [users, groupName]);
 
   return (
@@ -103,7 +101,7 @@ export default function ShoutoutsPage() {
           <GroupCard
             groupName="Partners"
             description="Official Space Mountain streaming partners."
-            href="/shoutouts/vip"
+            href="/shoutouts/partners"
             users={allUsers}
             isLoading={isLoadingUsers}
           />

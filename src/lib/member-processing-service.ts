@@ -399,9 +399,9 @@ class MemberProcessingService {
       title: `🚨 **${stream.user_name}** is now LIVE on Twitch!`,
       description: `**${stream.title}**\n🎮 Playing: ${stream.game_name}\n👥 Viewers: ${stream.viewer_count}`,
       url: `https://twitch.tv/${stream.user_name.toLowerCase()}`,
-      color: 0x4ECDC4, // Teal for raid pile
+      color: 0x4ECDC4,
       thumbnail: {
-        url: stream.profile_image_url
+        url: 'https://static-cdn.jtvnw.net/ttv-boxart/twitch-logo.png'
       },
       image: {
         url: stream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080')
@@ -415,29 +415,12 @@ class MemberProcessingService {
 
   private generateHonoredGuestsTemplateEmbed(stream: any): any {
     return {
-      author: {
-        name: `${stream.user_name} is now LIVE!`,
-        icon_url: 'https://cdn.discordapp.com/emojis/1284931162896334929.gif',
-        url: `https://twitch.tv/${stream.user_name.toLowerCase()}`
-      },
-      title: `<a:sppace:1284931162896334929> **${stream.title}**`,
-      description: `One of our honored community members is streaming! Come show your support! <a:sppace:1284931162896334929>`,
+      title: `🚨 **${stream.user_name}** is now LIVE on Twitch!`,
+      description: `**${stream.title}**\n🎮 Playing: ${stream.game_name}\n👥 Viewers: ${stream.viewer_count}\n\n✨ *Honored Guest*`,
       url: `https://twitch.tv/${stream.user_name.toLowerCase()}`,
-      color: 0xFFA500, // Orange/gold for honored guests
-      fields: [
-        {
-          name: '🎮 Playing',
-          value: stream.game_name,
-          inline: true
-        },
-        {
-          name: '👥 Viewers',
-          value: stream.viewer_count.toString(),
-          inline: true
-        }
-      ],
+      color: 0xFF8C00,
       thumbnail: {
-        url: stream.profile_image_url
+        url: 'https://static-cdn.jtvnw.net/ttv-boxart/twitch-logo.png'
       },
       image: {
         url: stream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080')
@@ -454,15 +437,15 @@ class MemberProcessingService {
       title: `🚨 **${stream.user_name}** is now LIVE on Twitch!`,
       description: `**${stream.title}**\n🎮 Playing: ${stream.game_name}\n👥 Viewers: ${stream.viewer_count}`,
       url: `https://twitch.tv/${stream.user_name.toLowerCase()}`,
-      color: 0x9146FF, // Twitch purple
+      color: 0x9146FF,
       thumbnail: {
-        url: stream.profile_image_url
+        url: 'https://static-cdn.jtvnw.net/ttv-boxart/twitch-logo.png'
       },
       image: {
         url: stream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080')
       },
       footer: {
-        text: 'Twitch • Mountaineer Shoutout 🏔️'
+        text: 'Twitch • Mountaineer Shoutout'
       },
       timestamp: new Date().toISOString()
     };

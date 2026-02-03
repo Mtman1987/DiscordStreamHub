@@ -2,69 +2,97 @@
 
 import { db } from '@/firebase/server-init';
 import { fetchNewClipOnLive, getCurrentClipForUser } from './clip-rotation-service';
-import { sendShoutout } from '@/lib/discord-sync-service';
 import { getStreamByLogin } from './twitch-api-service';
 
 export async function manageCommunitySpotlight(serverId: string): Promise<void> {
   try {
-    const communityChannelId = await getCommunityChannelId(serverId);
-    if (!communityChannelId) return;
-
     const liveMembers = await getLiveCommunityMembers(serverId);
     if (liveMembers.length === 0) {
-      await clearSpotlight(serverId, communityChannelId);
+      await clearSpotlight(serverId);
       return;
     }
 
     const currentSpotlight = await getCurrentSpotlight(serverId);
     const nextIndex = (currentSpotlight?.currentIndex || 0) % liveMembers.length;
-    const spotlightMember = liveMembers[nextIndex];
+    const newSpotlightMember = liveMembers[nextIndex];
+    const oldSpotlightUserId = currentSpotlight?.userId;
 
-    // Fetch clip if needed (respects 24hr limit)
-    await fetchNewClipOnLive(serverId, spotlightMember.discordUserId, spotlightMember.twitchLogin);
+    // Fetch clip for new spotlight user (respects 24hr limit)
+    await fetchNewClipOnLive(serverId, newSpotlightMember.discordUserId, newSpotlightMember.twitchLogin);
+    const newClip = await getCurrentClipForUser(serverId, newSpotlightMember.discordUserId);
 
-    // Get their clip
-    const clip = await getCurrentClipForUser(serverId, spotlightMember.discordUserId);
+    // Get stream info for new spotlight
+    const newStream = await getStreamByLogin(newSpotlightMember.twitchLogin);
+    if (!newStream) return;
 
-    // Get stream info
-    const stream = await getStreamByLogin(spotlightMember.twitchLogin);
-    if (!stream) return;
+    const { editDiscordMessage } = await import('./discord-sync-service');
 
-    // Generate spotlight card
-    const embed = {
-      title: `⭐ COMMUNITY SPOTLIGHT ⭐`,
-      description: `**${stream.user_name}** is LIVE!\n\n**${stream.title}**\n🎮 ${stream.game_name}\n👥 ${stream.viewer_count} viewers`,
-      url: `https://twitch.tv/${spotlightMember.twitchLogin}`,
-      color: 0xFFD700, // Gold
-      image: clip?.gifUrl ? {
-        url: clip.gifUrl
-      } : {
-        url: stream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080')
-      },
-      footer: {
-        text: 'Twitch • Community Spotlight'
-      },
-      timestamp: new Date().toISOString()
-    };
-
-    // Delete old spotlight message if exists
-    if (currentSpotlight?.messageId) {
-      const { deleteDiscordMessage } = await import('./discord-sync-service');
-      await deleteDiscordMessage(serverId, communityChannelId, currentSpotlight.messageId);
+    // Update OLD spotlight user back to normal (if exists and different from new)
+    if (oldSpotlightUserId && oldSpotlightUserId !== newSpotlightMember.discordUserId) {
+      const oldShoutoutState = await getShoutoutState(serverId, oldSpotlightUserId);
+      if (oldShoutoutState?.messageId) {
+        const oldStream = await getStreamByLogin(oldShoutoutState.twitchLogin || '');
+        if (oldStream) {
+          const oldMember = liveMembers.find(m => m.discordUserId === oldSpotlightUserId);
+          const oldEmbed = oldMember?.group === 'Honored Guests' ? {
+            title: `🚨 **${oldStream.user_name}** is now LIVE on Twitch!`,
+            description: `**${oldStream.title}**\n🎮 Playing: ${oldStream.game_name}\n👥 Viewers: ${oldStream.viewer_count}\n\n✨ *Honored Guest*`,
+            url: `https://twitch.tv/${oldStream.user_login}`,
+            color: 0xFF8C00,
+            thumbnail: { url: 'https://static-cdn.jtvnw.net/ttv-boxart/twitch-logo.png' },
+            image: { url: oldStream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080') },
+            footer: { text: 'Twitch • Honored Guest' },
+            timestamp: new Date().toISOString()
+          } : {
+            title: `🚨 **${oldStream.user_name}** is now LIVE on Twitch!`,
+            description: `**${oldStream.title}**\n🎮 Playing: ${oldStream.game_name}\n👥 Viewers: ${oldStream.viewer_count}`,
+            url: `https://twitch.tv/${oldStream.user_login}`,
+            color: 0x9146FF,
+            thumbnail: { url: 'https://static-cdn.jtvnw.net/ttv-boxart/twitch-logo.png' },
+            image: { url: oldStream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080') },
+            footer: { text: 'Twitch • Mountaineer Shoutout' },
+            timestamp: new Date().toISOString()
+          };
+          
+          await editDiscordMessage(serverId, oldShoutoutState.channelId, oldShoutoutState.messageId, { embeds: [oldEmbed] });
+        }
+      }
     }
 
-    // Post new spotlight
-    const messageId = await sendShoutout(serverId, communityChannelId, { embeds: [embed] });
+    // Update NEW spotlight user with GIF and special footer
+    const newShoutoutState = await getShoutoutState(serverId, newSpotlightMember.discordUserId);
+    if (newShoutoutState?.messageId) {
+      const newEmbed = newSpotlightMember.group === 'Honored Guests' ? {
+        title: `🚨 **${newStream.user_name}** is now LIVE on Twitch!`,
+        description: `**${newStream.title}**\n🎮 Playing: ${newStream.game_name}\n👥 Viewers: ${newStream.viewer_count}\n\n✨ *Honored Guest*`,
+        url: `https://twitch.tv/${newSpotlightMember.twitchLogin}`,
+        color: 0xFF8C00,
+        thumbnail: { url: 'https://static-cdn.jtvnw.net/ttv-boxart/twitch-logo.png' },
+        image: newClip?.gifUrl ? { url: newClip.gifUrl } : { url: newStream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080') },
+        footer: { text: 'Twitch • ⭐ COMMUNITY SPOTLIGHT ⭐' },
+        timestamp: new Date().toISOString()
+      } : {
+        title: `🚨 **${newStream.user_name}** is now LIVE on Twitch!`,
+        description: `**${newStream.title}**\n🎮 Playing: ${newStream.game_name}\n👥 Viewers: ${newStream.viewer_count}`,
+        url: `https://twitch.tv/${newSpotlightMember.twitchLogin}`,
+        color: 0x9146FF,
+        thumbnail: { url: 'https://static-cdn.jtvnw.net/ttv-boxart/twitch-logo.png' },
+        image: newClip?.gifUrl ? { url: newClip.gifUrl } : { url: newStream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080') },
+        footer: { text: 'Twitch • ⭐ COMMUNITY SPOTLIGHT ⭐' },
+        timestamp: new Date().toISOString()
+      };
+      
+      await editDiscordMessage(serverId, newShoutoutState.channelId, newShoutoutState.messageId, { embeds: [newEmbed] });
+    }
 
-    // Save spotlight state
+    // Save new spotlight state
     await saveSpotlight(serverId, {
-      messageId,
       currentIndex: nextIndex + 1,
-      userId: spotlightMember.discordUserId,
+      userId: newSpotlightMember.discordUserId,
       lastUpdated: new Date()
     });
 
-    console.log(`[CommunitySpotlight] Spotlighting ${spotlightMember.twitchLogin}`);
+    console.log(`[CommunitySpotlight] Spotlighting ${newSpotlightMember.twitchLogin}`);
   } catch (error) {
     console.error('[CommunitySpotlight] Error:', error);
   }
@@ -95,9 +123,10 @@ async function getLiveCommunityMembers(serverId: string) {
   return members;
 }
 
-async function getCommunityChannelId(serverId: string): Promise<string | null> {
-  const doc = await db.collection('servers').doc(serverId).get();
-  return doc.data()?.communityChannelId || null;
+async function getShoutoutState(serverId: string, discordUserId: string): Promise<any> {
+  const doc = await db.collection('servers').doc(serverId).collection('users').doc(discordUserId)
+    .collection('shoutoutState').doc('current').get();
+  return doc.exists ? doc.data() : null;
 }
 
 async function getCurrentSpotlight(serverId: string) {
@@ -111,12 +140,7 @@ async function saveSpotlight(serverId: string, data: any) {
     .collection('spotlight').doc('current').set(data);
 }
 
-async function clearSpotlight(serverId: string, channelId: string) {
-  const current = await getCurrentSpotlight(serverId);
-  if (current?.messageId) {
-    const { deleteDiscordMessage } = await import('./discord-sync-service');
-    await deleteDiscordMessage(serverId, channelId, current.messageId);
-  }
+async function clearSpotlight(serverId: string) {
   await db.collection('servers').doc(serverId)
     .collection('spotlight').doc('current').delete();
 }

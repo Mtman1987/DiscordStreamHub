@@ -15,18 +15,28 @@ class TwitchPollingService {
   private pollingStates: Map<string, PollingState> = new Map();
   private readonly POLLING_INTERVAL = 10 * 60 * 1000; // 10 minutes
   private readonly SHOUTOUT_COOLDOWN = 60 * 60 * 1000; // 1 hour
-  private static instance: TwitchPollingService;
+  private static instance: TwitchPollingService | null = null;
+  private initialized = false;
 
-  constructor() {
-    if (TwitchPollingService.instance) {
-      return TwitchPollingService.instance;
+  private constructor() {}
+
+  static getInstance(): TwitchPollingService {
+    if (!TwitchPollingService.instance) {
+      TwitchPollingService.instance = new TwitchPollingService();
     }
-    TwitchPollingService.instance = this;
-    this.initializePolling();
+    return TwitchPollingService.instance;
+  }
+
+  async initialize(): Promise<void> {
+    if (this.initialized) {
+      console.log('[TwitchPolling] Already initialized');
+      return;
+    }
+    this.initialized = true;
+    await this.initializePolling();
   }
 
   private async initializePolling(): Promise<void> {
-    // Auto-start polling for all servers on app startup
     try {
       const serversSnapshot = await db.collection('servers').where('twitchPollingActive', '==', true).get();
       for (const doc of serversSnapshot.docs) {
@@ -99,6 +109,8 @@ class TwitchPollingService {
 
       for (const user of linkedUsers) {
         await this.checkUserStream(serverId, user, state);
+        // Wait 1 second between each user to avoid rate limits
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
 
       // Rotate community spotlight every 10 minutes
@@ -185,44 +197,103 @@ class TwitchPollingService {
 
   private async updateShoutout(serverId: string, discordUserId: string, stream: any, shoutoutState: any): Promise<void> {
     const group = await getUserGroup(serverId, discordUserId);
+    const twitchLogin = stream.user_login;
+    const { editDiscordMessage } = await import('./discord-sync-service');
     
-    if (group === 'Crew' || group === 'Partners') {
-      const newClipIndex = (shoutoutState.currentClipIndex || 0) + 1;
-      await this.saveShoutoutState(serverId, discordUserId, {
-        ...shoutoutState,
-        currentClipIndex: newClipIndex,
-        lastUpdated: new Date()
-      });
+    let embed;
+    
+    if (group === 'Crew') {
+      const { getCurrentClipForUser } = await import('./clip-rotation-service');
+      const clip = await getCurrentClipForUser(serverId, discordUserId);
       
-      // Regenerate shoutout with new clip
-      const { sendShoutoutToDiscord } = await import('./shoutout-service');
-      const { editDiscordMessage } = await import('./discord-sync-service');
-      const { getStreamByLogin } = await import('./twitch-api-service');
+      embed = {
+        author: {
+          name: `${stream.user_name} is now LIVE!`,
+          icon_url: 'https://cdn.discordapp.com/emojis/1284931162896334929.gif',
+          url: `https://twitch.tv/${twitchLogin}`
+        },
+        title: `🚀 **${stream.title}**`,
+        description: `🌟 **Space Mountain Crew Member** 🌟\n\nOne of our amazing crew members is live! They help keep Space Mountain running smoothly. Show them some love and join the stream!`,
+        url: `https://twitch.tv/${twitchLogin}`,
+        color: 0x00D9FF,
+        fields: [
+          { name: '🎮 Playing', value: stream.game_name, inline: true },
+          { name: '👥 Viewers', value: stream.viewer_count.toString(), inline: true },
+          { name: '🚀 Crew Status', value: 'Space Mountain Crew', inline: true }
+        ],
+        thumbnail: { url: stream.thumbnail_url.replace('{width}', '320').replace('{height}', '180') },
+        image: clip?.gifUrl ? { url: clip.gifUrl } : { url: stream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080') },
+        footer: { text: 'Twitch • Crew Member Shoutout' },
+        timestamp: new Date().toISOString()
+      };
+    } else if (group === 'Partners') {
+      const { getCurrentClipForUser } = await import('./clip-rotation-service');
+      const clip = await getCurrentClipForUser(serverId, discordUserId);
       
-      const updatedStream = await getStreamByLogin(stream.user_login);
-      if (updatedStream) {
-        const twitchLogin = stream.user_login;
-        const baseMessage = `🚨 **${updatedStream.user_name}** is now LIVE on Twitch!`;
-        
-        // Get updated clip
-        const { getCurrentClipForUser } = await import('./clip-rotation-service');
-        const clip = await getCurrentClipForUser(serverId, discordUserId);
-        
-        const embed = {
-          title: baseMessage,
-          description: `**${updatedStream.title}**\n🎮 Playing: ${updatedStream.game_name}\n👥 Viewers: ${updatedStream.viewer_count}`,
-          url: `https://twitch.tv/${twitchLogin}`,
-          color: group === 'Crew' ? 0x00FFFF : 0x9146FF,
-          image: clip?.gifUrl ? { url: clip.gifUrl } : { url: updatedStream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080') },
-          footer: { text: `Twitch • ${group} Shoutout` },
-          timestamp: new Date().toISOString()
-        };
-        
-        await editDiscordMessage(serverId, shoutoutState.channelId, shoutoutState.messageId, { embeds: [embed] });
-      }
+      embed = {
+        author: {
+          name: `${stream.user_name} is now LIVE!`,
+          icon_url: 'https://cdn.discordapp.com/emojis/1284931162896334929.gif',
+          url: `https://twitch.tv/${twitchLogin}`
+        },
+        title: `🌌 **${stream.title}**`,
+        description: `⭐ **Space Mountain Partner** ⭐\n\nOne of our official streaming partners is live! They're a valued member of the Space Mountain community. Show them some love and join the stream!`,
+        url: `https://twitch.tv/${twitchLogin}`,
+        color: 0x8B00FF,
+        fields: [
+          { name: '🎮 Playing', value: stream.game_name, inline: true },
+          { name: '👥 Viewers', value: stream.viewer_count.toString(), inline: true },
+          { name: '🌟 Partner Status', value: 'Official Space Mountain Partner', inline: true }
+        ],
+        thumbnail: { url: stream.profile_image_url },
+        image: clip?.gifUrl ? { url: clip.gifUrl } : { url: stream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080') },
+        footer: { text: 'Twitch • Space Mountain Partner Shoutout' },
+        timestamp: new Date().toISOString()
+      };
+    } else if (group === 'Honored Guests') {
+      embed = {
+        title: `🚨 **${stream.user_name}** is now LIVE on Twitch!`,
+        description: `**${stream.title}**\n🎮 Playing: ${stream.game_name}\n👥 Viewers: ${stream.viewer_count}\n\n✨ *Honored Guest*`,
+        url: `https://twitch.tv/${twitchLogin}`,
+        color: 0xFF8C00,
+        thumbnail: { url: 'https://static-cdn.jtvnw.net/ttv-boxart/twitch-logo.png' },
+        image: { url: stream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080') },
+        footer: { text: 'Twitch • Honored Guest' },
+        timestamp: new Date().toISOString()
+      };
+    } else if (group === 'Raid Pile') {
+      embed = {
+        title: `🚨 **${stream.user_name}** is now LIVE on Twitch!`,
+        description: `**${stream.title}**\n🎮 Playing: ${stream.game_name}\n👥 Viewers: ${stream.viewer_count}`,
+        url: `https://twitch.tv/${twitchLogin}`,
+        color: 0x4ECDC4,
+        thumbnail: { url: 'https://static-cdn.jtvnw.net/ttv-boxart/twitch-logo.png' },
+        image: { url: stream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080') },
+        footer: { text: 'Twitch • Raid Pile Shoutout 🎯' },
+        timestamp: new Date().toISOString()
+      };
+    } else {
+      // Everyone Else
+      embed = {
+        title: `🚨 **${stream.user_name}** is now LIVE on Twitch!`,
+        description: `**${stream.title}**\n🎮 Playing: ${stream.game_name}\n👥 Viewers: ${stream.viewer_count}`,
+        url: `https://twitch.tv/${twitchLogin}`,
+        color: 0x9146FF,
+        thumbnail: { url: 'https://static-cdn.jtvnw.net/ttv-boxart/twitch-logo.png' },
+        image: { url: stream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080') },
+        footer: { text: 'Twitch • Mountaineer Shoutout' },
+        timestamp: new Date().toISOString()
+      };
     }
-
-    console.log(`[TwitchPolling] Updated shoutout for ${stream.user_login}`);
+    
+    try {
+      await editDiscordMessage(serverId, shoutoutState.channelId, shoutoutState.messageId, { embeds: [embed] });
+      console.log(`[TwitchPolling] Updated shoutout for ${stream.user_login}`);
+    } catch (error) {
+      console.log(`[TwitchPolling] Message deleted for ${stream.user_login}, clearing state`);
+      await db.collection('servers').doc(serverId).collection('users').doc(discordUserId)
+        .collection('shoutoutState').doc('current').delete();
+    }
   }
 
   private async deleteShoutout(serverId: string, discordUserId: string, shoutoutState: any): Promise<void> {
@@ -281,22 +352,13 @@ class TwitchPollingService {
 
   private async getChannelForGroup(serverId: string, group: string): Promise<string | null> {
     try {
-      const serverDoc = await db.collection('servers').doc(serverId).get();
-      const serverData = serverDoc.data();
+      const groupChannelsDoc = await db.collection('servers').doc(serverId).collection('config').doc('groupChannels').get();
+      const groupChannels = groupChannelsDoc.data();
       
-      switch (group) {
-        case 'Crew':
-          return serverData?.crewChannelId || null;
-        case 'Partners':
-          return serverData?.partnersChannelId || null;
-        case 'Honored Guests':
-        case 'Everyone Else':
-          return serverData?.communityChannelId || null;
-        case 'Raid Pile':
-          return serverData?.raidPileChannelId || null;
-        default:
-          return serverData?.shoutoutChannelId || null;
-      }
+      if (!groupChannels) return null;
+      
+      // Map group names to saved channel IDs
+      return groupChannels[group] || null;
     } catch (error) {
       console.error('[TwitchPolling] Error getting channel for group:', error);
       return null;
@@ -362,7 +424,8 @@ class TwitchPollingService {
   }
 }
 
-const twitchPollingService = new TwitchPollingService();
+const twitchPollingService = TwitchPollingService.getInstance();
+twitchPollingService.initialize();
 
 // Cleanup on process exit
 if (typeof process !== 'undefined') {

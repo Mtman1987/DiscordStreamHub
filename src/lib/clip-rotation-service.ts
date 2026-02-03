@@ -49,14 +49,6 @@ export async function bulkFetchClips(serverId: string): Promise<void> {
         );
 
         if (gifUrl && !gifUrl.includes('tenor.com')) {
-          await saveClip(serverId, user.discordUserId, {
-            clipId: clip.id,
-            gifUrl,
-            twitchLogin: user.twitchLogin,
-            title: clip.title,
-            createdAt: clip.created_at,
-            cachedAt: new Date().toISOString()
-          });
           successCount++;
         }
         
@@ -65,7 +57,6 @@ export async function bulkFetchClips(serverId: string): Promise<void> {
       
       console.log(`[ClipFetching] ✅ Completed ${user.twitchLogin}`);
       
-      // Rate limit: 2 seconds between users
       await new Promise(resolve => setTimeout(resolve, 2000));
     } catch (error) {
       console.error(`[ClipFetching] ❌ Error for ${user.twitchLogin}:`, error);
@@ -77,16 +68,7 @@ export async function bulkFetchClips(serverId: string): Promise<void> {
 
 export async function fetchNewClipOnLive(serverId: string, userId: string, twitchLogin: string): Promise<void> {
   try {
-    const clipCount = await getClipCount(serverId, userId);
-    
-    // If no clips, fetch all 10
-    if (clipCount === 0) {
-      console.log(`[ClipFetching] New user ${twitchLogin}, fetching 10 clips`);
-      await fetchAllClipsForUser(serverId, userId, twitchLogin);
-      return;
-    }
-
-    // Otherwise check daily limit
+    // Check if already fetched today
     const lastFetch = await getLastClipFetch(serverId, userId);
     const now = Date.now();
     
@@ -101,20 +83,21 @@ export async function fetchNewClipOnLive(serverId: string, userId: string, twitc
     const clips = await getClipsForUser(twitchUser.id, 20);
     if (clips.length === 0) return;
 
-    // Get existing clip IDs
-    const existingClips = await db.collection('servers').doc(serverId)
-      .collection('users').doc(userId)
-      .collection('clips')
-      .get();
-    const existingIds = new Set(existingClips.docs.map(d => d.id));
+    // Get existing GIFs from Storage
+    const { storage } = await import('@/firebase/server-init');
+    const bucket = storage.bucket();
+    const [files] = await bucket.getFiles({ prefix: `clips/${twitchLogin}/` });
+    const existingGifs = new Set(files.filter(f => f.name.endsWith('.gif')).map(f => {
+      const parts = f.name.split('/');
+      return parts[parts.length - 1].replace('.gif', '');
+    }));
     
     // Find first clip we don't have
-    const newClip = clips.find(c => !existingIds.has(c.id));
+    const newClip = clips.find(c => !existingGifs.has(c.id));
     if (!newClip) return;
     
     const gifUrl = await convertClipToGif(
       newClip.url,
-      mp4Url,
       newClip.id,
       twitchLogin,
       Math.min(newClip.duration, 60),
@@ -123,20 +106,14 @@ export async function fetchNewClipOnLive(serverId: string, userId: string, twitc
     );
 
     if (gifUrl) {
-      // Only delete if we have 5 or more clips (safety buffer)
-      const currentCount = await getClipCount(serverId, userId);
-      if (currentCount >= 5) {
-        await deleteOldestClip(serverId, userId);
+      // Delete oldest if we have 10+
+      const gifs = files.filter(f => f.name.endsWith('.gif'));
+      if (gifs.length >= 10) {
+        await gifs[0].delete();
+        // Also delete corresponding MP4
+        const mp4Name = gifs[0].name.replace('.gif', '.mp4');
+        await bucket.file(mp4Name).delete().catch(() => {});
       }
-      
-      await saveClip(serverId, userId, {
-        clipId: newClip.id,
-        gifUrl,
-        twitchLogin,
-        title: newClip.title,
-        createdAt: newClip.created_at,
-        cachedAt: new Date().toISOString()
-      });
       
       await setLastClipFetch(serverId, userId, now);
       console.log(`[ClipFetching] Fetched new clip for ${twitchLogin}`);
@@ -146,85 +123,13 @@ export async function fetchNewClipOnLive(serverId: string, userId: string, twitc
   }
 }
 
-async function fetchAllClipsForUser(serverId: string, userId: string, twitchLogin: string): Promise<void> {
-  const twitchUser = await getUserByLogin(twitchLogin);
-  if (!twitchUser) return;
 
-  const clips = await getClipsForUser(twitchUser.id, 50);
-  
-  if (clips.length === 0) {
-    console.log(`[ClipFetching] ${twitchLogin} has no clips available`);
-    return;
-  }
-  
-  console.log(`[ClipFetching] ${twitchLogin} has ${clips.length} clips available`);
-  
-  let successCount = 0;
-  for (const clip of clips) {
-    if (successCount >= 10) break;
-    
-    const gifUrl = await convertClipToGif(
-      clip.url,
-      mp4Url,
-      clip.id,
-      twitchLogin,
-      Math.min(clip.duration, 60),
-      'stream',
-      { serverId }
-    );
 
-    if (gifUrl && !gifUrl.includes('tenor.com')) {
-      await saveClip(serverId, userId, {
-        clipId: clip.id,
-        gifUrl,
-        twitchLogin,
-        title: clip.title,
-        createdAt: clip.created_at,
-        cachedAt: new Date().toISOString()
-      });
-      successCount++;
-    }
-  }
-  
-  await setLastClipFetch(serverId, userId, Date.now());
-  console.log(`[ClipFetching] Fetched ${successCount} clips for new user ${twitchLogin}`);
-}
 
-async function getClipCount(serverId: string, userId: string): Promise<number> {
-  const snapshot = await db.collection('servers').doc(serverId)
-    .collection('users').doc(userId)
-    .collection('clips')
-    .get();
-  return snapshot.size;
-}
 
-async function saveClip(serverId: string, userId: string, clip: CachedClip): Promise<void> {
-  await db.collection('servers').doc(serverId)
-    .collection('users').doc(userId)
-    .collection('clips').doc(clip.clipId)
-    .set(clip);
-}
 
-async function deleteOldestClip(serverId: string, userId: string): Promise<void> {
-  const clipsSnapshot = await db.collection('servers').doc(serverId)
-    .collection('users').doc(userId)
-    .collection('clips')
-    .orderBy('cachedAt', 'asc')
-    .limit(1)
-    .get();
 
-  if (!clipsSnapshot.empty) {
-    const oldestDoc = clipsSnapshot.docs[0];
-    const data = oldestDoc.data() as CachedClip;
-    
-    // Extract filename from gifUrl
-    const urlParts = data.gifUrl.split('/');
-    const filename = urlParts[urlParts.length - 1].replace('.gif', '');
-    await deleteGif(filename);
-    
-    await oldestDoc.ref.delete();
-  }
-}
+
 
 async function getLastClipFetch(serverId: string, userId: string): Promise<number | null> {
   const doc = await db.collection('servers').doc(serverId)
@@ -239,22 +144,34 @@ async function setLastClipFetch(serverId: string, userId: string, timestamp: num
 }
 
 export async function getCurrentClipForUser(serverId: string, userId: string): Promise<CachedClip | null> {
+  const userDoc = await db.collection('servers').doc(serverId)
+    .collection('users').doc(userId).get();
+  const twitchLogin = userDoc.data()?.twitchLogin;
+  if (!twitchLogin) return null;
+
+  const { storage } = await import('@/firebase/server-init');
+  const bucket = storage.bucket();
+  const [files] = await bucket.getFiles({ prefix: `clips/${twitchLogin}/` });
+  
+  const gifs = files.filter(f => f.name.endsWith('.gif'));
+  if (gifs.length === 0) return null;
+
   const stateDoc = await db.collection('servers').doc(serverId)
     .collection('users').doc(userId)
     .collection('shoutoutState').doc('current').get();
-  
   const currentIndex = stateDoc.data()?.currentClipIndex || 0;
-  
-  const clipsSnapshot = await db.collection('servers').doc(serverId)
-    .collection('users').doc(userId)
-    .collection('clips')
-    .orderBy('cachedAt', 'desc')
-    .get();
 
-  if (clipsSnapshot.empty) return null;
-  
-  const clips = clipsSnapshot.docs.map(doc => doc.data() as CachedClip);
-  return clips[currentIndex % clips.length] || null;
+  const file = gifs[currentIndex % gifs.length];
+  const [url] = await file.getSignedUrl({ action: 'read', expires: '03-01-2500' });
+
+  return {
+    clipId: file.name.split('/').pop()?.replace('.gif', '') || '',
+    gifUrl: url,
+    twitchLogin,
+    title: 'Clip',
+    createdAt: new Date().toISOString(),
+    cachedAt: new Date().toISOString()
+  };
 }
 
 export async function getCurrentVipClip(serverId: string): Promise<CachedClip | null> {
@@ -276,5 +193,5 @@ async function getCrewAndPartners(serverId: string) {
       twitchLogin: doc.data().twitchLogin,
       group: doc.data().group
     }))
-    .filter(u => u.twitchLogin && (u.group === 'Crew' || u.group === 'Partners' || u.group === 'Vip'));
+    .filter(u => u.twitchLogin && (u.group === 'Crew' || u.group === 'Partners'));
 }

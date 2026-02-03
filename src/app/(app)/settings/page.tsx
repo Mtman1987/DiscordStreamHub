@@ -36,6 +36,11 @@ export default function SettingsPage() {
   const firestore = useFirestore();
 
   const [guildId, setGuildId] = React.useState('');
+  const [manualChannelId, setManualChannelId] = React.useState('');
+  const [manualChannelName, setManualChannelName] = React.useState('');
+  const [isAddingChannel, setIsAddingChannel] = React.useState(false);
+  const [isPolling, setIsPolling] = React.useState(false);
+  const [isTogglingPolling, setIsTogglingPolling] = React.useState(false);
 
   // State for Health Check
   type HeartbeatStatus = 'checking' | 'ok' | 'error';
@@ -51,6 +56,15 @@ export default function SettingsPage() {
     const storedGuildId = localStorage.getItem('discordServerId');
     if (storedGuildId) {
       setGuildId(storedGuildId);
+      
+      // Check polling status
+      fetch('/api/twitch/polling-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ serverId: storedGuildId })
+      }).then(r => r.json()).then(data => {
+        setIsPolling(data.isPolling || false);
+      }).catch(() => {});
     } else {
       setHeartbeat('error');
       setHeartbeatError('No Server ID found in local storage.');
@@ -94,6 +108,83 @@ export default function SettingsPage() {
     performClientHealthCheck();
   }, [firestore, guildId]);
 
+  const handleAddChannel = async () => {
+    if (!firestore || !guildId || !manualChannelId || !manualChannelName) return;
+    
+    setIsAddingChannel(true);
+    try {
+      const channelsRef = doc(firestore, 'servers', guildId, 'config', 'channels');
+      const docSnap = await getDoc(channelsRef);
+      const currentChannels = docSnap.exists() ? docSnap.data().list || [] : [];
+      
+      const newChannel = { id: manualChannelId, name: manualChannelName };
+      const updatedChannels = [...currentChannels, newChannel];
+      
+      await setDoc(channelsRef, { list: updatedChannels }, { merge: true });
+      
+      setManualChannelId('');
+      setManualChannelName('');
+      setSyncStatus('success');
+      setSyncMessage(`Channel "${manualChannelName}" added successfully!`);
+    } catch (error) {
+      console.error('Failed to add channel:', error);
+      setSyncStatus('error');
+      setSyncMessage('Failed to add channel.');
+    } finally {
+      setIsAddingChannel(false);
+    }
+  };
+
+  const handleTogglePolling = async () => {
+    if (!guildId) return;
+    
+    setIsTogglingPolling(true);
+    try {
+      const endpoint = isPolling ? '/api/twitch/stop-polling' : '/api/twitch/start-polling';
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ serverId: guildId })
+      });
+      
+      if (!response.ok) throw new Error('Failed to toggle polling');
+      
+      setIsPolling(!isPolling);
+      setSyncStatus('success');
+      setSyncMessage(isPolling ? 'Polling stopped' : 'Polling started - checking for live streams every 10 minutes');
+    } catch (error) {
+      console.error('Failed to toggle polling:', error);
+      setSyncStatus('error');
+      setSyncMessage('Failed to toggle polling.');
+    } finally {
+      setIsTogglingPolling(false);
+    }
+  };
+
+  const handleClearShoutouts = async () => {
+    if (!guildId) return;
+    if (!confirm('This will clear all shoutout states. Continue?')) return;
+    
+    setIsTogglingPolling(true);
+    try {
+      const response = await fetch('/api/twitch/clear-shoutouts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ serverId: guildId })
+      });
+      
+      if (!response.ok) throw new Error('Failed to clear shoutouts');
+      
+      setSyncStatus('success');
+      setSyncMessage('All shoutout states cleared. Fresh shoutouts will be posted on next poll.');
+    } catch (error) {
+      console.error('Failed to clear shoutouts:', error);
+      setSyncStatus('error');
+      setSyncMessage('Failed to clear shoutouts.');
+    } finally {
+      setIsTogglingPolling(false);
+    }
+  };
 
   const handleClientSideSync = async () => {
     if (!guildId) {
@@ -237,6 +328,58 @@ export default function SettingsPage() {
                         <Zap className="mr-2 h-4 w-4" />
                         )}
                         Sync with Discord
+                    </Button>
+                </CardFooter>
+            </Card>
+            
+            <Card>
+                <CardHeader>
+                    <CardTitle className="font-headline flex items-center gap-3">
+                    <span
+                        className={cn(
+                        'h-3 w-3 rounded-full',
+                        {
+                            'bg-green-500': isPolling,
+                            'bg-gray-400': !isPolling,
+                        }
+                        )}
+                    />
+                    Twitch Polling
+                    </CardTitle>
+                    <CardDescription>
+                        {isPolling ? 'Automatically checking for live streams every 10 minutes' : 'Polling is currently stopped'}
+                    </CardDescription>
+                </CardHeader>
+                <CardFooter className="flex gap-2">
+                    <Button className="flex-1" onClick={handleTogglePolling} disabled={isTogglingPolling}>
+                        {isTogglingPolling ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        {isPolling ? 'Stop Polling' : 'Start Polling'}
+                    </Button>
+                    <Button variant="destructive" onClick={handleClearShoutouts} disabled={isTogglingPolling}>
+                        Clear All Shoutouts
+                    </Button>
+                </CardFooter>
+            </Card>
+            
+            <Card>
+                <CardHeader>
+                    <CardTitle className="font-headline">Add Channel Manually</CardTitle>
+                    <CardDescription>Add a channel by ID if it's not showing in sync</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="channel-id">Channel ID</Label>
+                        <Input id="channel-id" value={manualChannelId} onChange={(e) => setManualChannelId(e.target.value)} placeholder="1284140462864728147" />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="channel-name">Channel Name</Label>
+                        <Input id="channel-name" value={manualChannelName} onChange={(e) => setManualChannelName(e.target.value)} placeholder="partners-shoutouts" />
+                    </div>
+                </CardContent>
+                <CardFooter>
+                    <Button className="w-full" onClick={handleAddChannel} disabled={isAddingChannel || !manualChannelId || !manualChannelName}>
+                        {isAddingChannel ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        Add Channel
                     </Button>
                 </CardFooter>
             </Card>

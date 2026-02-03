@@ -19,35 +19,49 @@ try {
 }
 
 export async function getClipVideoUrl(clipUrl: string): Promise<string | null> {
-  // Always use Puppeteer to scrape the real URL from the page
   try {
-    console.log(`[ClipUrlFinder] Scraping video URL from: ${clipUrl}`);
+    // Extract clip slug from URL (e.g., https://www.twitch.tv/username/clip/ClipSlug)
+    const clipSlug = clipUrl.split('/clip/')[1]?.split('?')[0];
+    if (!clipSlug) throw new Error('Invalid clip URL');
     
-    const puppeteer = require('puppeteer');
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    console.log(`[ClipUrlFinder] Getting video URL for clip: ${clipSlug}`);
+    
+    // Use Twitch API to get clip info
+    const twitchClientId = process.env.TWITCH_CLIENT_ID;
+    const twitchClientSecret = process.env.TWITCH_CLIENT_SECRET;
+    
+    if (!twitchClientId || !twitchClientSecret) {
+      throw new Error('Twitch credentials not configured');
+    }
+    
+    // Get OAuth token
+    const tokenResponse = await fetch('https://id.twitch.tv/oauth2/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `client_id=${twitchClientId}&client_secret=${twitchClientSecret}&grant_type=client_credentials`
     });
+    const tokenData = await tokenResponse.json();
+    const accessToken = tokenData.access_token;
     
-    const page = await browser.newPage();
-    await page.goto(clipUrl, { waitUntil: 'networkidle2' });
-    await page.waitForSelector('video', { timeout: 10000 });
-    
-    // Get the video src from the page
-    const videoUrl = await page.evaluate(() => {
-      const video = document.querySelector('video');
-      return video?.src || video?.querySelector('source')?.src;
+    // Get clip data
+    const clipResponse = await fetch(`https://api.twitch.tv/helix/clips?id=${clipSlug}`, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Client-Id': twitchClientId
+      }
     });
+    const clipData = await clipResponse.json();
     
-    await browser.close();
+    if (!clipData.data || clipData.data.length === 0) {
+      throw new Error('Clip not found');
+    }
     
-    if (!videoUrl) throw new Error('No video URL found');
+    const thumbnailUrl = clipData.data[0].thumbnail_url;
+    // Convert thumbnail URL to video URL by removing -preview and adding .mp4
+    const videoUrl = thumbnailUrl.split('-preview-')[0] + '.mp4';
     
-    // Decode HTML entities (&amp; -> &)
-    const decodedUrl = videoUrl.replace(/&amp;/g, '&');
-    
-    console.log(`[ClipUrlFinder] Found URL: ${decodedUrl}`);
-    return decodedUrl;
+    console.log(`[ClipUrlFinder] Found URL: ${videoUrl}`);
+    return videoUrl;
   } catch (error) {
     console.error(`[ClipUrlFinder] Error:`, error);
     return null;
