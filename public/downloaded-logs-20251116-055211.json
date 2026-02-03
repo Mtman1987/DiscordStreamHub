@@ -1,0 +1,832 @@
+[
+  {
+    "insertId": "6919b4b8000c24fc859ffb80",
+    "httpRequest": {
+      "requestMethod": "POST",
+      "requestUrl": "https://t-3169121662---cosmicraidadminapp-m3psb5v2fa-uc.a.run.app/settings",
+      "requestSize": "2266",
+      "status": 200,
+      "responseSize": "714",
+      "userAgent": "Google",
+      "remoteIp": "64.233.172.131",
+      "referer": "https://cosmicraidadminapp--studio-5587063777-d2e6c.us-central1.hosted.app/settings",
+      "serverIp": "34.143.74.2",
+      "latency": "1.508854824s",
+      "protocol": "HTTP/1.1"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "revision_name": "cosmicraidadminapp-build-2025-11-16-023",
+        "project_id": "studio-5587063777-d2e6c",
+        "location": "us-central1",
+        "service_name": "cosmicraidadminapp",
+        "configuration_name": "cosmicraidadminapp"
+      }
+    },
+    "timestamp": "2025-11-16T11:25:43.271885Z",
+    "severity": "INFO",
+    "labels": {
+      "goog-managed-by": "firebase-app-hosting",
+      "instanceId": "0014778296576bd28bd290c18d622ce6fe79e895c2eb10fd9fc265adc75310f77bcb800ce88e80e07f21701422f2817e925a6bf35980725c71f9ada883a54b860dc0af071a06f48365e07268917d"
+    },
+    "logName": "projects/studio-5587063777-d2e6c/logs/run.googleapis.com%2Frequests",
+    "trace": "projects/studio-5587063777-d2e6c/traces/b974bae4a979131350f6e58c49a686c2",
+    "receiveTimestamp": "2025-11-16T11:25:44.802495848Z",
+    "spanId": "0d3a6889e96d7bd6",
+    "traceSampled": true
+  },
+  {
+    "textPayload": "[Action] testCalendarPostAction called with guildId: 1240832965865635881, channelId: 1437862625609257142",
+    "insertId": "6919b4b700047284f9fbd89c",
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "revision_name": "cosmicraidadminapp-build-2025-11-16-023",
+        "project_id": "studio-5587063777-d2e6c",
+        "service_name": "cosmicraidadminapp",
+        "location": "us-central1",
+        "configuration_name": "cosmicraidadminapp"
+      }
+    },
+    "timestamp": "2025-11-16T11:25:43.291460Z",
+    "labels": {
+      "goog-managed-by": "firebase-app-hosting",
+      "instanceId": "0014778296576bd28bd290c18d622ce6fe79e895c2eb10fd9fc265adc75310f77bcb800ce88e80e07f21701422f2817e925a6bf35980725c71f9ada883a54b860dc0af071a06f48365e07268917d"
+    },
+    "logName": "projects/studio-5587063777-d2e6c/logs/run.googleapis.com%2Fstdout",
+    "receiveTimestamp": "2025-11-16T11:25:43.299095592Z"
+  },
+  {
+    "insertId": "6919b5b40006283ecf8416f1",
+    "httpRequest": {
+      "requestMethod": "GET",
+      "requestUrl": "https://t-3169121662---cosmicraidadminapp-m3psb5v2fa-uc.a.run.app/forwarding?_rsc=159ak",
+      "requestSize": "1656",
+      "status": 200,
+      "responseSize": "490",
+      "userAgent": "Google",
+      "remoteIp": "64.233.172.35",
+      "referer": "https://cosmicraidadminapp--studio-5587063777-d2e6c.us-central1.hosted.app/settings",
+      "serverIp": "34.143.75.2",
+      "latency": "0.014075067s",
+      "protocol": "HTTP/1.1"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "project_id": "studio-5587063777-d2e6c",
+        "revision_name": "cosmicraidadminapp-build-2025-11-16-023",
+        "service_name": "cosmicraidadminapp",
+        "configuration_name": "cosmicraidadminapp",
+        "location": "us-central1"
+      }
+    },
+    "timestamp": "2025-11-16T11:29:56.370089Z",
+    "severity": "INFO",
+    "labels": {
+      "instanceId": "0014778296576bd28bd290c18d622ce6fe79e895c2eb10fd9fc265adc75310f77bcb800ce88e80e07f21701422f2817e925a6bf35980725c71f9ada883a54b860dc0af071a06f48365e07268917d",
+      "goog-managed-by": "firebase-app-hosting"
+    },
+    "logName": "projects/studio-5587063777-d2e6c/logs/run.googleapis.com%2Frequests",
+    "trace": "projects/studio-5587063777-d2e6c/traces/dcea1445811b17d87cebdb1c64e1c9a2",
+    "receiveTimestamp": "2025-11-16T11:29:56.408409152Z",
+    "spanId": "6a8404796592b77f",
+    "traceSampled": true
+  },
+  {
+    "insertId": "6919b5b4000637985fa4305d",
+    "httpRequest": {
+      "requestMethod": "GET",
+      "requestUrl": "https://t-3169121662---cosmicraidadminapp-m3psb5v2fa-uc.a.run.app/settings?_rsc=159ak",
+      "requestSize": "1653",
+      "status": 200,
+      "responseSize": "481",
+      "userAgent": "Google",
+      "remoteIp": "64.233.172.9",
+      "referer": "https://cosmicraidadminapp--studio-5587063777-d2e6c.us-central1.hosted.app/settings",
+      "serverIp": "34.143.79.2",
+      "latency": "0.019183468s",
+      "protocol": "HTTP/1.1"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "location": "us-central1",
+        "configuration_name": "cosmicraidadminapp",
+        "project_id": "studio-5587063777-d2e6c",
+        "service_name": "cosmicraidadminapp",
+        "revision_name": "cosmicraidadminapp-build-2025-11-16-023"
+      }
+    },
+    "timestamp": "2025-11-16T11:29:56.370553Z",
+    "severity": "INFO",
+    "labels": {
+      "goog-managed-by": "firebase-app-hosting",
+      "instanceId": "0014778296576bd28bd290c18d622ce6fe79e895c2eb10fd9fc265adc75310f77bcb800ce88e80e07f21701422f2817e925a6bf35980725c71f9ada883a54b860dc0af071a06f48365e07268917d"
+    },
+    "logName": "projects/studio-5587063777-d2e6c/logs/run.googleapis.com%2Frequests",
+    "trace": "projects/studio-5587063777-d2e6c/traces/2033b41c4584c5ee1ddefc6b3425c636",
+    "receiveTimestamp": "2025-11-16T11:29:56.742138780Z",
+    "spanId": "cd0241556c198852"
+  },
+  {
+    "insertId": "6919b5b4000643e1f398155c",
+    "httpRequest": {
+      "requestMethod": "GET",
+      "requestUrl": "https://t-3169121662---cosmicraidadminapp-m3psb5v2fa-uc.a.run.app/raid-pile?_rsc=159ak",
+      "requestSize": "1655",
+      "status": 200,
+      "responseSize": "489",
+      "userAgent": "Google",
+      "remoteIp": "64.233.172.104",
+      "referer": "https://cosmicraidadminapp--studio-5587063777-d2e6c.us-central1.hosted.app/settings",
+      "serverIp": "34.143.79.2",
+      "latency": "0.018836920s",
+      "protocol": "HTTP/1.1"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "project_id": "studio-5587063777-d2e6c",
+        "revision_name": "cosmicraidadminapp-build-2025-11-16-023",
+        "service_name": "cosmicraidadminapp",
+        "configuration_name": "cosmicraidadminapp",
+        "location": "us-central1"
+      }
+    },
+    "timestamp": "2025-11-16T11:29:56.371418Z",
+    "severity": "INFO",
+    "labels": {
+      "instanceId": "0014778296576bd28bd290c18d622ce6fe79e895c2eb10fd9fc265adc75310f77bcb800ce88e80e07f21701422f2817e925a6bf35980725c71f9ada883a54b860dc0af071a06f48365e07268917d",
+      "goog-managed-by": "firebase-app-hosting"
+    },
+    "logName": "projects/studio-5587063777-d2e6c/logs/run.googleapis.com%2Frequests",
+    "trace": "projects/studio-5587063777-d2e6c/traces/4a930262bd3502ebfbe4384c5c573154",
+    "receiveTimestamp": "2025-11-16T11:29:56.742138780Z",
+    "spanId": "f38b13ceffd9837a"
+  },
+  {
+    "insertId": "6919b5b40006498f79d9caf7",
+    "httpRequest": {
+      "requestMethod": "GET",
+      "requestUrl": "https://t-3169121662---cosmicraidadminapp-m3psb5v2fa-uc.a.run.app/leaderboard?_rsc=159ak",
+      "requestSize": "1657",
+      "status": 200,
+      "responseSize": "490",
+      "userAgent": "Google",
+      "remoteIp": "64.233.172.234",
+      "referer": "https://cosmicraidadminapp--studio-5587063777-d2e6c.us-central1.hosted.app/settings",
+      "serverIp": "34.143.79.2",
+      "latency": "0.018337541s",
+      "protocol": "HTTP/1.1"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "revision_name": "cosmicraidadminapp-build-2025-11-16-023",
+        "service_name": "cosmicraidadminapp",
+        "project_id": "studio-5587063777-d2e6c",
+        "configuration_name": "cosmicraidadminapp",
+        "location": "us-central1"
+      }
+    },
+    "timestamp": "2025-11-16T11:29:56.379138Z",
+    "severity": "INFO",
+    "labels": {
+      "goog-managed-by": "firebase-app-hosting",
+      "instanceId": "0014778296576bd28bd290c18d622ce6fe79e895c2eb10fd9fc265adc75310f77bcb800ce88e80e07f21701422f2817e925a6bf35980725c71f9ada883a54b860dc0af071a06f48365e07268917d"
+    },
+    "logName": "projects/studio-5587063777-d2e6c/logs/run.googleapis.com%2Frequests",
+    "trace": "projects/studio-5587063777-d2e6c/traces/90657fad5d5dde803b0d9c729893e52d",
+    "receiveTimestamp": "2025-11-16T11:29:56.742138780Z",
+    "spanId": "f3cc87d4a6f1e044"
+  },
+  {
+    "insertId": "6919b5b400064c5e1458cc57",
+    "httpRequest": {
+      "requestMethod": "GET",
+      "requestUrl": "https://t-3169121662---cosmicraidadminapp-m3psb5v2fa-uc.a.run.app/shoutouts?_rsc=159ak",
+      "requestSize": "1655",
+      "status": 200,
+      "responseSize": "490",
+      "userAgent": "Google",
+      "remoteIp": "74.125.215.64",
+      "referer": "https://cosmicraidadminapp--studio-5587063777-d2e6c.us-central1.hosted.app/settings",
+      "serverIp": "34.143.78.2",
+      "latency": "0.014310561s",
+      "protocol": "HTTP/1.1"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "configuration_name": "cosmicraidadminapp",
+        "location": "us-central1",
+        "project_id": "studio-5587063777-d2e6c",
+        "revision_name": "cosmicraidadminapp-build-2025-11-16-023",
+        "service_name": "cosmicraidadminapp"
+      }
+    },
+    "timestamp": "2025-11-16T11:29:56.396163Z",
+    "severity": "INFO",
+    "labels": {
+      "instanceId": "0014778296576bd28bd290c18d622ce6fe79e895c2eb10fd9fc265adc75310f77bcb800ce88e80e07f21701422f2817e925a6bf35980725c71f9ada883a54b860dc0af071a06f48365e07268917d",
+      "goog-managed-by": "firebase-app-hosting"
+    },
+    "logName": "projects/studio-5587063777-d2e6c/logs/run.googleapis.com%2Frequests",
+    "trace": "projects/studio-5587063777-d2e6c/traces/d19d9fe41fe99bd7858bc3ea88d7e310",
+    "receiveTimestamp": "2025-11-16T11:29:56.742138780Z",
+    "spanId": "977f0205dd3252d9"
+  },
+  {
+    "insertId": "6919b5b40008160dd8e1b15f",
+    "httpRequest": {
+      "requestMethod": "GET",
+      "requestUrl": "https://t-3169121662---cosmicraidadminapp-m3psb5v2fa-uc.a.run.app/calendar?_rsc=159ak",
+      "requestSize": "1653",
+      "status": 200,
+      "responseSize": "487",
+      "userAgent": "Google",
+      "remoteIp": "64.233.172.6",
+      "referer": "https://cosmicraidadminapp--studio-5587063777-d2e6c.us-central1.hosted.app/settings",
+      "serverIp": "34.143.78.2",
+      "latency": "0.005070594s",
+      "protocol": "HTTP/1.1"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "location": "us-central1",
+        "service_name": "cosmicraidadminapp",
+        "revision_name": "cosmicraidadminapp-build-2025-11-16-023",
+        "configuration_name": "cosmicraidadminapp",
+        "project_id": "studio-5587063777-d2e6c"
+      }
+    },
+    "timestamp": "2025-11-16T11:29:56.522859Z",
+    "severity": "INFO",
+    "labels": {
+      "instanceId": "0014778296576bd28bd290c18d622ce6fe79e895c2eb10fd9fc265adc75310f77bcb800ce88e80e07f21701422f2817e925a6bf35980725c71f9ada883a54b860dc0af071a06f48365e07268917d",
+      "goog-managed-by": "firebase-app-hosting"
+    },
+    "logName": "projects/studio-5587063777-d2e6c/logs/run.googleapis.com%2Frequests",
+    "trace": "projects/studio-5587063777-d2e6c/traces/8759a7ddd7acc832406fbde0ff20e524",
+    "receiveTimestamp": "2025-11-16T11:29:56.742138780Z",
+    "spanId": "94b4cb7a47302582"
+  },
+  {
+    "insertId": "6919b5b400082f9f1a599ce7",
+    "httpRequest": {
+      "requestMethod": "GET",
+      "requestUrl": "https://t-3169121662---cosmicraidadminapp-m3psb5v2fa-uc.a.run.app/dashboard?_rsc=159ak",
+      "requestSize": "1655",
+      "status": 200,
+      "responseSize": "489",
+      "userAgent": "Google",
+      "remoteIp": "74.125.212.166",
+      "referer": "https://cosmicraidadminapp--studio-5587063777-d2e6c.us-central1.hosted.app/settings",
+      "serverIp": "34.143.79.2",
+      "latency": "0.005171204s",
+      "protocol": "HTTP/1.1"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "service_name": "cosmicraidadminapp",
+        "revision_name": "cosmicraidadminapp-build-2025-11-16-023",
+        "project_id": "studio-5587063777-d2e6c",
+        "location": "us-central1",
+        "configuration_name": "cosmicraidadminapp"
+      }
+    },
+    "timestamp": "2025-11-16T11:29:56.529435Z",
+    "severity": "INFO",
+    "labels": {
+      "goog-managed-by": "firebase-app-hosting",
+      "instanceId": "0014778296576bd28bd290c18d622ce6fe79e895c2eb10fd9fc265adc75310f77bcb800ce88e80e07f21701422f2817e925a6bf35980725c71f9ada883a54b860dc0af071a06f48365e07268917d"
+    },
+    "logName": "projects/studio-5587063777-d2e6c/logs/run.googleapis.com%2Frequests",
+    "trace": "projects/studio-5587063777-d2e6c/traces/a80c2130f2d8d3afa54b8df2d34acc2e",
+    "receiveTimestamp": "2025-11-16T11:29:56.742138780Z",
+    "spanId": "51dcfb53d75391d7"
+  },
+  {
+    "insertId": "6919b5b5000df10dece7f81a",
+    "httpRequest": {
+      "requestMethod": "POST",
+      "requestUrl": "https://t-3169121662---cosmicraidadminapp-m3psb5v2fa-uc.a.run.app/settings",
+      "requestSize": "2218",
+      "status": 200,
+      "responseSize": "543",
+      "userAgent": "Google",
+      "remoteIp": "192.178.15.66",
+      "referer": "https://cosmicraidadminapp--studio-5587063777-d2e6c.us-central1.hosted.app/settings",
+      "serverIp": "34.143.79.2",
+      "latency": "0.138374085s",
+      "protocol": "HTTP/1.1"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "project_id": "studio-5587063777-d2e6c",
+        "location": "us-central1",
+        "revision_name": "cosmicraidadminapp-build-2025-11-16-023",
+        "configuration_name": "cosmicraidadminapp",
+        "service_name": "cosmicraidadminapp"
+      }
+    },
+    "timestamp": "2025-11-16T11:29:57.773369Z",
+    "severity": "INFO",
+    "labels": {
+      "instanceId": "0014778296576bd28bd290c18d622ce6fe79e895c2eb10fd9fc265adc75310f77bcb800ce88e80e07f21701422f2817e925a6bf35980725c71f9ada883a54b860dc0af071a06f48365e07268917d",
+      "goog-managed-by": "firebase-app-hosting"
+    },
+    "logName": "projects/studio-5587063777-d2e6c/logs/run.googleapis.com%2Frequests",
+    "trace": "projects/studio-5587063777-d2e6c/traces/567be061de764591156ceea025b0a63a",
+    "receiveTimestamp": "2025-11-16T11:29:58.074833512Z",
+    "spanId": "6f5f77cb1e9169dc"
+  },
+  {
+    "textPayload": "Action Error: Error: Failed to fetch server info: {\"message\": \"401: Unauthorized\", \"code\": 0}",
+    "insertId": "6919b5b5000de8577fd3f450",
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "configuration_name": "cosmicraidadminapp",
+        "service_name": "cosmicraidadminapp",
+        "project_id": "studio-5587063777-d2e6c",
+        "revision_name": "cosmicraidadminapp-build-2025-11-16-023",
+        "location": "us-central1"
+      }
+    },
+    "timestamp": "2025-11-16T11:29:57.911447Z",
+    "labels": {
+      "instanceId": "0014778296576bd28bd290c18d622ce6fe79e895c2eb10fd9fc265adc75310f77bcb800ce88e80e07f21701422f2817e925a6bf35980725c71f9ada883a54b860dc0af071a06f48365e07268917d",
+      "goog-managed-by": "firebase-app-hosting"
+    },
+    "logName": "projects/studio-5587063777-d2e6c/logs/run.googleapis.com%2Fstderr",
+    "receiveTimestamp": "2025-11-16T11:29:57.916797727Z"
+  },
+  {
+    "textPayload": "    at I (.next/server/chunks/5289.js:13:57446)",
+    "insertId": "6919b5b5000de879cdeef387",
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "service_name": "cosmicraidadminapp",
+        "project_id": "studio-5587063777-d2e6c",
+        "revision_name": "cosmicraidadminapp-build-2025-11-16-023",
+        "location": "us-central1",
+        "configuration_name": "cosmicraidadminapp"
+      }
+    },
+    "timestamp": "2025-11-16T11:29:57.911481Z",
+    "labels": {
+      "goog-managed-by": "firebase-app-hosting",
+      "instanceId": "0014778296576bd28bd290c18d622ce6fe79e895c2eb10fd9fc265adc75310f77bcb800ce88e80e07f21701422f2817e925a6bf35980725c71f9ada883a54b860dc0af071a06f48365e07268917d"
+    },
+    "logName": "projects/studio-5587063777-d2e6c/logs/run.googleapis.com%2Fstderr",
+    "receiveTimestamp": "2025-11-16T11:29:57.916797727Z"
+  },
+  {
+    "insertId": "6919b6fb000ef5c1c14da310",
+    "httpRequest": {
+      "requestMethod": "GET",
+      "requestUrl": "https://t-3169121662---cosmicraidadminapp-m3psb5v2fa-uc.a.run.app/raid-pile?_rsc=159ak",
+      "requestSize": "1654",
+      "status": 200,
+      "responseSize": "489",
+      "userAgent": "Google",
+      "remoteIp": "66.102.6.194",
+      "referer": "https://cosmicraidadminapp--studio-5587063777-d2e6c.us-central1.hosted.app/settings",
+      "serverIp": "34.143.76.2",
+      "latency": "0.015411476s",
+      "protocol": "HTTP/1.1"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "configuration_name": "cosmicraidadminapp",
+        "revision_name": "cosmicraidadminapp-build-2025-11-16-023",
+        "project_id": "studio-5587063777-d2e6c",
+        "service_name": "cosmicraidadminapp",
+        "location": "us-central1"
+      }
+    },
+    "timestamp": "2025-11-16T11:35:23.941867Z",
+    "severity": "INFO",
+    "labels": {
+      "goog-managed-by": "firebase-app-hosting",
+      "instanceId": "0014778296576bd28bd290c18d622ce6fe79e895c2eb10fd9fc265adc75310f77bcb800ce88e80e07f21701422f2817e925a6bf35980725c71f9ada883a54b860dc0af071a06f48365e07268917d"
+    },
+    "logName": "projects/studio-5587063777-d2e6c/logs/run.googleapis.com%2Frequests",
+    "trace": "projects/studio-5587063777-d2e6c/traces/69eba0a7452f3ebf254346634bd43dc5",
+    "receiveTimestamp": "2025-11-16T11:35:24.311727198Z",
+    "spanId": "ad1e426992c3f51e",
+    "traceSampled": true
+  },
+  {
+    "insertId": "6919b6fb000ed71cc0abd4ce",
+    "httpRequest": {
+      "requestMethod": "GET",
+      "requestUrl": "https://t-3169121662---cosmicraidadminapp-m3psb5v2fa-uc.a.run.app/forwarding?_rsc=159ak",
+      "requestSize": "1656",
+      "status": 200,
+      "responseSize": "490",
+      "userAgent": "Google",
+      "remoteIp": "74.125.212.169",
+      "referer": "https://cosmicraidadminapp--studio-5587063777-d2e6c.us-central1.hosted.app/settings",
+      "serverIp": "34.143.78.2",
+      "latency": "0.009085128s",
+      "protocol": "HTTP/1.1"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "configuration_name": "cosmicraidadminapp",
+        "revision_name": "cosmicraidadminapp-build-2025-11-16-023",
+        "project_id": "studio-5587063777-d2e6c",
+        "location": "us-central1",
+        "service_name": "cosmicraidadminapp"
+      }
+    },
+    "timestamp": "2025-11-16T11:35:23.944311Z",
+    "severity": "INFO",
+    "labels": {
+      "goog-managed-by": "firebase-app-hosting",
+      "instanceId": "0014778296576bd28bd290c18d622ce6fe79e895c2eb10fd9fc265adc75310f77bcb800ce88e80e07f21701422f2817e925a6bf35980725c71f9ada883a54b860dc0af071a06f48365e07268917d"
+    },
+    "logName": "projects/studio-5587063777-d2e6c/logs/run.googleapis.com%2Frequests",
+    "trace": "projects/studio-5587063777-d2e6c/traces/5231f68b831bf4ef430c0b6e3011cf95",
+    "receiveTimestamp": "2025-11-16T11:35:23.977675092Z",
+    "spanId": "bca4365641f401cb"
+  },
+  {
+    "insertId": "6919b6fb000ef40b49c29639",
+    "httpRequest": {
+      "requestMethod": "GET",
+      "requestUrl": "https://t-3169121662---cosmicraidadminapp-m3psb5v2fa-uc.a.run.app/settings?_rsc=159ak",
+      "requestSize": "1653",
+      "status": 200,
+      "responseSize": "481",
+      "userAgent": "Google",
+      "remoteIp": "74.125.212.206",
+      "referer": "https://cosmicraidadminapp--studio-5587063777-d2e6c.us-central1.hosted.app/settings",
+      "serverIp": "34.143.75.2",
+      "latency": "0.015386831s",
+      "protocol": "HTTP/1.1"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "configuration_name": "cosmicraidadminapp",
+        "project_id": "studio-5587063777-d2e6c",
+        "revision_name": "cosmicraidadminapp-build-2025-11-16-023",
+        "service_name": "cosmicraidadminapp",
+        "location": "us-central1"
+      }
+    },
+    "timestamp": "2025-11-16T11:35:23.946940Z",
+    "severity": "INFO",
+    "labels": {
+      "instanceId": "0014778296576bd28bd290c18d622ce6fe79e895c2eb10fd9fc265adc75310f77bcb800ce88e80e07f21701422f2817e925a6bf35980725c71f9ada883a54b860dc0af071a06f48365e07268917d",
+      "goog-managed-by": "firebase-app-hosting"
+    },
+    "logName": "projects/studio-5587063777-d2e6c/logs/run.googleapis.com%2Frequests",
+    "trace": "projects/studio-5587063777-d2e6c/traces/065958f905ffa496c10d44e372e4b04a",
+    "receiveTimestamp": "2025-11-16T11:35:24.311727198Z",
+    "spanId": "acedfc31dde7507e"
+  },
+  {
+    "insertId": "6919b6fb000ef897e90b7c38",
+    "httpRequest": {
+      "requestMethod": "GET",
+      "requestUrl": "https://t-3169121662---cosmicraidadminapp-m3psb5v2fa-uc.a.run.app/leaderboard?_rsc=159ak",
+      "requestSize": "1657",
+      "status": 200,
+      "responseSize": "490",
+      "userAgent": "Google",
+      "remoteIp": "64.233.172.237",
+      "referer": "https://cosmicraidadminapp--studio-5587063777-d2e6c.us-central1.hosted.app/settings",
+      "serverIp": "34.143.73.2",
+      "latency": "0.012848716s",
+      "protocol": "HTTP/1.1"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "revision_name": "cosmicraidadminapp-build-2025-11-16-023",
+        "location": "us-central1",
+        "configuration_name": "cosmicraidadminapp",
+        "service_name": "cosmicraidadminapp",
+        "project_id": "studio-5587063777-d2e6c"
+      }
+    },
+    "timestamp": "2025-11-16T11:35:23.956942Z",
+    "severity": "INFO",
+    "labels": {
+      "instanceId": "0014778296576bd28bd290c18d622ce6fe79e895c2eb10fd9fc265adc75310f77bcb800ce88e80e07f21701422f2817e925a6bf35980725c71f9ada883a54b860dc0af071a06f48365e07268917d",
+      "goog-managed-by": "firebase-app-hosting"
+    },
+    "logName": "projects/studio-5587063777-d2e6c/logs/run.googleapis.com%2Frequests",
+    "trace": "projects/studio-5587063777-d2e6c/traces/ae8793172ca8af5b7e4c8b2247c68155",
+    "receiveTimestamp": "2025-11-16T11:35:24.311727198Z",
+    "spanId": "5af37a456ba8cfa8"
+  },
+  {
+    "insertId": "6919b6fc00011407c997e254",
+    "httpRequest": {
+      "requestMethod": "GET",
+      "requestUrl": "https://t-3169121662---cosmicraidadminapp-m3psb5v2fa-uc.a.run.app/calendar?_rsc=159ak",
+      "requestSize": "1654",
+      "status": 200,
+      "responseSize": "487",
+      "userAgent": "Google",
+      "remoteIp": "66.102.6.43",
+      "referer": "https://cosmicraidadminapp--studio-5587063777-d2e6c.us-central1.hosted.app/settings",
+      "serverIp": "34.143.74.2",
+      "latency": "0.005387807s",
+      "protocol": "HTTP/1.1"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "location": "us-central1",
+        "revision_name": "cosmicraidadminapp-build-2025-11-16-023",
+        "service_name": "cosmicraidadminapp",
+        "project_id": "studio-5587063777-d2e6c",
+        "configuration_name": "cosmicraidadminapp"
+      }
+    },
+    "timestamp": "2025-11-16T11:35:24.063359Z",
+    "severity": "INFO",
+    "labels": {
+      "goog-managed-by": "firebase-app-hosting",
+      "instanceId": "0014778296576bd28bd290c18d622ce6fe79e895c2eb10fd9fc265adc75310f77bcb800ce88e80e07f21701422f2817e925a6bf35980725c71f9ada883a54b860dc0af071a06f48365e07268917d"
+    },
+    "logName": "projects/studio-5587063777-d2e6c/logs/run.googleapis.com%2Frequests",
+    "trace": "projects/studio-5587063777-d2e6c/traces/63fc587be524385892683c16a3d6ab47",
+    "receiveTimestamp": "2025-11-16T11:35:24.311727198Z",
+    "spanId": "9f64c08455aa7900"
+  },
+  {
+    "insertId": "6919b853000d1b8d1766bd71",
+    "httpRequest": {
+      "requestMethod": "POST",
+      "requestUrl": "https://t-3169121662---cosmicraidadminapp-m3psb5v2fa-uc.a.run.app/settings",
+      "requestSize": "2217",
+      "status": 200,
+      "responseSize": "543",
+      "userAgent": "Google",
+      "remoteIp": "66.102.6.192",
+      "referer": "https://cosmicraidadminapp--studio-5587063777-d2e6c.us-central1.hosted.app/settings",
+      "serverIp": "34.143.73.2",
+      "latency": "0.140947696s",
+      "protocol": "HTTP/1.1"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "configuration_name": "cosmicraidadminapp",
+        "service_name": "cosmicraidadminapp",
+        "location": "us-central1",
+        "revision_name": "cosmicraidadminapp-build-2025-11-16-023",
+        "project_id": "studio-5587063777-d2e6c"
+      }
+    },
+    "timestamp": "2025-11-16T11:41:07.701484Z",
+    "severity": "INFO",
+    "labels": {
+      "instanceId": "0014778296576bd28bd290c18d622ce6fe79e895c2eb10fd9fc265adc75310f77bcb800ce88e80e07f21701422f2817e925a6bf35980725c71f9ada883a54b860dc0af071a06f48365e07268917d",
+      "goog-managed-by": "firebase-app-hosting"
+    },
+    "logName": "projects/studio-5587063777-d2e6c/logs/run.googleapis.com%2Frequests",
+    "trace": "projects/studio-5587063777-d2e6c/traces/6a0a0d2a1adb4cf9874755da1ea05723",
+    "receiveTimestamp": "2025-11-16T11:41:07.863524796Z",
+    "spanId": "03a6bc1654504c38",
+    "traceSampled": true
+  },
+  {
+    "textPayload": "Action Error: Error: Failed to fetch server info: {\"message\": \"401: Unauthorized\", \"code\": 0}",
+    "insertId": "6919b853000d0f27efb55092",
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "service_name": "cosmicraidadminapp",
+        "project_id": "studio-5587063777-d2e6c",
+        "configuration_name": "cosmicraidadminapp",
+        "revision_name": "cosmicraidadminapp-build-2025-11-16-023",
+        "location": "us-central1"
+      }
+    },
+    "timestamp": "2025-11-16T11:41:07.855847Z",
+    "labels": {
+      "instanceId": "0014778296576bd28bd290c18d622ce6fe79e895c2eb10fd9fc265adc75310f77bcb800ce88e80e07f21701422f2817e925a6bf35980725c71f9ada883a54b860dc0af071a06f48365e07268917d",
+      "goog-managed-by": "firebase-app-hosting"
+    },
+    "logName": "projects/studio-5587063777-d2e6c/logs/run.googleapis.com%2Fstderr",
+    "receiveTimestamp": "2025-11-16T11:41:07.861988929Z"
+  },
+  {
+    "textPayload": "    at I (.next/server/chunks/5289.js:13:57446)",
+    "insertId": "6919b853000d0f3ce0795b33",
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "service_name": "cosmicraidadminapp",
+        "project_id": "studio-5587063777-d2e6c",
+        "configuration_name": "cosmicraidadminapp",
+        "location": "us-central1",
+        "revision_name": "cosmicraidadminapp-build-2025-11-16-023"
+      }
+    },
+    "timestamp": "2025-11-16T11:41:07.855868Z",
+    "labels": {
+      "instanceId": "0014778296576bd28bd290c18d622ce6fe79e895c2eb10fd9fc265adc75310f77bcb800ce88e80e07f21701422f2817e925a6bf35980725c71f9ada883a54b860dc0af071a06f48365e07268917d",
+      "goog-managed-by": "firebase-app-hosting"
+    },
+    "logName": "projects/studio-5587063777-d2e6c/logs/run.googleapis.com%2Fstderr",
+    "receiveTimestamp": "2025-11-16T11:41:07.861988929Z"
+  },
+  {
+    "insertId": "6919ba4700067df78ee90765",
+    "httpRequest": {
+      "requestMethod": "GET",
+      "requestUrl": "https://t-3169121662---cosmicraidadminapp-m3psb5v2fa-uc.a.run.app/raid-pile?_rsc=159ak",
+      "requestSize": "1655",
+      "status": 200,
+      "responseSize": "489",
+      "userAgent": "Google",
+      "remoteIp": "64.233.172.76",
+      "referer": "https://cosmicraidadminapp--studio-5587063777-d2e6c.us-central1.hosted.app/settings",
+      "serverIp": "34.143.77.2",
+      "latency": "0.010382639s",
+      "protocol": "HTTP/1.1"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "service_name": "cosmicraidadminapp",
+        "revision_name": "cosmicraidadminapp-build-2025-11-16-023",
+        "project_id": "studio-5587063777-d2e6c",
+        "configuration_name": "cosmicraidadminapp",
+        "location": "us-central1"
+      }
+    },
+    "timestamp": "2025-11-16T11:49:27.396284Z",
+    "severity": "INFO",
+    "labels": {
+      "goog-managed-by": "firebase-app-hosting",
+      "instanceId": "0014778296576bd28bd290c18d622ce6fe79e895c2eb10fd9fc265adc75310f77bcb800ce88e80e07f21701422f2817e925a6bf35980725c71f9ada883a54b860dc0af071a06f48365e07268917d"
+    },
+    "logName": "projects/studio-5587063777-d2e6c/logs/run.googleapis.com%2Frequests",
+    "trace": "projects/studio-5587063777-d2e6c/traces/777c6dc60edc2234acbe2ec3a6ca9f5a",
+    "receiveTimestamp": "2025-11-16T11:49:27.764297293Z",
+    "spanId": "f2c64b82530c95cf",
+    "traceSampled": true
+  },
+  {
+    "insertId": "6919ba4700067c45f94b551c",
+    "httpRequest": {
+      "requestMethod": "GET",
+      "requestUrl": "https://t-3169121662---cosmicraidadminapp-m3psb5v2fa-uc.a.run.app/leaderboard?_rsc=159ak",
+      "requestSize": "1656",
+      "status": 200,
+      "responseSize": "490",
+      "userAgent": "Google",
+      "remoteIp": "64.233.172.104",
+      "referer": "https://cosmicraidadminapp--studio-5587063777-d2e6c.us-central1.hosted.app/settings",
+      "serverIp": "34.143.78.2",
+      "latency": "0.010904186s",
+      "protocol": "HTTP/1.1"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "revision_name": "cosmicraidadminapp-build-2025-11-16-023",
+        "service_name": "cosmicraidadminapp",
+        "location": "us-central1",
+        "configuration_name": "cosmicraidadminapp",
+        "project_id": "studio-5587063777-d2e6c"
+      }
+    },
+    "timestamp": "2025-11-16T11:49:27.398800Z",
+    "severity": "INFO",
+    "labels": {
+      "goog-managed-by": "firebase-app-hosting",
+      "instanceId": "0014778296576bd28bd290c18d622ce6fe79e895c2eb10fd9fc265adc75310f77bcb800ce88e80e07f21701422f2817e925a6bf35980725c71f9ada883a54b860dc0af071a06f48365e07268917d"
+    },
+    "logName": "projects/studio-5587063777-d2e6c/logs/run.googleapis.com%2Frequests",
+    "trace": "projects/studio-5587063777-d2e6c/traces/05e73445e3ff59d6171033b8e5184439",
+    "receiveTimestamp": "2025-11-16T11:49:27.432131483Z",
+    "spanId": "e19c5191ca6ccc33"
+  },
+  {
+    "insertId": "6919ba4700087d6c052e42c3",
+    "httpRequest": {
+      "requestMethod": "GET",
+      "requestUrl": "https://t-3169121662---cosmicraidadminapp-m3psb5v2fa-uc.a.run.app/calendar?_rsc=159ak",
+      "requestSize": "1653",
+      "status": 200,
+      "responseSize": "487",
+      "userAgent": "Google",
+      "remoteIp": "74.125.212.132",
+      "referer": "https://cosmicraidadminapp--studio-5587063777-d2e6c.us-central1.hosted.app/settings",
+      "serverIp": "34.143.73.2",
+      "latency": "0.005583423s",
+      "protocol": "HTTP/1.1"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "project_id": "studio-5587063777-d2e6c",
+        "service_name": "cosmicraidadminapp",
+        "configuration_name": "cosmicraidadminapp",
+        "location": "us-central1",
+        "revision_name": "cosmicraidadminapp-build-2025-11-16-023"
+      }
+    },
+    "timestamp": "2025-11-16T11:49:27.549065Z",
+    "severity": "INFO",
+    "labels": {
+      "goog-managed-by": "firebase-app-hosting",
+      "instanceId": "0014778296576bd28bd290c18d622ce6fe79e895c2eb10fd9fc265adc75310f77bcb800ce88e80e07f21701422f2817e925a6bf35980725c71f9ada883a54b860dc0af071a06f48365e07268917d"
+    },
+    "logName": "projects/studio-5587063777-d2e6c/logs/run.googleapis.com%2Frequests",
+    "trace": "projects/studio-5587063777-d2e6c/traces/9520b346cb180413c3294d6f4ea3ebca",
+    "receiveTimestamp": "2025-11-16T11:49:27.764297293Z",
+    "spanId": "7ea1daa1d96e4762"
+  },
+  {
+    "insertId": "6919ba470009c3b939cd0e18",
+    "httpRequest": {
+      "requestMethod": "GET",
+      "requestUrl": "https://t-3169121662---cosmicraidadminapp-m3psb5v2fa-uc.a.run.app/shoutouts?_rsc=159ak",
+      "requestSize": "1654",
+      "status": 200,
+      "responseSize": "490",
+      "userAgent": "Google",
+      "remoteIp": "74.125.212.164",
+      "referer": "https://cosmicraidadminapp--studio-5587063777-d2e6c.us-central1.hosted.app/settings",
+      "serverIp": "34.143.76.2",
+      "latency": "0.005538908s",
+      "protocol": "HTTP/1.1"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "revision_name": "cosmicraidadminapp-build-2025-11-16-023",
+        "service_name": "cosmicraidadminapp",
+        "location": "us-central1",
+        "configuration_name": "cosmicraidadminapp",
+        "project_id": "studio-5587063777-d2e6c"
+      }
+    },
+    "timestamp": "2025-11-16T11:49:27.632295Z",
+    "severity": "INFO",
+    "labels": {
+      "goog-managed-by": "firebase-app-hosting",
+      "instanceId": "0014778296576bd28bd290c18d622ce6fe79e895c2eb10fd9fc265adc75310f77bcb800ce88e80e07f21701422f2817e925a6bf35980725c71f9ada883a54b860dc0af071a06f48365e07268917d"
+    },
+    "logName": "projects/studio-5587063777-d2e6c/logs/run.googleapis.com%2Frequests",
+    "trace": "projects/studio-5587063777-d2e6c/traces/db041df354fe82fbcd34d30284c0eb0c",
+    "receiveTimestamp": "2025-11-16T11:49:27.764297293Z",
+    "spanId": "dce1add0da133692"
+  },
+  {
+    "insertId": "6919ba47000ad12b59beefa7",
+    "httpRequest": {
+      "requestMethod": "GET",
+      "requestUrl": "https://t-3169121662---cosmicraidadminapp-m3psb5v2fa-uc.a.run.app/dashboard?_rsc=159ak",
+      "requestSize": "1654",
+      "status": 200,
+      "responseSize": "489",
+      "userAgent": "Google",
+      "remoteIp": "66.102.6.42",
+      "referer": "https://cosmicraidadminapp--studio-5587063777-d2e6c.us-central1.hosted.app/settings",
+      "serverIp": "34.143.72.2",
+      "latency": "0.004671022s",
+      "protocol": "HTTP/1.1"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "location": "us-central1",
+        "revision_name": "cosmicraidadminapp-build-2025-11-16-023",
+        "service_name": "cosmicraidadminapp",
+        "project_id": "studio-5587063777-d2e6c",
+        "configuration_name": "cosmicraidadminapp"
+      }
+    },
+    "timestamp": "2025-11-16T11:49:27.702492Z",
+    "severity": "INFO",
+    "labels": {
+      "goog-managed-by": "firebase-app-hosting",
+      "instanceId": "0014778296576bd28bd290c18d622ce6fe79e895c2eb10fd9fc265adc75310f77bcb800ce88e80e07f21701422f2817e925a6bf35980725c71f9ada883a54b860dc0af071a06f48365e07268917d"
+    },
+    "logName": "projects/studio-5587063777-d2e6c/logs/run.googleapis.com%2Frequests",
+    "trace": "projects/studio-5587063777-d2e6c/traces/8eb76f9bbce8220683759b190ce4bd4f",
+    "receiveTimestamp": "2025-11-16T11:49:27.764297293Z",
+    "spanId": "2ec78d45042239ab"
+  }
+]

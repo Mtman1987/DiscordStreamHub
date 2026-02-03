@@ -1,0 +1,176 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 232 40% 9%; /* Darker Blue Background */
+    --foreground: 259 10% 95%;
+    --card: 260 30% 15% / 0.7; /* Translucent Dark Purple */
+    --card-foreground: 259 10% 95%;
+    --popover: 270 10% 10%;
+    --popover-foreground: 259 10% 95%;
+    --primary: 263 80% 65%;
+    --primary-foreground: 263 10% 10%;
+    --secondary: 270 10% 20%;
+    --secondary-foreground: 259 10% 95%;
+    --muted: 270 10% 20%;
+    --muted-foreground: 259 5% 65%;
+    --accent: 263 80% 75%;
+    --accent-foreground: 263 10% 10%;
+    --destructive: 0 62.8% 50.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 270 10% 25%;
+    --input: 270 10% 25%;
+    --ring: 263 80% 70%;
+    --radius: 0.8rem;
+  }
+
+  .dark {
+    /* Same as root for a dark-only theme */
+    --background: 232 40% 9%;
+    --foreground: 259 10% 95%;
+    --card: 260 30% 15% / 0.7; /* Translucent Dark Purple */
+    --card-foreground: 259 10% 95%;
+    --popover: 270 10% 10%;
+    --popover-foreground: 259 10% 95%;
+    --primary: 263 80% 65%;
+    --primary-foreground: 263 10% 10%;
+    --secondary: 270 10% 20%;
+    --secondary-foreground: 259 10% 95%;
+    --muted: 270 10% 20%;
+    --muted-foreground: 259 5% 65%;
+    --accent: 263 80% 75%;
+    --accent-foreground: 263 10% 10%;
+    --destructive: 0 62.8% 50.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 270 10% 25%;
+    --input: 270 10% 25%;
+    --ring: 263 80% 70%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: 'rlig' 1, 'calt' 1;
+    position: relative;
+  }
+}
+
+/* Twinkling Starfield Background */
+@keyframes twinkle {
+  0%,
+  100% {
+    transform: scale(0.9);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
+}
+
+.star-field,
+.star-field-2,
+.star-field-3 {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: -1;
+}
+
+.star-field::before,
+.star-field::after,
+.star-field-2::before,
+.star-field-2::after,
+.star-field-3::before,
+.star-field-3::after {
+  content: '';
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  background: transparent;
+  border-radius: 50%;
+  animation-name: twinkle;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+/* Layer 1 - Small, very slow stars */
+.star-field::before {
+  box-shadow: 5vw 85vh 1px 1px #fff, 15vw 35vh 1px 1px #fff, 25vw 10vh 1px 1px #fff,
+    40vw 80vh 1px 1px #fff, 55vw 20vh 1px 1px #fff, 68vw 45vh 1px 1px #fff,
+    82vw 70vh 1px 1px #fff, 95vw 5vh 1px 1px #fff, 5vw 95vh 1px 1px #fff,
+    90vw 90vh 1px 1px #fff, 33vw 33vh 1px 1px #fff, 66vw 66vh 1px 1px #fff,
+    88vw 12vh 1px 1px #fff, 7vw 5vh 1px 1px #fff, 92vw 30vh 1px 1px #fff,
+    45vw 60vh 1px 1px #fff, 75vw 80vh 1px 1px #fff, 23vw 48vh 1px 1px #fff;
+  animation-duration: 480s;
+}
+
+/* Layer 2 - Larger, very very slow stars */
+.star-field::after {
+  width: 2px;
+  height: 2px;
+  box-shadow: 10vw 10vh 2px 2px #fff, 30vw 70vh 2px 2px #fff, 50vw 40vh 2px 2px #fff,
+    70vw 5vh 2px 2px #fff, 90vw 40vh 2px 2px #fff, 45vw 90vh 2px 2px #fff,
+    20vw 55vh 2px 2px #fff, 80vw 25vh 2px 2px #fff, 18vw 82vh 2px 2px #fff,
+    58vw 8vh 2px 2px #fff, 83vw 95vh 2px 2px #fff, 37vw 22vh 2px 2px #fff;
+  animation-duration: 540s;
+  animation-delay: -3s;
+}
+
+/* Layer 3 - Medium, slow stars */
+.star-field-2::before {
+  width: 1.5px;
+  height: 1.5px;
+  box-shadow: 8vw 25vh 1.5px 1.5px #fff, 28vw 90vh 1.5px 1.5px #fff,
+    48vw 5vh 1.5px 1.5px #fff, 62vw 60vh 1.5px 1.5px #fff, 85vw 15vh 1.5px 1.5px #fff,
+    98vw 80vh 1.5px 1.5px #fff, 3vw 40vh 1.5px 1.5px #fff, 22vw 72vh 1.5px 1.5px #fff,
+    51vw 28vh 1.5px 1.5px #fff, 77vw 52vh 1.5px 1.5px #fff, 93vw 88vh 1.5px 1.5px #fff;
+  animation-duration: 510s;
+  animation-delay: -1.5s;
+}
+
+/* Layer 4 - Tiny, faster stars (but still slow) */
+.star-field-2::after {
+  width: 0.5px;
+  height: 0.5px;
+  box-shadow: 2vw 15vh 0.5px 0.5px #fff, 12vw 65vh 0.5px 0.5px #fff, 22vw 30vh 0.5px 0.5px #fff,
+    32vw 95vh 0.5px 0.5px #fff, 42vw 45vh 0.5px 0.5px #fff, 52vw 85vh 0.5px 0.5px #fff,
+    62vw 25vh 0.5px 0.5px #fff, 72vw 75vh 0.5px 0.5px #fff, 82vw 10vh 0.5px 0.5px #fff,
+    92vw 55vh 0.5px 0.5px #fff, 4vw 78vh 0.5px 0.5px #fff, 34vw 18vh 0.5px 0.5px #fff,
+    64vw 92vh 0.5px 0.5px #fff, 84vw 38vh 0.5px 0.5px #fff, 99vw 72vh 0.5px 0.5px #fff;
+  animation-duration: 450s;
+  animation-delay: -0.5s;
+}
+
+/* Layer 5 - More small, very slow stars */
+.star-field-3::before {
+  box-shadow: 60vw 15vh 1px 1px #fff, 5vw 45vh 1px 1px #fff, 80vw 55vh 1px 1px #fff,
+    35vw 90vh 1px 1px #fff, 12vw 22vh 1px 1px #fff, 94vw 75vh 1px 1px #fff,
+    28vw 65vh 1px 1px #fff, 73vw 18vh 1px 1px #fff, 49vw 3vh 1px 1px #fff,
+    99vw 40vh 1px 1px #fff, 19vw 88vh 1px 1px #fff, 69vw 29vh 1px 1px #fff,
+    42vw 98vh 1px 1px #fff, 87vw 33vh 1px 1px #fff, 21vw 58vh 1px 1px #fff,
+    56vw 82vh 1px 1px #fff, 78vw 41vh 1px 1px #fff, 31vw 11vh 1px 1px #fff;
+  animation-duration: 500s;
+  animation-delay: -5s;
+}
+
+/* Layer 6 - More tiny, very slow stars */
+.star-field-3::after {
+  width: 0.5px;
+  height: 0.5px;
+  box-shadow: 14vw 28vh 0.5px 0.5px #fff, 38vw 82vh 0.5px 0.5px #fff, 63vw 8vh 0.5px 0.5px #fff,
+    81vw 60vh 0.5px 0.5px #fff, 4vw 90vh 0.5px 0.5px #fff, 96vw 20vh 0.5px 0.5px #fff,
+    26vw 40vh 0.5px 0.5px #fff, 71vw 85vh 0.5px 0.5px #fff, 53vw 30vh 0.5px 0.5px #fff,
+    89vw 70vh 0.5px 0.5px #fff, 11vw 5vh 0.5px 0.5px #fff, 47vw 50vh 0.5px 0.5px #fff,
+    67vw 95vh 0.5px 0.5px #fff, 84vw 48vh 0.5px 0.5px #fff, 3vw 68vh 0.5px 0.5px #fff;
+  animation-duration: 460s;
+  animation-delay: -2s;
+}

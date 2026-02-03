@@ -1,0 +1,18 @@
+name: Twitch Polling Cron
+
+on:
+  schedule:
+    # Run every 5 minutes
+    - cron: '*/5 * * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Twitch Poll
+        run: |
+          curl -X POST "${{ secrets.APP_URL }}/api/cron/poll" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            -d '{"serverId": "${{ secrets.DISCORD_SERVER_ID }}"}'

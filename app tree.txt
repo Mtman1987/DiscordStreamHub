@@ -1,0 +1,142 @@
+.
+├── .env
+├── README.md
+├── apphosting.yaml
+├── components.json
+├── docs/
+│   └── backend.json
+├── full_app_code.txt
+├── next.config.ts
+├── package.json
+├── tailwind.config.ts
+├── tsconfig.json
+└── src/
+    ├── README.md
+    ├── ai/
+    │   ├── dev.ts
+    │   ├── flows/
+    │   │   ├── generate-calendar-image.ts
+    │   │   ├── generate-leaderboard-image.ts
+    │   │   └── generate-tailored-shoutouts.ts
+    │   └── genkit.ts
+    ├── app/
+    │   ├── (app)/
+    │   │   ├── _components/
+    │   │   │   ├── main-nav.tsx
+    │   │   │   └── user-nav.tsx
+    │   │   ├── calendar/
+    │   │   │   ├── _components/
+    │   │   │   │   └── calendar-display.tsx
+    │   │   │   └── page.tsx
+    │   │   ├── dashboard/
+    │   │   │   ├── _components/
+    │   │   │   │   ├── leaderboard-snapshot.tsx
+    │   │   │   │   ├── recent-shoutouts.tsx
+    │   │   │   │   └── upcoming-events.tsx
+    │   │   │   └── page.tsx
+    │   │   ├── forwarding/
+    │   │   │   └── page.tsx
+    │   │   ├── layout.tsx
+    │   │   ├── leaderboard/
+    │   │   │   ├── _components/
+    │   │   │   │   └── points-config.tsx
+    │   │   │   └── page.tsx
+    │   │   ├── settings/
+    │   │   │   ├── _components/
+    │   │   │   │   ├── admin-role-settings.tsx
+    │   │   │   │   └── ui-settings.tsx
+    │   │   │   └── page.tsx
+    │   │   └── shoutouts/
+    │   │       ├── [group]/
+    │   │       │   ├── _components/
+    │   │       │   │   └── community-spotlight.tsx
+    │   │       │   └── page.tsx
+    │   │       ├── _components/
+    │   │       │   ├── shoutout-dashboard.tsx
+    │   │       │   └── shoutout-list.tsx
+    │   │       └── page.tsx
+    │   ├── api/
+    │   │   └── discord/
+    │   │       └── route.ts
+    │   ├── headless/
+    │   │   ├── calendar/
+    │   │   │   └── [serverId]/
+    │   │   │       └── page.tsx
+    │   │   └── leaderboard/
+    │   │       └── [serverId]/
+    │   │           └── page.tsx
+    │   ├── globals.css
+    │   ├── layout.tsx
+    │   ├── login/
+    │   │   └── page.tsx
+    │   └── page.tsx
+    ├── components/
+    │   ├── ui/
+    │   │   ├── accordion.tsx
+    │   │   ├── alert.tsx
+    │   │   ├── alert-dialog.tsx
+    │   │   ├── avatar.tsx
+    │   │   ├── badge.tsx
+    │   │   ├── button.tsx
+    │   │   ├── calendar.tsx
+    │   │   ├── card.tsx
+    │   │   ├── carousel.tsx
+    │   │   ├── chart.tsx
+    │   │   ├── checkbox.tsx
+    │   │   ├── collapsible.tsx
+    │   │   ├── dialog.tsx
+    │   │   ├── dropdown-menu.tsx
+    │   │   ├── form.tsx
+    │   │   ├── input.tsx
+    │   │   ├── label.tsx
+    │   │   ├── menubar.tsx
+    │   │   ├── popover.tsx
+    │   │   ├── progress.tsx
+    │   │   ├── radio-group.tsx
+    │   │   ├── scroll-area.tsx
+    │   │   ├── select.tsx
+    │   │   ├── separator.tsx
+    │   │   ├── sheet.tsx
+    │   │   ├── sidebar.tsx
+    │   │   ├── skeleton.tsx
+    │   │   ├── slider.tsx
+    │   │   ├── switch.tsx
+    │   │   ├── table.tsx
+    │   │   ├── tabs.tsx
+    │   │   ├── textarea.tsx
+    │   │   ├── toast.tsx
+    │   │   ├── toaster.tsx
+    │   │   └── tooltip.tsx
+    │   ├── FirebaseErrorListener.tsx
+    │   ├── copy-button.tsx
+    │   ├── page-header.tsx
+    │   └── theme-provider.tsx
+    ├── docs/
+    │   └── backend.json
+    ├── firebase/
+    │   ├── firestore/
+    │   │   ├── use-collection.tsx
+    │   │   └── use-doc.tsx
+    │   ├── client-provider.tsx
+    │   ├── config.ts
+    │   ├── error-emitter.ts
+    │   ├── errors.ts
+    │   ├── index.ts
+    │   ├── non-blocking-login.tsx
+    │   ├── non-blocking-updates.tsx
+    │   ├── provider.tsx
+    │   └── server-init.ts
+    ├── hooks/
+    │   ├── use-is-client.tsx
+    │   ├── use-mobile.tsx
+    │   └── use-toast.ts
+    └── lib/
+        ├── actions.ts
+        ├── community-shoutout-service.ts
+        ├── data.ts
+        ├── forwarding-service.ts
+        ├── placeholder-images.json
+        ├── placeholder-images.ts
+        ├── reply-service.ts
+        ├── types.ts
+        └── utils.ts

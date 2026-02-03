@@ -1,0 +1,42 @@
+{
+  "appId": "com.spacemountain.cosmicraid",
+  "productName": "Cosmic Raid Local Services",
+  "copyright": "Copyright © 2024 Mtman1987",
+  "directories": {
+    "output": "dist"
+  },
+  "files": [
+    "electron-main.js",
+    "package.json",
+    "scripts/",
+    "src/",
+    "public/",
+    ".env",
+    "next.config.ts",
+    "tailwind.config.ts",
+    "postcss.config.mjs",
+    "tsconfig.json",
+    "components.json",
+    "node_modules/"
+  ],
+  "win": {
+    "target": "nsis",
+    "icon": "public/CosmicRaid.ico",
+    "publisherName": "Space Mountain Studios",
+    "verifyUpdateCodeSignature": false
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "🚀 Cosmic Raid Local Services",
+
+    "installerIcon": "public/CosmicRaid.ico",
+    "uninstallerIcon": "public/CosmicRaid.ico",
+    "displayLanguageSelector": false,
+    "language": "1033",
+    "runAfterFinish": true,
+    "menuCategory": "Space Mountain Studios"
+  }
+}

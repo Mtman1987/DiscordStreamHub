@@ -1,0 +1,33 @@
+# Settings to manage and configure a Firebase App Hosting backend.
+# https://firebase.google.com/docs/app-hosting/configure
+
+runConfig:
+  maxInstances: 1
+
+  env:
+    # Discord
+    DISCORD_BOT_TOKEN: ${secret:DISCORD_BOT_TOKEN}
+    DISCORD_CLIENT_ID: ${secret:DISCORD_CLIENT_ID}
+    DISCORD_CLIENT_SECRET: ${secret:DISCORD_CLIENT_SECRET}
+    DISCORD_APP_ID: ${secret:DISCORD_APP_ID}
+    DISCORD_PUBLIC_KEY: ${secret:DISCORD_PUBLIC_KEY}
+    HARDCODED_GUILD_ID: ${secret:HARDCODED_GUILD_ID}
+    HARDCODED_ADMIN_DISCORD_ID: ${secret:HARDCODED_ADMIN_DISCORD_ID}
+    DISCORD_VIP_CHANNEL_ID: ${secret:DISCORD_VIP_CHANNEL_ID}
+    DISCORD_WEBHOOK_URL: ${secret:DISCORD_WEBHOOK_URL}
+
+    # Twitch
+    TWITCH_CLIENT_ID: ${secret:TWITCH_CLIENT_ID}
+    TWITCH_CLIENT_SECRET: ${secret:TWITCH_CLIENT_SECRET}
+    TWITCH_ID: ${secret:TWITCH_ID}
+    HARDCODED_ADMIN_TWITCH_ID: ${secret:HARDCODED_ADMIN_TWITCH_ID}
+
+    # Services
+    GEMINI_API_KEY: ${secret:GEMINI_API_KEY}
+    FREE_CONVERT_API_KEY: ${secret:FREE_CONVERT_API_KEY}
+    SHOTSTACK_API_KEY: ${secret:SHOTSTACK_API_KEY}
+    BOT_SECRET_KEY: ${secret:BOT_SECRET_KEY}
+    VIP_ENABLE_TEST_LIVE: ${secret:VIP_ENABLE_TEST_LIVE}
+    
+    # App Hosting URL
+    NEXT_PUBLIC_BASE_URL: ${secret:NEXT_PUBLIC_BASE_URL}

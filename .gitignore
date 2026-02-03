@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Output
+.next/
+dist/
+build/
+
+# Env / secrets
+.env
+.env.local*
+.env.*
+*.key
+*.p12
+*-firebase-adminsdk-*.json
+.firebase-config
+.firebase-config
+firebase-debug.log*
+
+# OS / tooling
+.DS_Store
+Thumbs.db
+npm-debug.log*
+package-lock.json.LOCK
+
+# Generated configs
+*.tsbuildinfo
+
+# Space Mountain launcher artifacts
+.launcher-install.json
+.space-mountain/
