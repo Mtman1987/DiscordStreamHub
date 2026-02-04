@@ -6,7 +6,10 @@ import { db } from '@/firebase/server-init';
 let initialized = false;
 
 export async function initializeApp() {
-  if (initialized) return;
+  if (initialized) {
+    console.log('[AppInit] Already initialized, skipping');
+    return;
+  }
   
   console.log('[AppInit] Starting application initialization...');
   
@@ -33,6 +36,5 @@ export async function initializeApp() {
   }
 }
 
-if (typeof window === 'undefined') {
-  initializeApp().catch(console.error);
-}
+// DO NOT auto-initialize - let startup route handle it
+// This prevents multiple instances during hot reload in dev mode

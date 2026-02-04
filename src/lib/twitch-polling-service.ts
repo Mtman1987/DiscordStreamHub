@@ -15,6 +15,8 @@ class TwitchPollingService {
   private pollingStates: Map<string, PollingState> = new Map();
   private readonly POLLING_INTERVAL = 10 * 60 * 1000; // 10 minutes
   private readonly SHOUTOUT_COOLDOWN = 60 * 60 * 1000; // 1 hour
+  private readonly TWITCH_RATE_DELAY = 1200; // 1.2s between Twitch API calls (50/min limit)
+  private readonly DISCORD_RATE_DELAY = 600; // 0.6s between Discord API calls (100/min limit)
   private static instance: TwitchPollingService | null = null;
   private initialized = false;
 
@@ -53,30 +55,29 @@ class TwitchPollingService {
 
   async startPolling(serverId: string): Promise<void> {
     if (this.pollingStates.has(serverId)) {
-      throw new Error('Polling is already active for this server');
+      console.log(`[TwitchPolling] Polling already active for server ${serverId}`);
+      return;
     }
 
     console.log(`[TwitchPolling] Starting polling for server ${serverId}`);
 
-    // Initialize polling state
     const state: PollingState = {
       isPolling: true,
       serverId,
       lastShoutouts: await this.loadLastShoutouts(serverId)
     };
 
-    // Start the polling loop
+    // Start the polling loop - runs every 10 minutes
     state.intervalId = setInterval(() => {
       this.pollTwitchStreams(serverId);
     }, this.POLLING_INTERVAL);
 
     this.pollingStates.set(serverId, state);
-
-    // Save polling state to database
     await this.savePollingState(serverId, true);
 
-    // Do initial poll
+    // Do initial poll immediately
     await this.pollTwitchStreams(serverId);
+    console.log(`[TwitchPolling] Polling started - will run every ${this.POLLING_INTERVAL / 60000} minutes`);
   }
 
   async stopPolling(serverId: string): Promise<void> {
@@ -102,53 +103,68 @@ class TwitchPollingService {
       const state = this.pollingStates.get(serverId);
       if (!state || !state.isPolling) return;
 
+      console.log(`[TwitchPolling] Starting poll cycle for server ${serverId}`);
       const linkedUsers = await this.getLinkedTwitchUsers(serverId);
-      if (linkedUsers.length === 0) return;
-
-      console.log(`[TwitchPolling] Checking ${linkedUsers.length} linked users for server ${serverId}`);
-
-      for (const user of linkedUsers) {
-        await this.checkUserStream(serverId, user, state);
-        // Wait 1 second between each user to avoid rate limits
-        await new Promise(resolve => setTimeout(resolve, 1000));
+      if (linkedUsers.length === 0) {
+        console.log(`[TwitchPolling] No linked users found`);
+        return;
       }
 
-      // Rotate community spotlight every 10 minutes
+      console.log(`[TwitchPolling] Checking ${linkedUsers.length} linked users`);
+
+      // Get all stream statuses in one batch call (Twitch allows 100 per request)
+      const logins = linkedUsers.map(u => u.twitchLogin);
+      const { getStreamByLogin } = await import('./twitch-api-service');
+      
+      const streamStatuses = new Map<string, any>();
+      for (const user of linkedUsers) {
+        const stream = await getStreamByLogin(user.twitchLogin);
+        streamStatuses.set(user.discordUserId, stream);
+        await this.delay(this.TWITCH_RATE_DELAY); // Rate limit: 1.2s between calls
+      }
+
+      console.log(`[TwitchPolling] Found ${Array.from(streamStatuses.values()).filter(s => s).length} live streams`);
+
+      // Process each user with rate limiting
+      for (const user of linkedUsers) {
+        const stream = streamStatuses.get(user.discordUserId);
+        const shoutoutState = await this.getShoutoutState(serverId, user.discordUserId);
+
+        if (stream) {
+          // User is live
+          if (shoutoutState?.messageId) {
+            // Update existing shoutout
+            await this.updateShoutout(serverId, user.discordUserId, stream, shoutoutState);
+          } else {
+            // Post new shoutout
+            await this.postNewShoutout(serverId, user.discordUserId, user.twitchLogin, stream, state);
+          }
+          await this.delay(this.DISCORD_RATE_DELAY); // Rate limit Discord calls
+        } else {
+          // User went offline - delete shoutout
+          if (shoutoutState?.messageId) {
+            await this.deleteShoutout(serverId, user.discordUserId, shoutoutState);
+            await this.delay(this.DISCORD_RATE_DELAY); // Rate limit Discord calls
+          }
+        }
+      }
+
+      // Rotate community spotlight
       const { manageCommunitySpotlight } = await import('./community-spotlight-service');
       await manageCommunitySpotlight(serverId);
 
+      console.log(`[TwitchPolling] Poll cycle completed for server ${serverId}`);
     } catch (error) {
       console.error(`[TwitchPolling] Error polling streams for server ${serverId}:`, error);
     }
   }
 
+  private delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
   private async checkUserStream(serverId: string, user: any, state: PollingState): Promise<void> {
-    try {
-      const { twitchLogin, discordUserId } = user;
-
-      // Check if user is currently streaming
-      const stream = await getStreamByLogin(twitchLogin);
-      const shoutoutState = await this.getShoutoutState(serverId, discordUserId);
-
-      if (stream) {
-        // User is live
-        if (shoutoutState?.messageId) {
-          // Update existing shoutout
-          await this.updateShoutout(serverId, discordUserId, stream, shoutoutState);
-        } else {
-          // Post new shoutout
-          await this.postNewShoutout(serverId, discordUserId, twitchLogin, stream, state);
-        }
-      } else {
-        // User went offline
-        if (shoutoutState?.messageId) {
-          await this.deleteShoutout(serverId, discordUserId, shoutoutState);
-        }
-      }
-
-    } catch (error) {
-      console.error(`[TwitchPolling] Error checking stream for ${user.twitchLogin}:`, error);
-    }
+    // This method is no longer used - replaced by pollTwitchStreams batch processing
   }
 
   private async postNewShoutout(serverId: string, discordUserId: string, twitchLogin: string, stream: any, state: PollingState): Promise<void> {
@@ -425,7 +441,6 @@ class TwitchPollingService {
 }
 
 const twitchPollingService = TwitchPollingService.getInstance();
-twitchPollingService.initialize();
 
 // Cleanup on process exit
 if (typeof process !== 'undefined') {
@@ -450,4 +465,8 @@ export async function stopTwitchPolling(serverId: string): Promise<void> {
 
 export async function getTwitchPollingStatus(serverId: string): Promise<boolean> {
   return twitchPollingService.getPollingStatus(serverId);
+}
+
+export async function initializeTwitchPolling(): Promise<void> {
+  return twitchPollingService.initialize();
 }

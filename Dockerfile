@@ -1,6 +1,5 @@
 FROM node:20-slim
 
-# Install FFmpeg only (remove Chromium/Puppeteer deps)
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
@@ -8,11 +7,13 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm ci --only=production --legacy-peer-deps
 
 COPY . .
 RUN npm run build
 
 EXPOSE 3000
+
+ENV NODE_ENV=production
 
 CMD ["npm", "start"]

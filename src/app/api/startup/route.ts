@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { startPolling } from '@/lib/polling-service';
-import { startAutomatedShoutouts } from '@/lib/automated-shoutout-system';
+import { initializeTwitchPolling } from '@/lib/twitch-polling-service';
 
 const HARDCODED_SERVER_ID = process.env.HARDCODED_GUILD_ID || '1240832965865635881';
 
@@ -8,13 +7,9 @@ export async function POST(request: NextRequest) {
   try {
     console.log('[Startup] Initializing automated services...');
     
-    // Start polling service
-    await startPolling(HARDCODED_SERVER_ID);
-    console.log('[Startup] Polling service started');
-    
-    // Start automated shoutouts
-    await startAutomatedShoutouts(HARDCODED_SERVER_ID);
-    console.log('[Startup] Automated shoutouts started');
+    // Initialize twitch polling service (checks DB for active servers)
+    await initializeTwitchPolling();
+    console.log('[Startup] Twitch polling service initialized');
     
     return NextResponse.json({ 
       success: true, 

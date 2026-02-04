@@ -4,15 +4,13 @@ import { cn } from '@/lib/utils';
 import { Toaster } from '@/components/ui/toaster';
 import { ThemeProvider } from '@/components/theme-provider';
 import { FirebaseComponentsProvider } from '@/firebase';
-import { initializeApp } from '@/lib/app-init';
 
 export const metadata: Metadata = {
   title: "Discord Streamer's Hub",
   description: 'Manage your Discord community with AI-powered tools.',
 };
 
-// Initialize polling on server startup
-initializeApp();
+// Polling initialization moved to /api/startup route to prevent hot reload issues
 
 export default function RootLayout({
   children,
