@@ -4,7 +4,15 @@ node_modules
 .env
 .env.local
 *.log
-*.md
+README.md
+DEPLOYMENT*.md
+RATE_LIMITING.md
+POLLING_DIAGRAM.md
+PROJECT_STATUS.md
+QUICK_REFERENCE.md
+READY_TO_DEPLOY.md
+PRE_FLIGHT_CHECKLIST.md
+DEPLOY_MANUAL.md
 .github
 .idx
 docs
@@ -13,6 +21,5 @@ twitch-video-url-finder-master
 public/downloaded-logs-*.json
 *.bat
 *.sh
-*.txt
 full_app_code.txt
 app tree.txt

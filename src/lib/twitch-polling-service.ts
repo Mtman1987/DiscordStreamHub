@@ -150,8 +150,12 @@ class TwitchPollingService {
       }
 
       // Rotate community spotlight
-      const { manageCommunitySpotlight } = await import('./community-spotlight-service');
-      await manageCommunitySpotlight(serverId);
+      try {
+        const { manageCommunitySpotlight } = await import('./community-spotlight-service');
+        await manageCommunitySpotlight(serverId);
+      } catch (spotlightError) {
+        console.error(`[TwitchPolling] Spotlight error:`, spotlightError);
+      }
 
       console.log(`[TwitchPolling] Poll cycle completed for server ${serverId}`);
     } catch (error) {
@@ -267,35 +271,44 @@ class TwitchPollingService {
         timestamp: new Date().toISOString()
       };
     } else if (group === 'Honored Guests') {
+      const { getUserByLogin } = await import('./twitch-api-service');
+      const userInfo = await getUserByLogin(twitchLogin);
+      
       embed = {
         title: `🚨 **${stream.user_name}** is now LIVE on Twitch!`,
         description: `**${stream.title}**\n🎮 Playing: ${stream.game_name}\n👥 Viewers: ${stream.viewer_count}\n\n✨ *Honored Guest*`,
         url: `https://twitch.tv/${twitchLogin}`,
         color: 0xFF8C00,
-        thumbnail: { url: 'https://static-cdn.jtvnw.net/ttv-boxart/twitch-logo.png' },
+        thumbnail: { url: userInfo?.profile_image_url || 'https://static-cdn.jtvnw.net/ttv-boxart/twitch-logo.png' },
         image: { url: stream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080') },
         footer: { text: 'Twitch • Honored Guest' },
         timestamp: new Date().toISOString()
       };
     } else if (group === 'Raid Pile') {
+      const { getUserByLogin } = await import('./twitch-api-service');
+      const userInfo = await getUserByLogin(twitchLogin);
+      
       embed = {
         title: `🚨 **${stream.user_name}** is now LIVE on Twitch!`,
         description: `**${stream.title}**\n🎮 Playing: ${stream.game_name}\n👥 Viewers: ${stream.viewer_count}`,
         url: `https://twitch.tv/${twitchLogin}`,
         color: 0x4ECDC4,
-        thumbnail: { url: 'https://static-cdn.jtvnw.net/ttv-boxart/twitch-logo.png' },
+        thumbnail: { url: userInfo?.profile_image_url || 'https://static-cdn.jtvnw.net/ttv-boxart/twitch-logo.png' },
         image: { url: stream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080') },
         footer: { text: 'Twitch • Raid Pile Shoutout 🎯' },
         timestamp: new Date().toISOString()
       };
     } else {
-      // Everyone Else
+      // Everyone Else - fetch user profile image
+      const { getUserByLogin } = await import('./twitch-api-service');
+      const userInfo = await getUserByLogin(twitchLogin);
+      
       embed = {
         title: `🚨 **${stream.user_name}** is now LIVE on Twitch!`,
         description: `**${stream.title}**\n🎮 Playing: ${stream.game_name}\n👥 Viewers: ${stream.viewer_count}`,
         url: `https://twitch.tv/${twitchLogin}`,
         color: 0x9146FF,
-        thumbnail: { url: 'https://static-cdn.jtvnw.net/ttv-boxart/twitch-logo.png' },
+        thumbnail: { url: userInfo?.profile_image_url || 'https://static-cdn.jtvnw.net/ttv-boxart/twitch-logo.png' },
         image: { url: stream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080') },
         footer: { text: 'Twitch • Mountaineer Shoutout' },
         timestamp: new Date().toISOString()

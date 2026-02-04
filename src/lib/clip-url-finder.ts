@@ -1,23 +1,6 @@
 'use server';
 
-import path from 'path';
-
-let findClipFileUrl: any = null;
-
-// Only initialize Puppeteer if available (local dev)
-try {
-  const twitchUrlFinder = require(path.join(process.cwd(), 'twitch-video-url-finder-master', 'index.js'));
-  findClipFileUrl = twitchUrlFinder(
-    process.platform === 'win32' 
-      ? 'C:/Program Files/Google/Chrome/Application/chrome.exe'
-      : '/usr/bin/google-chrome-stable',
-    ['--no-sandbox', '--disable-setuid-sandbox']
-  );
-  console.log('[ClipUrlFinder] Puppeteer initialized');
-} catch (error) {
-  console.log('[ClipUrlFinder] Puppeteer not available, will use fallback');
-}
-
+// Clip URL finder - uses Twitch API fallback only in production
 export async function getClipVideoUrl(clipUrl: string): Promise<string | null> {
   try {
     // Extract clip slug from URL (e.g., https://www.twitch.tv/username/clip/ClipSlug)
