@@ -9,7 +9,7 @@ import {
   deleteDoc,
   query,
 } from 'firebase/firestore';
-import { useFirestore, useUser, useDoc, useCollection } from '@/firebase';
+import { useFirestore, useUser, useDoc, useCollection, useMemoFirebase } from '@/firebase';
 import {
   Dialog,
   DialogContent,
@@ -62,7 +62,7 @@ function SimpleEventList({ serverId }: { serverId: string | null }) {
     const firestore = useFirestore();
     const [currentMonthName, setCurrentMonthName] = React.useState(format(new Date(), 'MMMM'));
 
-    const allEventsQuery = React.useMemo(() => {
+    const allEventsQuery = useMemoFirebase(() => {
         if (!firestore || !serverId) return null;
         return collection(firestore, 'servers', serverId, 'calendarEvents');
     }, [firestore, serverId]);
@@ -134,7 +134,7 @@ export default function CalendarPage() {
   const [isEventDialogOpen, setIsEventDialogOpen] = React.useState(false);
   const [isLogDialogOpen, setIsLogDialogOpen] = React.useState(false);
   const [isSaving, setIsSaving] = React.useState(false);
-  const [channelIdInput, setChannelIdInput] = React.useState('');
+  const [selectedChannelId, setSelectedChannelId] = React.useState('');
   const [isPostingCalendar, setIsPostingCalendar] = React.useState(false);
   
   // State for the confirmation dialog
@@ -148,10 +148,18 @@ export default function CalendarPage() {
     const storedChannelId = localStorage.getItem('calendarChannelId');
     if (storedServerId) setServerId(storedServerId);
     if (storedUserId) setCurrentUserId(storedUserId);
-    if (storedChannelId) setChannelIdInput(storedChannelId);
+    if (storedChannelId) setSelectedChannelId(storedChannelId);
   }, []);
 
-  const allEventsQuery = React.useMemo(() => {
+  const channelsConfigRef = React.useMemo(() => {
+    if (!firestore || !serverId) return null;
+    return doc(firestore, 'servers', serverId, 'config', 'channels');
+  }, [firestore, serverId]);
+
+  const { data: channelsData } = useDoc<{ list: Array<{ id: string; name: string }> }>(channelsConfigRef);
+  const channels = channelsData?.list ?? [];
+
+  const allEventsQuery = useMemoFirebase(() => {
     if (!firestore || !serverId) return null;
     return collection(firestore, 'servers', serverId, 'calendarEvents');
   }, [firestore, serverId]);
@@ -397,12 +405,11 @@ export default function CalendarPage() {
       return;
     }
 
-    const channelId = channelIdInput.trim();
-    if (!channelId) {
+    if (!selectedChannelId) {
       toast({
         variant: 'destructive',
         title: 'Channel required',
-        description: 'Enter a Discord channel ID to post the calendar.',
+        description: 'Select a Discord channel to post the calendar.',
       });
       return;
     }
@@ -412,7 +419,7 @@ export default function CalendarPage() {
       const response = await fetch('/api/calendar/post', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ serverId, channelId }),
+        body: JSON.stringify({ serverId, channelId: selectedChannelId }),
       });
 
       const data = await response.json();
@@ -420,7 +427,7 @@ export default function CalendarPage() {
         throw new Error(data.error || 'Failed to send calendar.');
       }
 
-      localStorage.setItem('calendarChannelId', channelId);
+      localStorage.setItem('calendarChannelId', selectedChannelId);
       toast({
         title: 'Calendar dispatched',
         description: 'The latest calendar image was posted to Discord.',
@@ -581,14 +588,19 @@ export default function CalendarPage() {
                 </DialogContent>
             </Dialog>
 
-            <div className="flex w-full flex-wrap items-center gap-2 rounded-xl border border-white/20 bg-white/5 p-2 text-sm sm:w-auto sm:flex-nowrap">
-              <Input
-                id="calendar_channel_id"
-                placeholder="Discord channel ID"
-                value={channelIdInput}
-                onChange={(event) => setChannelIdInput(event.target.value)}
-                className="min-w-[220px] flex-1 border-white/30 bg-black/30 text-white placeholder:text-white/60"
-              />
+            <div className="flex w-full flex-wrap items-center gap-2 rounded-xl border bg-secondary/50 p-2 text-sm sm:w-auto sm:flex-nowrap">
+              <Select value={selectedChannelId} onValueChange={setSelectedChannelId}>
+                <SelectTrigger className="min-w-[220px] flex-1">
+                  <SelectValue placeholder="Select channel" />
+                </SelectTrigger>
+                <SelectContent>
+                  {channels.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      #{c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Button
                 type="button"
                 variant="secondary"
@@ -614,25 +626,12 @@ export default function CalendarPage() {
         <MissionLogCard missionEvents={missionEvents} todaysCaptain={todaysCaptain} />
       </div>
 
-        <div className="grid gap-6 md:grid-cols-2">
-          <Card className="bg-white/5 border-white/10 text-white">
-            <CardHeader>
-              <CardTitle>Interactive Calendar</CardTitle>
-              <CardDescription className="text-blue-200">Tap a day to inspect events or logs.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <CalendarDisplay serverId={serverId} />
-            </CardContent>
-          </Card>
-          <SimpleEventList serverId={serverId} />
-        </div>
-
-        <Card className="bg-white/5 border-white/10 text-white">
+        <Card>
           <CardHeader>
             <CardTitle>Mission Tips</CardTitle>
-            <CardDescription className="text-blue-200">How to keep the fleet organized.</CardDescription>
+            <CardDescription>How to keep the fleet organized.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3 text-sm text-blue-100">
+          <CardContent className="space-y-3 text-sm">
             <p>• Captain’s Log reserves a day on the calendar and updates the Discord embed automatically.</p>
             <p>• Add Mission schedules community operations and keeps the mission log in sync.</p>
             <p>• Removing an entry refreshes the embed via the new `/api/calendar/refresh` endpoint.</p>

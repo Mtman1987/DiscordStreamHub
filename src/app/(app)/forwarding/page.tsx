@@ -13,7 +13,7 @@ import { Send, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { formatDistanceToNow } from 'date-fns';
 import { doc } from 'firebase/firestore';
-import { useDoc, useFirestore } from '@/firebase';
+import { useDoc, useFirestore, useUser, useMemoFirebase } from '@/firebase';
 import Image from 'next/image';
 
 const EmojiPicker = dynamic(() => import('emoji-picker-react'), { ssr: false });
@@ -38,14 +38,23 @@ interface DiscordMessage {
 function ParsedMessageContent({ content, mentions }: { content: string; mentions?: Array<{ id: string; username: string }> }) {
   const parts = React.useMemo(() => {
     if (!content) return [];
+    
+    // Decode HTML entities
+    const decodedContent = content
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>');
+    
     const combinedRegex = /(<@(\d+)>)|(<a?:\w+:(\d+)>)|(https?:\/\/[^\s]+)/g;
     const elements: (string | JSX.Element)[] = [];
     let lastIndex = 0;
     let match;
 
-    while ((match = combinedRegex.exec(content)) !== null) {
+    while ((match = combinedRegex.exec(decodedContent)) !== null) {
       if (match.index > lastIndex) {
-        elements.push(content.substring(lastIndex, match.index));
+        elements.push(decodedContent.substring(lastIndex, match.index));
       }
 
       const [fullMatch, mention, userId, emoji, emojiId, url] = match;
@@ -88,8 +97,8 @@ function ParsedMessageContent({ content, mentions }: { content: string; mentions
       lastIndex = match.index + fullMatch.length;
     }
 
-    if (lastIndex < content.length) {
-      elements.push(content.substring(lastIndex));
+    if (lastIndex < decodedContent.length) {
+      elements.push(decodedContent.substring(lastIndex));
     }
 
     return elements;
@@ -101,7 +110,9 @@ function ParsedMessageContent({ content, mentions }: { content: string; mentions
 export default function ForwardingPage() {
   const { toast } = useToast();
   const firestore = useFirestore();
+  const { user } = useUser();
   const [serverId, setServerId] = React.useState<string | null>(null);
+  const [userId, setUserId] = React.useState<string | null>(null);
   const [selectedChannelId, setSelectedChannelId] = React.useState<string>('');
   const [messages, setMessages] = React.useState<DiscordMessage[]>([]);
   const [newMessage, setNewMessage] = React.useState<string>('');
@@ -112,9 +123,16 @@ export default function ForwardingPage() {
   const scrollRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
-    const storedServerId = localStorage.getItem('discordServerId');
-    if (storedServerId) setServerId(storedServerId);
+    setServerId(localStorage.getItem('discordServerId'));
+    setUserId(localStorage.getItem('discordUserId'));
   }, []);
+
+  const userProfileRef = useMemoFirebase(() => {
+    if (!firestore || !serverId || !userId || !user) return null;
+    return doc(firestore, 'servers', serverId, 'users', userId);
+  }, [firestore, serverId, userId, user]);
+
+  const { data: userProfile } = useDoc<{ username: string; avatarUrl: string }>(userProfileRef);
 
   React.useEffect(() => {
     const fetchServerEmojis = async () => {
@@ -145,7 +163,9 @@ export default function ForwardingPage() {
       const response = await fetch(`/api/discord/messages?channelId=${channelId}&limit=50`);
       const data = await response.json();
       if (data.messages) {
-        setMessages(data.messages);
+        // Discord API returns messages in reverse chronological order (newest first)
+        // Reverse them so oldest is first (normal chat order)
+        setMessages(data.messages.reverse());
       }
     } catch (error) {
       toast({ variant: 'destructive', title: 'Failed to fetch messages' });
@@ -161,29 +181,53 @@ export default function ForwardingPage() {
   }, [selectedChannelId, fetchMessages]);
 
   React.useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    const viewport = document.querySelector('[data-radix-scroll-area-viewport]');
+    if (viewport) {
+      viewport.scrollTop = viewport.scrollHeight;
     }
   }, [messages]);
 
+  const scrollToBottom = () => {
+    requestAnimationFrame(() => {
+      const viewport = document.querySelector('[data-radix-scroll-area-viewport]');
+      if (viewport) {
+        viewport.scrollTop = viewport.scrollHeight;
+      }
+    });
+  };
+
   const handleSendMessage = async () => {
-    if (!newMessage.trim() || !selectedChannelId || !serverId) return;
+    if (!newMessage.trim() || !selectedChannelId) return;
     setIsSending(true);
     try {
-      const response = await fetch('/api/discord/post', {
+      const response = await fetch('/api/discord/send-as-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          serverId,
           channelId: selectedChannelId,
           content: newMessage,
+          username: userProfile?.username || 'User',
+          avatarUrl: userProfile?.avatarUrl || ''
         }),
       });
       if (response.ok) {
         setNewMessage('');
+        // Reset textarea height
+        const textarea = document.querySelector('textarea');
+        if (textarea) {
+          textarea.style.height = 'auto';
+        }
+        
+        // Refetch messages and scroll to bottom
+        await new Promise(resolve => setTimeout(resolve, 500));
         await fetchMessages(selectedChannelId);
+        scrollToBottom();
+        
         toast({ title: 'Message sent!' });
       } else {
+        const errorData = await response.json();
+        console.error('Send error:', errorData);
+        toast({ variant: 'destructive', title: 'Failed to send message', description: errorData.error });
         throw new Error('Failed to send');
       }
     } catch (error) {
@@ -194,14 +238,11 @@ export default function ForwardingPage() {
   };
 
   return (
-    <div className="space-y-8">
-      <PageHeader
-        title="Discord Messages"
-        description="View and send messages to Discord channels."
-      />
-      <Card className="h-[calc(100vh-200px)] flex flex-col">
+    <div className="h-screen flex flex-col p-8">
+      <Card className="flex-1 flex flex-col overflow-hidden">
         <CardContent className="flex-1 flex flex-col overflow-hidden p-6">
-          <ScrollArea className="flex-1 pr-4" ref={scrollRef}>
+          <ScrollArea className="flex-1 pr-4">
+            <div ref={scrollRef} className="min-h-full">
             {isLoading ? (
               <div className="flex justify-center py-8">
                 <Loader2 className="h-8 w-8 animate-spin" />
@@ -229,6 +270,7 @@ export default function ForwardingPage() {
                 ))}
               </div>
             )}
+            </div>
           </ScrollArea>
           <div className="mt-4 relative">
             <div className="flex gap-2">
@@ -236,21 +278,29 @@ export default function ForwardingPage() {
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}
                 placeholder="Type a message..."
-                className="flex-1 min-h-[120px]"
+                className="flex-1 min-h-[40px] max-h-[200px] resize-none"
+                rows={1}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
                     handleSendMessage();
                   }
                 }}
+                onInput={(e) => {
+                  const target = e.target as HTMLTextAreaElement;
+                  target.style.height = 'auto';
+                  target.style.height = Math.min(target.scrollHeight, 200) + 'px';
+                }}
               />
               <div className="flex flex-col gap-2 w-[200px]">
-                <Button variant="outline" size="icon" onClick={() => setShowEmojiPicker(!showEmojiPicker)} className="w-full">
-                  😀
-                </Button>
-                <Button onClick={handleSendMessage} disabled={!newMessage.trim() || !selectedChannelId || isSending} className="w-full">
-                  {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                </Button>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="icon" onClick={() => setShowEmojiPicker(!showEmojiPicker)} className="flex-1">
+                    😀
+                  </Button>
+                  <Button onClick={handleSendMessage} disabled={!newMessage.trim() || !selectedChannelId || isSending} className="flex-1">
+                    {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  </Button>
+                </div>
                 <Select value={selectedChannelId} onValueChange={setSelectedChannelId}>
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Channel" />

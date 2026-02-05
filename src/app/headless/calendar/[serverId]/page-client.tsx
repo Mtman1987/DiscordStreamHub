@@ -2,16 +2,15 @@
 
 import * as React from 'react';
 import { useSearchParams, useParams } from 'next/navigation';
-import { addMonths, startOfMonth } from 'date-fns';
+import { addMonths, startOfMonth, startOfWeek, endOfWeek, endOfMonth, isSameDay, isSameMonth, format } from 'date-fns';
 import { FirebaseComponentsProvider } from '@/firebase';
 import {
   MissionCalendarCard,
   MissionLogCard,
 } from '@/components/mission-calendar-ui';
 import { useCollection, useFirestore } from '@/firebase';
-import { collection, where, orderBy } from 'firebase/firestore';
+import { collection, where, orderBy, query } from 'firebase/firestore';
 import { CalendarEvent } from '@/lib/types';
-import { format, startOfWeek, endOfWeek, isSameDay, isSameMonth } from 'date-fns';
 
 function HeadlessCalendar() {
   const params = useParams();
@@ -19,7 +18,7 @@ function HeadlessCalendar() {
   const firestore = useFirestore();
 
   const serverId = params.serverId as string;
-  const offset = searchParams.get('offset');
+  const offset = searchParams.get('monthOffset');
   const monthOffset = offset ? parseInt(offset, 10) : 0;
   const today = React.useMemo(() => new Date(), []);
   const month = React.useMemo(
@@ -95,8 +94,8 @@ function HeadlessCalendar() {
 
 
   return (
-    <main className="w-[620px] h-[660px] bg-blue-900 text-white rounded-3xl shadow-xl overflow-hidden p-2.5">
-      <div className="flex flex-col gap-2.5 h-full">
+    <main className="mission-calendar w-[1200px] h-[900px] bg-gradient-to-br from-blue-950 via-blue-900 to-indigo-950 text-white p-8">
+      <div className="flex flex-col gap-6 h-full">
         <MissionCalendarCard
           month={month}
           today={today}

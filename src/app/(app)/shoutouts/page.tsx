@@ -140,19 +140,18 @@ export default function ShoutoutsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#040b1f] via-[#071235] to-[#040818] text-white">
-      <div className="max-w-6xl mx-auto px-6 py-10 space-y-8">
-        <div className="flex items-center gap-4 mb-6">
-          <Link href="/dashboard">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div className="flex-1">
-            <h1 className="text-3xl font-bold">Shoutout Management</h1>
-            <p className="text-muted-foreground">View and manage active stream shoutouts</p>
-          </div>
+    <div className="space-y-8">
+      <div className="flex items-center gap-4">
+        <Link href="/dashboard">
+          <Button variant="ghost" size="icon">
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+        </Link>
+        <div className="flex-1">
+          <h1 className="text-3xl font-bold">Shoutout Management</h1>
+          <p className="text-muted-foreground">View and manage active stream shoutouts</p>
         </div>
+      </div>
 
         <div className="flex gap-3 mb-6">
           <Link href="/shoutouts/crew">
@@ -179,10 +178,10 @@ export default function ShoutoutsPage() {
           </Button>
         </div>
 
-        <Card className="bg-white/5 border-white/10 text-white">
+        <Card>
           <CardHeader>
             <CardTitle>Active Shoutouts ({shoutouts.length})</CardTitle>
-            <CardDescription className="text-blue-200">
+            <CardDescription>
               These users currently have active shoutout states. Delete to force a fresh post on next poll.
             </CardDescription>
           </CardHeader>
@@ -230,7 +229,6 @@ export default function ShoutoutsPage() {
             </ScrollArea>
           </CardContent>
         </Card>
-      </div>
     </div>
   );
 }

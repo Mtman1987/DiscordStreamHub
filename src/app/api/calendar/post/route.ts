@@ -16,35 +16,43 @@ export async function POST(request: NextRequest) {
 
     const monthOffset = 0;
     const imageUrl = await uploadCalendarImageFromGenerator(serverId, monthOffset);
-    const { missionEmbed, calendarEmbed } = await generateCalendarEmbeds(serverId, imageUrl);
+    const { calendarEmbed } = await generateCalendarEmbeds(serverId, imageUrl);
     const components = buildCalendarButtons(serverId);
 
-    // Post to Discord
-    const discordResponse = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/discord/post`, {
+    const botToken = process.env.DISCORD_BOT_TOKEN;
+    if (!botToken) {
+      return NextResponse.json({ error: 'Bot token not configured' }, { status: 500 });
+    }
+
+    const discordResponse = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Authorization': `Bot ${botToken}`,
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify({
-        channelId,
-        embeds: [missionEmbed, calendarEmbed],
+        embeds: [calendarEmbed],
         components,
       }),
     });
 
     if (!discordResponse.ok) {
-      throw new Error('Failed to post to Discord');
+      const errorText = await discordResponse.text();
+      console.error('Discord API error:', errorText);
+      return NextResponse.json({ error: 'Failed to post to Discord' }, { status: discordResponse.status });
     }
 
     const result = await discordResponse.json();
 
     await storeCalendarMessageMeta(serverId, {
       channelId,
-      messageId: result.messageId,
+      messageId: result.id,
       includeButtons: true,
       lastImageUrl: imageUrl,
       monthOffset,
     });
 
-    return NextResponse.json({ success: true, messageId: result.messageId });
+    return NextResponse.json({ success: true, messageId: result.id });
 
   } catch (error) {
     console.error('Calendar post error:', error);

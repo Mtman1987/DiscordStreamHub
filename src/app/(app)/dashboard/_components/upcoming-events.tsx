@@ -38,11 +38,16 @@ export function UpcomingEvents() {
             collection(firestore, 'servers', serverId, 'calendarEvents'),
             where('eventDateTime', '>=', new Date()),
             orderBy('eventDateTime', 'asc'),
-            limit(3)
+            limit(10)
         );
     }, [firestore, serverId]);
 
-    const { data: events, isLoading } = useCollection<CalendarEvent>(eventsRef);
+    const { data: allEvents, isLoading } = useCollection<CalendarEvent>(eventsRef);
+
+    const events = React.useMemo(() => {
+        if (!allEvents) return [];
+        return allEvents.filter(e => e.type !== 'captains-log').slice(0, 3);
+    }, [allEvents]);
 
   return (
     <Card>

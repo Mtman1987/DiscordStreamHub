@@ -1,5 +1,4 @@
-import { doc, getDoc } from 'firebase/firestore';
-import { getFirestore } from '@/firebase/client-app';
+import { db } from '@/firebase/server-init';
 
 export interface ServerBranding {
   serverName: string;
@@ -15,11 +14,9 @@ const SPACE_MOUNTAIN_DEFAULTS: ServerBranding = {
 
 export async function getServerBranding(serverId: string): Promise<ServerBranding> {
   try {
-    const firestore = getFirestore();
-    const brandingRef = doc(firestore, 'servers', serverId, 'config', 'branding');
-    const brandingDoc = await getDoc(brandingRef);
+    const brandingDoc = await db.collection('servers').doc(serverId).collection('config').doc('branding').get();
     
-    if (brandingDoc.exists()) {
+    if (brandingDoc.exists) {
       return { ...SPACE_MOUNTAIN_DEFAULTS, ...brandingDoc.data() };
     }
     

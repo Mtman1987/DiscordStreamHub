@@ -1,24 +1,26 @@
 'use server';
 
-/**
- * @fileOverview This file defines a Genkit flow for generating a leaderboard image.
- * This is a simple wrapper around a Puppeteer call for screenshotting a headless page.
- *
- * - generateLeaderboardImage - A function that returns a base64 encoded PNG of the leaderboard.
- */
+import puppeteer from 'puppeteer';
+
 export async function generateLeaderboardImage(
   guildId: string
 ): Promise<string | null> {
   try {
-    console.log('[generateLeaderboardImage] DIAGNOSTIC MODE: Bypassing vercel/og and Firestore. Fetching placeholder.');
-    const response = await fetch('https://picsum.photos/seed/leaderboard-diagnostic/600/800');
-    if (!response.ok) {
-        throw new Error('Failed to fetch placeholder image.');
-    }
-    const imageBuffer = await response.arrayBuffer();
-    return `data:image/jpeg;base64,${Buffer.from(imageBuffer).toString('base64')}`;
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+    const url = `${baseUrl}/headless/leaderboard/${guildId}`;
+    
+    const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1200, height: 1600 });
+    await page.goto(url, { waitUntil: 'networkidle0', timeout: 30000 });
+    await page.waitForSelector('.leaderboard', { timeout: 10000 });
+    
+    const screenshot = await page.screenshot({ type: 'png', fullPage: false });
+    await browser.close();
+    
+    return `data:image/png;base64,${screenshot.toString('base64')}`;
   } catch (error) {
-    console.error(`[generateLeaderboardImage] DIAGNOSTIC MODE FAILED:`, error);
+    console.error(`[generateLeaderboardImage] Failed:`, error);
     return null;
   }
 }

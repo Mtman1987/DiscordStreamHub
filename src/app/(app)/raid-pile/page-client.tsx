@@ -103,99 +103,61 @@ export default function RaidPilePage() {
   }
 
   return (
-    <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <div className="p-5 space-y-6">
+      <div className="flex justify-between items-center">
         <div>
-          <h1 style={{
-            fontSize: '32px',
-            fontWeight: 'bold',
-            margin: '0 0 8px 0',
-            background: 'linear-gradient(45deg, #667eea, #764ba2)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent'
-          }}>
+          <h1 className="text-3xl font-bold mb-2 bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
             🏔️ Space Mountain Raid Pile
           </h1>
-          <p style={{ color: '#888', margin: 0 }}>
+          <p className="text-muted-foreground">
             Free community raid system with intelligent targeting
           </p>
         </div>
-        <button
-          onClick={updateRaidPileChannel}
-          style={{
-            padding: '12px 20px',
-            backgroundColor: '#667eea',
-            color: '#fff',
-            border: 'none',
-            borderRadius: '8px',
-            fontSize: '14px',
-            fontWeight: '600',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px'
-          }}
-        >
+        <Button onClick={updateRaidPileChannel}>
           🏔️ Update Channel
-        </button>
+        </Button>
       </div>
 
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-        gap: '16px'
-      }}>
-        <div style={{
-          backgroundColor: '#1a1a2e',
-          border: '1px solid #333',
-          borderRadius: '12px',
-          padding: '20px'
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <h3 style={{ fontSize: '14px', fontWeight: '500', margin: 0 }}>Total Members</h3>
-            <span style={{ fontSize: '16px' }}>👥</span>
-          </div>
-          <div style={{ fontSize: '24px', fontWeight: 'bold' }}>{totalMembers}</div>
-        </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="p-5">
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="text-sm font-medium">Total Members</h3>
+              <span className="text-base">👥</span>
+            </div>
+            <div className="text-2xl font-bold">{totalMembers}</div>
+          </CardContent>
+        </Card>
         
-        <div style={{
-          backgroundColor: '#1a1a2e',
-          border: '1px solid #333',
-          borderRadius: '12px',
-          padding: '20px'
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <h3 style={{ fontSize: '14px', fontWeight: '500', margin: 0 }}>Active Piles</h3>
-            <span style={{ fontSize: '16px' }}>🏔️</span>
-          </div>
-          <div style={{ fontSize: '24px', fontWeight: 'bold' }}>{piles.length}</div>
-        </div>
+        <Card>
+          <CardContent className="p-5">
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="text-sm font-medium">Active Piles</h3>
+              <span className="text-base">🏔️</span>
+            </div>
+            <div className="text-2xl font-bold">{piles.length}</div>
+          </CardContent>
+        </Card>
         
-        <div style={{
-          backgroundColor: '#1a1a2e',
-          border: '1px solid #333',
-          borderRadius: '12px',
-          padding: '20px'
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <h3 style={{ fontSize: '14px', fontWeight: '500', margin: 0 }}>Live Streamers</h3>
-            <span style={{ fontSize: '16px' }}>👁️</span>
-          </div>
-          <div style={{ fontSize: '24px', fontWeight: 'bold' }}>{liveMembers}</div>
-        </div>
+        <Card>
+          <CardContent className="p-5">
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="text-sm font-medium">Live Streamers</h3>
+              <span className="text-base">👁️</span>
+            </div>
+            <div className="text-2xl font-bold">{liveMembers}</div>
+          </CardContent>
+        </Card>
         
-        <div style={{
-          backgroundColor: '#1a1a2e',
-          border: '1px solid #333',
-          borderRadius: '12px',
-          padding: '20px'
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <h3 style={{ fontSize: '14px', fontWeight: '500', margin: 0 }}>Points per Raid</h3>
-            <span style={{ fontSize: '16px' }}>🎯</span>
-          </div>
-          <div style={{ fontSize: '24px', fontWeight: 'bold' }}>{process.env.NEXT_PUBLIC_RAID_PILE_POINTS_REWARD || 25}</div>
-        </div>
+        <Card>
+          <CardContent className="p-5">
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="text-sm font-medium">Points per Raid</h3>
+              <span className="text-base">🎯</span>
+            </div>
+            <div className="text-2xl font-bold">{process.env.NEXT_PUBLIC_RAID_PILE_POINTS_REWARD || 25}</div>
+          </CardContent>
+        </Card>
       </div>
 
       <Card>

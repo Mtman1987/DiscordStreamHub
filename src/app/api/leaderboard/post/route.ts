@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getFirestore } from 'firebase-admin/firestore';
-import { db } from '@/firebase/server-init';
+import { getStorage } from 'firebase-admin/storage';
+import { app, db } from '@/firebase/server-init';
+import { generateLeaderboardImage } from '@/ai/flows/generate-leaderboard-image';
+
+const STORAGE_BUCKET = process.env.FIREBASE_STORAGE_BUCKET || process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
 
 export async function POST(request: NextRequest) {
   try {
@@ -10,39 +13,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Missing serverId or channelId' }, { status: 400 });
     }
 
-    const leaderboardSnapshot = await db
-      .collection('servers')
-      .doc(serverId)
-      .collection('leaderboard')
-      .orderBy('points', 'desc')
-      .limit(10)
-      .get();
+    const leaderboardImage = await generateLeaderboardImage(serverId);
+    if (!leaderboardImage) {
+      return NextResponse.json({ success: false, error: 'Failed to generate leaderboard image' }, { status: 500 });
+    }
 
-    const leaderboardData = await Promise.all(
-      leaderboardSnapshot.docs.map(async (doc, index) => {
-        const data = doc.data();
-        const userDoc = await db.collection('servers').doc(serverId).collection('users').doc(data.userProfileId).get();
-        const userData = userDoc.data();
-        return {
-          rank: index + 1,
-          username: userData?.username || 'Unknown',
-          points: data.points || 0,
-        };
-      })
-    );
-
-    const embed = {
-      title: '🏆 Community Leaderboard - Top 10',
-      description: 'The top contributors in our community!',
-      color: 0xffd700,
-      fields: leaderboardData.map((entry) => ({
-        name: `${entry.rank === 1 ? '🥇' : entry.rank === 2 ? '🥈' : entry.rank === 3 ? '🥉' : `#${entry.rank}`} ${entry.username}`,
-        value: `${entry.points.toLocaleString()} points`,
-        inline: false,
-      })),
-      footer: { text: 'Click the button below to check your rank!' },
-      timestamp: new Date().toISOString(),
-    };
+    // Upload to Firebase Storage
+    const base64Data = leaderboardImage.replace(/^data:image\/png;base64,/, '');
+    const imageBuffer = Buffer.from(base64Data, 'base64');
+    const bucket = getStorage(app).bucket(STORAGE_BUCKET!);
+    const fileName = `leaderboard-images/${serverId}/leaderboard-${Date.now()}.png`;
+    const file = bucket.file(fileName);
+    await file.save(imageBuffer, {
+      metadata: { contentType: 'image/png' },
+      public: true,
+    });
+    const imageUrl = `https://storage.googleapis.com/${STORAGE_BUCKET}/${fileName}`;
 
     const components = [
       {
@@ -65,7 +51,10 @@ export async function POST(request: NextRequest) {
         Authorization: `Bot ${botToken}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ embeds: [embed], components }),
+      body: JSON.stringify({ 
+        content: imageUrl,
+        components 
+      }),
     });
 
     if (!response.ok) {

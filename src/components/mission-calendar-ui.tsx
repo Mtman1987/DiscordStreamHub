@@ -139,7 +139,7 @@ export function MissionCalendarCard({
   }
 
   return (
-    <div className={cn('rounded-3xl bg-gradient-to-br from-[#0d1c4d] via-[#0f245f] to-[#070c1f] p-6 shadow-2xl text-white', className)}>
+    <div className={cn('rounded-3xl bg-card border p-6 shadow-2xl', className)}>
       <div className="flex items-center justify-between mb-6">
         <div>
           <p className="text-sm uppercase tracking-[0.3em] text-blue-200">Mission Calendar</p>
@@ -188,27 +188,27 @@ export function MissionCalendarCard({
                   isToday && 'bg-purple-600/70 border-purple-300 shadow-inner'
                 )}
               >
-                <div className="text-[11px] font-semibold">{cellDate.getDate()}</div>
+                <div className="text-[11px] font-semibold relative z-10">{cellDate.getDate()}</div>
                 {dayData.captainsLog && (
-                  <div className="absolute bottom-1 left-1 pointer-events-none">
+                  <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
                     {dayData.captainsLog.userAvatar ? (
                       <Image
                         src={dayData.captainsLog.userAvatar}
                         alt={dayData.captainsLog.username || 'Captain'}
-                        width={30}
-                        height={30}
+                        width={56}
+                        height={56}
                         unoptimized
-                        className="h-7 w-7 rounded-full border-2 border-yellow-300 shadow-lg"
+                        className="rounded-full object-cover"
                       />
                     ) : (
-                      <div className="h-7 w-7 rounded-full border-2 border-yellow-300 bg-purple-700 text-[11px] font-bold flex items-center justify-center">
+                      <div className="h-14 w-14 rounded-full bg-purple-700 text-2xl font-bold flex items-center justify-center">
                         {dayData.captainsLog.username?.charAt(0) || '★'}
                       </div>
                     )}
                   </div>
                 )}
                 {dayData.dayEvents.length > 0 && (
-                  <div className="absolute top-1 right-1 text-xl pointer-events-none">
+                  <div className="absolute top-1 right-1 text-xl pointer-events-none z-10">
                     <span className={getEventColorClass(dayData.dayEvents[0].id)}>{getEventGlyph(dayData.dayEvents[0].id)}</span>
                   </div>
                 )}
@@ -266,7 +266,7 @@ export function MissionLogCard({ missionEvents, todaysCaptain, className }: Miss
   }, [missionEvents]);
 
   return (
-    <div className={cn('rounded-3xl bg-gradient-to-br from-[#101e4d] via-[#111b3b] to-[#070c1f] p-5 shadow-2xl text-white', className)}>
+    <div className={cn('rounded-3xl bg-card border p-5 shadow-2xl', className)}>
       <div className="flex items-center justify-between mb-4">
         <div>
           <p className="text-sm uppercase tracking-[0.3em] text-blue-200">Mission Log</p>
@@ -274,7 +274,7 @@ export function MissionLogCard({ missionEvents, todaysCaptain, className }: Miss
         </div>
       </div>
 
-      <div className="mb-4 flex items-center gap-3 rounded-2xl border border-white/10 bg-gradient-to-r from-[#0d1f4f] to-[#0c173a] p-3">
+      <div className="mb-4 flex items-center gap-3 rounded-2xl border bg-secondary/50 p-3">
         {todaysCaptain?.userAvatar ? (
           <Image
             src={todaysCaptain.userAvatar}

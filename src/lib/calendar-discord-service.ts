@@ -3,7 +3,7 @@ import { getStorage } from 'firebase-admin/storage';
 import { app, db } from '@/firebase/server-init';
 import { generateCalendarImage } from '@/ai/flows/generate-calendar-image';
 
-const STORAGE_BUCKET = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
+const STORAGE_BUCKET = process.env.FIREBASE_STORAGE_BUCKET || process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
 
 type CalendarMessageMeta = {
   channelId: string;
