@@ -3,9 +3,11 @@
 import { db } from '@/firebase/server-init';
 import { fetchNewClipOnLive, getCurrentClipForUser } from './clip-rotation-service';
 import { getStreamByLogin } from './twitch-api-service';
+import { getServerBranding } from './server-branding';
 
 export async function manageCommunitySpotlight(serverId: string): Promise<void> {
   try {
+    const branding = await getServerBranding(serverId);
     const liveMembers = await getLiveCommunityMembers(serverId);
     if (liveMembers.length === 0) {
       await clearSpotlight(serverId);
@@ -50,7 +52,7 @@ export async function manageCommunitySpotlight(serverId: string): Promise<void> 
             color: 0x9146FF,
             thumbnail: { url: 'https://static-cdn.jtvnw.net/ttv-boxart/twitch-logo.png' },
             image: { url: oldStream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080') },
-            footer: { text: 'Twitch • Mountaineer Shoutout' },
+            footer: { text: `Twitch • ${branding.communityMemberName} Shoutout` },
             timestamp: new Date().toISOString()
           };
           

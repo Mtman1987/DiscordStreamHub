@@ -1,5 +1,6 @@
 import { db } from '@/firebase/server-init';
 import { addDays, format, startOfDay, addHours } from 'date-fns';
+import { getServerBranding } from './server-branding';
 
 interface RaidTrainSlot {
   id: string;
@@ -107,7 +108,8 @@ class RaidTrainService {
     return true;
   }
 
-  generateScheduleEmbed(slots: RaidTrainSlot[], date: Date): any {
+  async generateScheduleEmbed(slots: RaidTrainSlot[], date: Date, serverId: string): Promise<any> {
+    const branding = await getServerBranding(serverId);
     const dateStr = format(date, 'EEEE, MMMM do');
     const filledSlots = slots.filter(slot => slot.userId);
     const availableSlots = slots.filter(slot => !slot.userId);
@@ -142,7 +144,7 @@ class RaidTrainService {
     }
 
     return {
-      title: `🚂 Space Mountain Raid Train - ${dateStr}`,
+      title: `🚂 ${branding.serverName} Raid Train - ${dateStr}`,
       description: `All aboard the cosmic express! Sign up for your time slot to lead the raid train through the galaxy.`,
       color: 0xff4500,
       fields,

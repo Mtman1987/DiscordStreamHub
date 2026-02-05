@@ -1,6 +1,6 @@
 # 🚀 Discord Stream Hub
 
-Automated Discord bot that monitors Twitch streams and posts live shoutouts for your community members. Features intelligent group routing, GIF rotation for VIPs, and community spotlight.
+Automated Discord bot that monitors Twitch streams and posts live shoutouts for your community members. Features intelligent group routing, GIF rotation for VIPs, community spotlight, points system, and leaderboards.
 
 ## 🌐 Live App
 
@@ -10,6 +10,7 @@ Automated Discord bot that monitors Twitch streams and posts live shoutouts for 
 
 - **10-Minute Polling**: Automatically checks Twitch every 10 minutes
 - **Smart Updates**: Posts new streams, updates existing shoutouts, removes offline streams
+- **Fully Customizable**: Set your own server name, branding, and shoutout templates
 - **Group Routing**: Different channels and templates for each group
   - **Crew**: Custom template with GIF rotation
   - **Partners**: Custom template with GIF rotation  
@@ -17,6 +18,8 @@ Automated Discord bot that monitors Twitch streams and posts live shoutouts for 
   - **Raid Pile**: Raid-focused template
   - **Everyone Else**: Standard template
 - **Community Spotlight**: Rotates through live community members every 10 minutes with their own GIF
+- **Points & Leaderboards**: Award points for Twitch chat activity, calendar events, and admin actions
+- **Calendar System**: Schedule and manage community events
 - **Rate Limited**: Respects Twitch (1.2s) and Discord (0.6s) API limits
 - **Spam Prevention**: 1-hour cooldown per user
 - **Fresh Data**: Updates viewer count, title, and game every 10 minutes
@@ -35,6 +38,68 @@ Automated Discord bot that monitors Twitch streams and posts live shoutouts for 
 - **Updates**: Viewer count, title, game refreshed every 10 minutes
 - **Offline**: Removed within 10 minutes of going offline
 - **Maximum staleness**: 10 minutes
+
+## 🚀 Quick Start Guide
+
+### Prerequisites
+1. **Discord Bot**: Create a bot at [Discord Developer Portal](https://discord.com/developers/applications)
+   - Enable "Server Members Intent" and "Message Content Intent"
+   - Invite bot to your server with permissions: Send Messages, Embed Links, Manage Messages
+2. **Twitch App**: Create an app at [Twitch Developer Console](https://dev.twitch.tv/console)
+3. **Firebase Project**: Set up Firestore and Storage at [Firebase Console](https://console.firebase.google.com)
+
+### Setup Steps
+
+#### 1. Initial Configuration
+1. Deploy the app to Fly.io or your hosting platform
+2. Set environment variables:
+   ```bash
+   DISCORD_CLIENT_ID=your_discord_client_id
+   DISCORD_CLIENT_SECRET=your_discord_client_secret
+   DISCORD_BOT_TOKEN=your_bot_token
+   TWITCH_CLIENT_ID=your_twitch_client_id
+   TWITCH_CLIENT_SECRET=your_twitch_client_secret
+   HARDCODED_GUILD_ID=your_discord_server_id
+   HARDCODED_ADMIN_DISCORD_ID=your_discord_user_id
+   ```
+
+#### 2. Access Settings Page
+1. Go to `https://your-app-url.com`
+2. Sign in with Discord (must be the admin user)
+3. Navigate to `/settings`
+
+#### 3. Configure Your Server (Follow the numbered steps on settings page)
+
+**Step 1: Server Identity**
+- Set your server name (e.g., "My Gaming Community")
+- Set community member names (e.g., "Member" / "Members")
+- Default: "Space Mountain" / "Mountaineer" / "Mountaineers"
+
+**Step 2: Twitch Integration**
+- Link your personal Twitch account (for admin features)
+- Link a bot Twitch account (for chat monitoring and points)
+
+**Step 3: Customize Shoutouts**
+- Edit templates for Crew, Partners, and Community shoutouts
+- Use `{username}` placeholder for dynamic usernames
+- Preview templates in a Discord channel before saving
+
+**Step 4: Member Management**
+- Click "Process Members" to scan your Discord server
+- Click "Auto-Link Accounts" to match Discord users with Twitch
+- View linked/unlinked member counts
+
+**Step 5: Start Monitoring**
+- Click "Sync with Discord" to load channels
+- Assign channels for each group (Crew, Partners, Community, etc.)
+- Map Discord roles to groups
+- Click "Start Polling" to begin monitoring streams
+
+#### 4. Verify Setup
+```bash
+curl https://your-app-url.com/api/health
+```
+Should return: `{"status": "ok", "polling": {"active": true}}`
 
 ## 📱 Using the App
 
@@ -68,7 +133,7 @@ Automated Discord bot that monitors Twitch streams and posts live shoutouts for 
 ### For Community Members
 
 #### Link Your Twitch Account
-1. Go to https://discord-stream-hub.fly.dev
+1. Go to your app URL
 2. Sign in with Discord
 3. Click "Link Twitch Account"
 4. Authorize the connection
@@ -80,12 +145,48 @@ Automated Discord bot that monitors Twitch streams and posts live shoutouts for 
 - When you go offline, the shoutout is removed within 10 minutes
 - **Crew/Partners**: Your shoutout includes an animated GIF from your clips
 - **Honored Guests/Everyone Else**: You may be featured in the community spotlight with your own GIF
+- **Points**: Earn points for chat activity, which appear on the leaderboard
 
-## 🔧 Admin Commands
+## 🎨 Customization
+
+### Server Branding
+All text throughout the app uses your configured server name and member names:
+- Shoutout messages
+- Raid pile announcements
+- Community spotlight
+- Leaderboard displays
+- AI-generated content
+
+### Shoutout Templates
+Customize three template types:
+1. **Crew Template**: For VIP/staff members
+   - Title, description, badge text, footer
+2. **Partners Template**: For official partners
+   - Title, description, badge text, footer
+3. **Community Template**: For regular members
+   - Title, footer
+
+All templates support `{username}` placeholder.
+
+### Preview Before Saving
+- Select a Discord channel from dropdown
+- Click "Preview" button for any template
+- See exactly how it will look in Discord
+- Make adjustments and preview again
+
+## 🌟 Community Spotlight
+
+Every 10 minutes, one live member from "Honored Guests" or "Everyone Else" gets featured:
+- Their shoutout includes an animated GIF from their clips
+- Footer changes to "⭐ COMMUNITY SPOTLIGHT ⭐"
+- Rotates to the next person after 10 minutes
+- Gives everyone their "10 minutes of fame"
+
+## 🔧 Admin Commands & API Endpoints
 
 ### Check Bot Health
 ```bash
-curl https://discord-stream-hub.fly.dev/api/health
+curl https://your-app-url.com/api/health
 ```
 
 Returns:
@@ -101,7 +202,7 @@ Returns:
 
 ### Start/Restart Polling
 ```bash
-curl -X POST https://discord-stream-hub.fly.dev/api/startup
+curl -X POST https://your-app-url.com/api/startup
 ```
 
 **Note:** After each deployment, you must restart polling using this command.
@@ -111,7 +212,9 @@ curl -X POST https://discord-stream-hub.fly.dev/api/startup
 fly logs -a discord-stream-hub
 ```
 
-## 📊 Shoutout Templates
+## 📊 Default Templates (Space Mountain)
+
+The app comes pre-configured with Space Mountain branding as defaults:
 
 ### Crew Members
 - Cyan color theme (#00D9FF)
@@ -143,7 +246,25 @@ fly logs -a discord-stream-hub
 - "Mountaineer Shoutout" footer
 - Eligible for community spotlight
 
-## 🌟 Community Spotlight
+## 🏆 Points & Leaderboards
+
+### How Points Work
+- **Twitch Chat**: Earn points for messages, subs, gifted subs, bits, and raids
+- **Calendar Events**: Admins award points for event participation
+- **Admin Actions**: Separate leaderboard for admin contributions
+
+### Leaderboard Features
+- View top performers in real-time
+- Post top 10 to Discord with "Check My Rank" button
+- Separate admin leaderboard for staff contributions
+- Only tracks users in your community list (not all Discord/Twitch users)
+
+## 📅 Calendar System
+
+- Schedule community events
+- Events auto-hide after they end
+- Award points to participants
+- Integrated with Discord announcements
 
 Every 10 minutes, one live member from "Honored Guests" or "Everyone Else" gets featured:
 - Their shoutout includes an animated GIF from their clips
@@ -176,15 +297,25 @@ Every 10 minutes, one live member from "Honored Guests" or "Everyone Else" gets 
 ## 🚨 Troubleshooting
 
 ### Polling Not Active
-1. Check health: `curl https://discord-stream-hub.fly.dev/api/health`
-2. If `"active": false`, restart: `curl -X POST https://discord-stream-hub.fly.dev/api/startup`
+1. Check health: `curl https://your-app-url.com/api/health`
+2. If `"active": false`, restart: `curl -X POST https://your-app-url.com/api/startup`
 3. Verify in Firestore: `servers/{GUILD_ID}/twitchPollingActive` should be `true`
 
 ### Shoutouts Not Posting
-- Verify channels are configured in `/settings`
+- Verify channels are configured in `/settings` Step 5
 - Check that user's Twitch account is linked
 - Ensure user has correct Discord role for their group
-- Check logs for errors: `fly logs -a discord-stream-hub`
+- Check logs for errors
+
+### Branding Not Updating
+- Save branding in `/settings` Step 1
+- Restart polling to apply changes
+- Check Firestore: `servers/{GUILD_ID}/config/branding`
+
+### Templates Not Applying
+- Save templates in `/settings` Step 3
+- Templates apply immediately to new shoutouts
+- Existing shoutouts update on next poll cycle (10 min)
 
 ### Wrong Channel
 - Go to `/settings`
@@ -197,11 +328,13 @@ Every 10 minutes, one live member from "Honored Guests" or "Everyone Else" gets 
 - Maximum staleness is 10 minutes
 - If data seems old, check logs for polling errors
 
-## 📞 Support
+## 📞 Support & Resources
 
-- **Logs**: `fly logs -a discord-stream-hub`
-- **Status**: https://discord-stream-hub.fly.dev/api/health
-- **Dashboard**: https://fly.io/apps/discord-stream-hub
+- **Health Check**: `https://your-app-url.com/api/health`
+- **Settings Page**: `https://your-app-url.com/settings`
+- **Documentation**: This README
+- **Discord Developer Portal**: https://discord.com/developers/applications
+- **Twitch Developer Console**: https://dev.twitch.tv/console
 
 ## 🎉 Success Indicators
 
@@ -213,10 +346,20 @@ Your bot is working correctly when:
 - ✅ Offline streams are removed within 10 minutes
 - ✅ No rate limit errors in logs
 - ✅ Community spotlight rotates every 10 minutes (when 2+ eligible members are live)
+- ✅ Your custom branding appears in all messages
+- ✅ Points are being awarded and leaderboard updates
+
+## 🌍 Multi-Server Support
+
+This app supports multiple Discord servers:
+- Each server has its own branding, templates, and settings
+- Data is isolated per server in Firestore
+- Admin must set `HARDCODED_GUILD_ID` and `HARDCODED_ADMIN_DISCORD_ID` for their server
+- Space Mountain defaults are used until custom branding is configured
 
 ---
 
-**Bot Status**: 🟢 Live and Monitoring
+**Default Branding**: Space Mountain (fully customizable)
 **Polling Interval**: Every 10 minutes
-**Monitored Users**: 220+
-**Uptime**: 24/7 on Fly.io
+**Supported Users**: Unlimited per server
+**Uptime**: 24/7 (recommended: Fly.io or similar)

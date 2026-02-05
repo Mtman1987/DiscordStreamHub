@@ -1,5 +1,6 @@
 import { db } from '@/firebase/server-init';
 import { PointsService } from './points-service';
+import { getServerBranding } from './server-branding';
 
 export interface RaidPileMember {
   userId: string;
@@ -266,7 +267,8 @@ export class RaidPileService {
     return piles.find(pile => pile.members.some(m => m.userId === userId)) || null;
   }
 
-  generateDiscordEmbed(piles: RaidPile[]): any {
+  async generateDiscordEmbed(piles: RaidPile[], serverId: string): Promise<any> {
+    const branding = await getServerBranding(serverId);
     const fields = piles.map((pile, index) => {
       const memberList = pile.members.slice(0, 10).map(member => {
         const status = member.isLive ? '🔴' : '⚫';
@@ -288,7 +290,7 @@ export class RaidPileService {
     return {
       embeds: [{
         timestamp: new Date().toISOString(),
-        title: '🏔️ Space Mountain Raid Pile',
+        title: `🏔️ ${branding.serverName} Raid Pile`,
         description: `Free to join! Everyone gets shoutouts, and raid holders get special treatment.\n\n**Total Members:** ${totalMembers}`,
         color: 0x9146FF,
         fields,

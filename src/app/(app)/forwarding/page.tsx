@@ -236,7 +236,7 @@ export default function ForwardingPage() {
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}
                 placeholder="Type a message..."
-                className="flex-1"
+                className="flex-1 min-h-[120px]"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
@@ -244,27 +244,27 @@ export default function ForwardingPage() {
                   }
                 }}
               />
-              <div className="flex flex-col gap-2">
-                <Button variant="outline" size="icon" onClick={() => setShowEmojiPicker(!showEmojiPicker)}>
+              <div className="flex flex-col gap-2 w-[200px]">
+                <Button variant="outline" size="icon" onClick={() => setShowEmojiPicker(!showEmojiPicker)} className="w-full">
                   😀
                 </Button>
-                <Button onClick={handleSendMessage} disabled={!newMessage.trim() || !selectedChannelId || isSending}>
+                <Button onClick={handleSendMessage} disabled={!newMessage.trim() || !selectedChannelId || isSending} className="w-full">
                   {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 </Button>
+                <Select value={selectedChannelId} onValueChange={setSelectedChannelId}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Channel" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {channels.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        #{c.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
-            <Select value={selectedChannelId} onValueChange={setSelectedChannelId}>
-              <SelectTrigger className="w-full mt-2">
-                <SelectValue placeholder="Select a channel" />
-              </SelectTrigger>
-              <SelectContent>
-                {channels.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    #{c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
             {showEmojiPicker && (
               <div className="absolute bottom-full mb-2 right-0 z-50">
                 <div className="bg-background border rounded-lg shadow-lg p-2">
