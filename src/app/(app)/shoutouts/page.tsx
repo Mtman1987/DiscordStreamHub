@@ -6,7 +6,8 @@ import { collection, query, getDocs, doc, deleteDoc } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/page-header';
-import { Loader2, Trash2 } from 'lucide-react';
+import { Loader2, Trash2, ArrowLeft } from 'lucide-react';
+import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
@@ -141,20 +142,42 @@ export default function ShoutoutsPage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#040b1f] via-[#071235] to-[#040818] text-white">
       <div className="max-w-6xl mx-auto px-6 py-10 space-y-8">
-        <PageHeader
-          title="Shoutout Management"
-          description="View and manage active stream shoutouts"
-        >
-          <div className="flex gap-3">
-            <Button onClick={loadShoutouts} disabled={isLoading}>
-              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Refresh
+        <div className="flex items-center gap-4 mb-6">
+          <Link href="/dashboard">
+            <Button variant="ghost" size="icon">
+              <ArrowLeft className="h-5 w-5" />
             </Button>
-            <Button onClick={handleClearAll} variant="destructive" disabled={isLoading || shoutouts.length === 0}>
-              Clear All
-            </Button>
+          </Link>
+          <div className="flex-1">
+            <h1 className="text-3xl font-bold">Shoutout Management</h1>
+            <p className="text-muted-foreground">View and manage active stream shoutouts</p>
           </div>
-        </PageHeader>
+        </div>
+
+        <div className="flex gap-3 mb-6">
+          <Link href="/shoutouts/crew">
+            <Button variant="outline">Crew Shoutouts</Button>
+          </Link>
+          <Link href="/shoutouts/partners">
+            <Button variant="outline">Partner Shoutouts</Button>
+          </Link>
+          <Link href="/shoutouts/honored-guests">
+            <Button variant="outline">Honored Guests</Button>
+          </Link>
+          <Link href="/shoutouts/community">
+            <Button variant="outline">Community Shoutouts</Button>
+          </Link>
+        </div>
+
+        <div className="flex gap-3">
+          <Button onClick={loadShoutouts} disabled={isLoading}>
+            {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Refresh
+          </Button>
+          <Button onClick={handleClearAll} variant="destructive" disabled={isLoading || shoutouts.length === 0}>
+            Clear All
+          </Button>
+        </div>
 
         <Card className="bg-white/5 border-white/10 text-white">
           <CardHeader>

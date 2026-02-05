@@ -67,7 +67,6 @@ class TwitchPollingService {
       lastShoutouts: await this.loadLastShoutouts(serverId)
     };
 
-    // Start the polling loop - runs every 10 minutes
     state.intervalId = setInterval(() => {
       this.pollTwitchStreams(serverId);
     }, this.POLLING_INTERVAL);
@@ -75,8 +74,16 @@ class TwitchPollingService {
     this.pollingStates.set(serverId, state);
     await this.savePollingState(serverId, true);
 
-    // Do initial poll immediately
     await this.pollTwitchStreams(serverId);
+    
+    // Start chat monitoring
+    try {
+      const { twitchChatService } = await import('./twitch-chat-service');
+      await twitchChatService.start(serverId);
+    } catch (error) {
+      console.error('[TwitchPolling] Failed to start chat service:', error);
+    }
+    
     console.log(`[TwitchPolling] Polling started - will run every ${this.POLLING_INTERVAL / 60000} minutes`);
   }
 
@@ -155,6 +162,14 @@ class TwitchPollingService {
         await manageCommunitySpotlight(serverId);
       } catch (spotlightError) {
         console.error(`[TwitchPolling] Spotlight error:`, spotlightError);
+      }
+      
+      // Update chat channels
+      try {
+        const { twitchChatService } = await import('./twitch-chat-service');
+        await twitchChatService.updateChannels();
+      } catch (chatError) {
+        console.error(`[TwitchPolling] Chat update error:`, chatError);
       }
 
       console.log(`[TwitchPolling] Poll cycle completed for server ${serverId}`);

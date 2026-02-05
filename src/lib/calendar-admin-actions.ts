@@ -91,6 +91,21 @@ export async function submitCaptainLog(payload: CaptainLogPayload) {
   });
 
   await refreshCalendarMessage(serverId);
+  
+  // Award points
+  try {
+    const { awardPoints } = await import('./points-service');
+    await awardPoints({
+      serverId,
+      userId,
+      eventType: 'admin_captains_log',
+      quantity: 1,
+      source: 'manual',
+      metadata: { username: userData.username, date: selectedDate }
+    });
+  } catch (error) {
+    console.error('Failed to award captain log points:', error);
+  }
 
   return {
     success: true,
@@ -130,6 +145,21 @@ export async function submitMission(payload: MissionPayload) {
   });
 
   await refreshCalendarMessage(serverId);
+  
+  // Award points
+  try {
+    const { awardPoints } = await import('./points-service');
+    await awardPoints({
+      serverId,
+      userId,
+      eventType: 'admin_calendar_event',
+      quantity: 1,
+      source: 'manual',
+      metadata: { username: userData.username, missionName }
+    });
+  } catch (error) {
+    console.error('Failed to award mission points:', error);
+  }
 
   return {
     success: true,

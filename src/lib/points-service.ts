@@ -137,10 +137,13 @@ export async function awardPoints({
     };
   }
 
+  const isAdminEvent = eventType === 'admin_calendar_event' || eventType === 'admin_captains_log' || eventType === 'admin_message';
+  const collectionName = isAdminEvent ? 'adminLeaderboard' : 'leaderboard';
+
   const leaderboardRef = db
     .collection('servers')
     .doc(serverId)
-    .collection('leaderboard')
+    .collection(collectionName)
     .doc(userId);
 
   const payload = {
@@ -157,7 +160,7 @@ export async function awardPoints({
   const logRef = db
     .collection('servers')
     .doc(serverId)
-    .collection('leaderboardEvents')
+    .collection(isAdminEvent ? 'adminLeaderboardEvents' : 'leaderboardEvents')
     .doc();
 
   await logRef.set({

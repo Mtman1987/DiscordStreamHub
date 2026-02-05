@@ -8,9 +8,8 @@ import {
   doc,
   deleteDoc,
   query,
-  getDoc,
 } from 'firebase/firestore';
-import { useFirestore, useUser, useDoc, useCollection, useMemoFirebase } from '@/firebase';
+import { useFirestore, useUser, useDoc, useCollection } from '@/firebase';
 import {
   Dialog,
   DialogContent,
@@ -43,15 +42,15 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { PageHeader } from '@/components/page-header';
 import type { UserProfile, CalendarEvent } from '@/lib/types';
-import { format, isSameDay, isSameMinute, isToday } from 'date-fns';
+import { format, isSameDay, isSameMinute, isToday, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addMonths, isSameMonth } from 'date-fns';
 import { PlusCircle, Loader2, BookUser, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
-import { CalendarDisplay } from './_components/calendar-display';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Send } from 'lucide-react';
+import { MissionCalendarCard, MissionLogCard, CaptainStat } from '@/components/mission-calendar-ui';
+import { CalendarDisplay } from './_components/calendar-display';
 
 // Define a type for the new event, making eventDateTime a Timestamp
 type NewCalendarEvent = Omit<CalendarEvent, 'id' | 'eventDateTime'> & {
@@ -63,7 +62,7 @@ function SimpleEventList({ serverId }: { serverId: string | null }) {
     const firestore = useFirestore();
     const [currentMonthName, setCurrentMonthName] = React.useState(format(new Date(), 'MMMM'));
 
-    const allEventsQuery = useMemoFirebase(() => {
+    const allEventsQuery = React.useMemo(() => {
         if (!firestore || !serverId) return null;
         return collection(firestore, 'servers', serverId, 'calendarEvents');
     }, [firestore, serverId]);
@@ -111,11 +110,11 @@ function SimpleEventList({ serverId }: { serverId: string | null }) {
                 </ScrollArea>
             </CardContent>
             <CardFooter className="flex items-center gap-2 border-t pt-4">
-                 <h3 className="text-sm font-semibold text-muted-foreground">Today's Captain:</h3>
+                 <h3 className="text-sm font-semibold text-muted-foreground">Today’s Captain:</h3>
                  {todaysCaptain ? (
                     <p className="font-semibold">{todaysCaptain.username}</p>
                  ) : (
-                    <p className="text-sm text-muted-foreground">No Captain's Log recorded for today.</p>
+                    <p className="text-sm text-muted-foreground">No Captain’s Log recorded for today.</p>
                  )}
             </CardFooter>
         </Card>
@@ -129,13 +128,14 @@ export default function CalendarPage() {
   const { toast } = useToast();
   const [serverId, setServerId] = React.useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = React.useState<string | null>(null);
-  const [channels, setChannels] = React.useState<Array<{id: string, name: string}>>([]);
-  const [selectedChannelId, setSelectedChannelId] = React.useState('');
-  const [isPosting, setIsPosting] = React.useState(false);
+  const [calendarMonth, setCalendarMonth] = React.useState(startOfMonth(new Date()));
+  const todayRef = React.useMemo(() => new Date(), []);
 
   const [isEventDialogOpen, setIsEventDialogOpen] = React.useState(false);
   const [isLogDialogOpen, setIsLogDialogOpen] = React.useState(false);
   const [isSaving, setIsSaving] = React.useState(false);
+  const [channelIdInput, setChannelIdInput] = React.useState('');
+  const [isPostingCalendar, setIsPostingCalendar] = React.useState(false);
   
   // State for the confirmation dialog
   const [isConflictDialogOpen, setIsConflictDialogOpen] = React.useState(false);
@@ -145,22 +145,13 @@ export default function CalendarPage() {
   React.useEffect(() => {
     const storedServerId = localStorage.getItem('discordServerId');
     const storedUserId = localStorage.getItem('discordUserId');
+    const storedChannelId = localStorage.getItem('calendarChannelId');
     if (storedServerId) setServerId(storedServerId);
     if (storedUserId) setCurrentUserId(storedUserId);
-    
-    if (firestore && storedServerId) {
-      const loadChannels = async () => {
-        const channelsRef = doc(firestore, 'servers', storedServerId, 'config', 'channels');
-        const docSnap = await getDoc(channelsRef);
-        if (docSnap.exists()) {
-          setChannels(docSnap.data().list || []);
-        }
-      };
-      loadChannels();
-    }
-  }, [firestore]);
+    if (storedChannelId) setChannelIdInput(storedChannelId);
+  }, []);
 
-  const allEventsQuery = useMemoFirebase(() => {
+  const allEventsQuery = React.useMemo(() => {
     if (!firestore || !serverId) return null;
     return collection(firestore, 'servers', serverId, 'calendarEvents');
   }, [firestore, serverId]);
@@ -175,42 +166,116 @@ export default function CalendarPage() {
   }, [allEvents, currentUserId]);
 
 
-  const currentUserProfileRef = useMemoFirebase(() => {
+  const currentUserProfileRef = React.useMemo(() => {
     if (!firestore || !serverId || !currentUserId) return null;
     return doc(firestore, 'servers', serverId, 'users', currentUserId);
   }, [firestore, serverId, currentUserId]);
 
   const { data: currentUserProfile } = useDoc<UserProfile>(currentUserProfileRef);
 
+  const { calendarEvents, monthCaptains, todaysCaptain, missionEvents } = React.useMemo(() => {
+    if (!allEvents) {
+      return { calendarEvents: [], monthCaptains: [], todaysCaptain: null, missionEvents: [] as CalendarEvent[] };
+    }
+    const viewStart = startOfWeek(startOfMonth(calendarMonth));
+    const viewEnd = endOfWeek(endOfMonth(calendarMonth));
+    const now = new Date();
+
+    const eventsForMonth = allEvents.filter((event) => {
+      if (!event.eventDateTime) return false;
+      const date = event.eventDateTime.toDate();
+      return date >= viewStart && date <= viewEnd;
+    });
+
+    const captainLogs = eventsForMonth.filter((event) => {
+      return event.type === 'captains-log' && event.eventDateTime && isSameMonth(event.eventDateTime.toDate(), calendarMonth);
+    });
+
+    const captainsMap = captainLogs.reduce<Record<string, CaptainStat>>((acc, log) => {
+      const key = log.userId || log.username || log.id;
+      if (!key) return acc;
+      if (!acc[key]) {
+        acc[key] = {
+          username: log.username || 'Captain',
+          userAvatar: log.userAvatar,
+          count: 0,
+        };
+      }
+      acc[key].count += 1;
+      return acc;
+    }, {});
+
+    const sortedCaptains = Object.values(captainsMap).sort((a, b) => b.count - a.count);
+
+    const todaysCaptain = allEvents.find(
+      (event) => event.type === 'captains-log' && event.eventDateTime && isSameDay(event.eventDateTime.toDate(), todayRef)
+    ) || null;
+
+    const upcomingMissions = allEvents
+      .filter((event) => event.type !== 'captains-log' && event.eventDateTime)
+      .filter((event) => {
+        const eventDate = event.eventDateTime!.toDate();
+        eventDate.setHours(23, 59, 59, 999);
+        return eventDate >= now;
+      });
+
+    return {
+      calendarEvents: eventsForMonth,
+      monthCaptains: sortedCaptains,
+      todaysCaptain,
+      missionEvents: upcomingMissions,
+    };
+  }, [allEvents, calendarMonth, todayRef]);
+
   const saveEvent = async (eventToSave: NewCalendarEvent) => {
-    if (!firestore || !serverId) return;
+    if (!serverId || !eventToSave.userId) return;
     setIsSaving(true);
     try {
-        const eventCollection = collection(firestore, 'servers', serverId, 'calendarEvents');
-        await addDoc(eventCollection, eventToSave);
-        toast({
-          title: 'Success!',
-          description: 'Your event has been added.',
-        });
-        setIsEventDialogOpen(false);
-      } catch (error) {
-        console.error("Failed to add event:", error);
-        toast({
-          variant: 'destructive',
-          title: 'Error',
-          description: 'Could not save the event. Please try again.',
-        });
-      } finally {
-        setIsSaving(false);
-        setConflictingEvent(null);
-        setIsConflictDialogOpen(false);
+      const missionDateTime = eventToSave.eventDateTime.toDate();
+      const missionDate = missionDateTime.toISOString().slice(0, 10);
+      const missionTime = `${missionDateTime.getHours().toString().padStart(2, '0')}:${missionDateTime.getMinutes().toString().padStart(2, '0')}`;
+
+      const response = await fetch('/api/calendar/add-mission', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          serverId,
+          userId: eventToSave.userId,
+          missionName: eventToSave.eventName,
+          missionDescription: eventToSave.description,
+          missionDate,
+          missionTime,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Could not save the event. Please try again.');
       }
-  }
+
+      toast({
+        title: 'Success!',
+        description: data.message || 'Your event has been added.',
+      });
+      setIsEventDialogOpen(false);
+    } catch (error) {
+      console.error('Failed to add event:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Could not save the event. Please try again.',
+      });
+    } finally {
+      setIsSaving(false);
+      setConflictingEvent(null);
+      setIsConflictDialogOpen(false);
+    }
+  };
 
 
   const handleAddEvent = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!firestore || !serverId || !user || !currentUserProfile || !allEvents) {
+    if (!serverId || !currentUserProfile?.discordUserId || !allEvents) {
         toast({
             variant: 'destructive',
             title: 'Error',
@@ -250,59 +315,47 @@ export default function CalendarPage() {
 
   const handleLogDay = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!firestore || !serverId || !user || !currentUserProfile || !allEvents) {
+
+    if (!serverId || !currentUserProfile?.discordUserId) {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'Cannot log day. User, server, or event information is missing.',
+        description: 'Cannot log day. User or server information is missing.',
       });
       return;
     }
+
     setIsSaving(true);
     const formData = new FormData(event.currentTarget);
     const dateStr = formData.get('log_date') as string;
-    
-    const localDate = new Date(`${dateStr}T00:00:00`);
-
-    const dayAlreadyClaimed = allEvents.some(e => 
-        e.type === 'captains-log' && 
-        isSameDay(e.eventDateTime.toDate(), localDate)
-    );
-
-    if (dayAlreadyClaimed) {
-        toast({
-            variant: 'destructive',
-            title: 'Day Already Claimed',
-            description: 'This day has already been logged by a captain. Please choose another day.',
-        });
-        setIsSaving(false);
-        return;
-    }
-
-    const newLogEvent = {
-        eventName: "Captain's Log",
-        eventDateTime: Timestamp.fromDate(localDate),
-        type: 'captains-log' as const,
-        description: `${currentUserProfile.username} has claimed this day.`,
-        userId: currentUserProfile.discordUserId,
-        userAvatar: currentUserProfile.avatarUrl,
-        username: currentUserProfile.username,
-    };
 
     try {
-      const eventCollection = collection(firestore, 'servers', serverId, 'calendarEvents');
-      await addDoc(eventCollection, newLogEvent);
+      const response = await fetch('/api/calendar/captain-log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          serverId,
+          userId: currentUserProfile.discordUserId,
+          selectedDate: dateStr,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to save captain log.');
+      }
+
       toast({
         title: 'Success!',
-        description: 'Your Captain\'s Log has been recorded.',
+        description: data.message || 'Your Captain’s Log has been recorded.',
       });
       setIsLogDialogOpen(false);
     } catch (error) {
-      console.error("Failed to log day:", error);
+      console.error('Failed to log day:', error);
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'Could not save the log. Please try again.',
+        description: error instanceof Error ? error.message : 'Could not save the log. Please try again.',
       });
     } finally {
       setIsSaving(false);
@@ -317,7 +370,13 @@ export default function CalendarPage() {
         toast({
             title: 'Entry Deleted',
             description: 'The calendar entry has been removed.',
-        })
+        });
+
+        await fetch('/api/calendar/refresh', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serverId }),
+        });
     } catch (error) {
         console.error("Failed to delete event:", error);
         toast({
@@ -328,28 +387,53 @@ export default function CalendarPage() {
     }
   };
 
-  const handlePostCalendar = async () => {
-    if (!serverId || !selectedChannelId) {
-      toast({ variant: 'destructive', title: 'Missing Information', description: 'Please select a channel first.' });
+  const handleSendCalendarToChannel = async () => {
+    if (!serverId) {
+      toast({
+        variant: 'destructive',
+        title: 'Server missing',
+        description: 'Set a Discord server before posting the calendar.',
+      });
       return;
     }
-    setIsPosting(true);
+
+    const channelId = channelIdInput.trim();
+    if (!channelId) {
+      toast({
+        variant: 'destructive',
+        title: 'Channel required',
+        description: 'Enter a Discord channel ID to post the calendar.',
+      });
+      return;
+    }
+
+    setIsPostingCalendar(true);
     try {
       const response = await fetch('/api/calendar/post', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ serverId, channelId: selectedChannelId }),
+        body: JSON.stringify({ serverId, channelId }),
       });
-      const result = await response.json();
-      if (response.ok) {
-        toast({ title: 'Calendar Posted!', description: 'The calendar has been posted to Discord.' });
-      } else {
-        throw new Error(result.error || 'Failed to post calendar');
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to send calendar.');
       }
-    } catch (error: any) {
-      toast({ variant: 'destructive', title: 'Error', description: error.message || 'Could not post calendar.' });
+
+      localStorage.setItem('calendarChannelId', channelId);
+      toast({
+        title: 'Calendar dispatched',
+        description: 'The latest calendar image was posted to Discord.',
+      });
+    } catch (error) {
+      console.error('Failed to send calendar:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Post failed',
+        description: error instanceof Error ? error.message : 'Could not post to Discord.',
+      });
     } finally {
-      setIsPosting(false);
+      setIsPostingCalendar(false);
     }
   };
 
@@ -360,17 +444,17 @@ export default function CalendarPage() {
         title="Mission Control"
         description="A live view of your community's schedule."
       >
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-3">
             <Dialog open={isLogDialogOpen} onOpenChange={setIsLogDialogOpen}>
                 <DialogTrigger asChild>
                     <Button variant="outline">
                         <BookUser className="mr-2 h-4 w-4" />
-                        Captain's Log
+                        Captain’s Log
                     </Button>
                 </DialogTrigger>
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
-                        <DialogTitle>Captain's Log</DialogTitle>
+                        <DialogTitle>Captain’s Log</DialogTitle>
                         <DialogDescription>
                             Claim a day or manage your existing log entries for this month.
                         </DialogDescription>
@@ -494,46 +578,68 @@ export default function CalendarPage() {
                     <DialogFooter className="mt-4">
                         <Button type="button" variant="outline" onClick={() => setIsEventDialogOpen(false)}>Close</Button>
                     </DialogFooter>
-                 </DialogContent>
+                </DialogContent>
             </Dialog>
+
+            <div className="flex w-full flex-wrap items-center gap-2 rounded-xl border border-white/20 bg-white/5 p-2 text-sm sm:w-auto sm:flex-nowrap">
+              <Input
+                id="calendar_channel_id"
+                placeholder="Discord channel ID"
+                value={channelIdInput}
+                onChange={(event) => setChannelIdInput(event.target.value)}
+                className="min-w-[220px] flex-1 border-white/30 bg-black/30 text-white placeholder:text-white/60"
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={handleSendCalendarToChannel}
+                disabled={isPostingCalendar}
+              >
+                {isPostingCalendar && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Send Calendar
+              </Button>
+            </div>
         </div>
       </PageHeader>
       
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        <div className="md:col-span-1 space-y-8">
-            <CalendarDisplay serverId={serverId} />
-            <Card>
-              <CardHeader>
-                <CardTitle>Post to Discord</CardTitle>
-                <CardDescription>Send the calendar to a Discord channel</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Channel</Label>
-                  <Select value={selectedChannelId} onValueChange={setSelectedChannelId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select channel..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {channels.map(channel => (
-                        <SelectItem key={channel.id} value={channel.id}>#{channel.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button onClick={handlePostCalendar} disabled={isPosting || !selectedChannelId} className="w-full">
-                  {isPosting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-                  Post Calendar
-                </Button>
-              </CardContent>
-            </Card>
-        </div>
-        <div className="md:col-span-2">
-            <SimpleEventList serverId={serverId} />
-        </div>
+      <div className="grid gap-6 lg:grid-cols-[2fr,1fr]">
+        <MissionCalendarCard
+          month={calendarMonth}
+          today={todayRef}
+          allEvents={calendarEvents}
+          monthCaptains={monthCaptains}
+          onPrevMonth={() => setCalendarMonth(startOfMonth(addMonths(calendarMonth, -1)))}
+          onNextMonth={() => setCalendarMonth(startOfMonth(addMonths(calendarMonth, 1)))}
+        />
+        <MissionLogCard missionEvents={missionEvents} todaysCaptain={todaysCaptain} />
       </div>
 
-        <AlertDialog open={isConflictDialogOpen} onOpenChange={setIsConflictDialogOpen}>
+        <div className="grid gap-6 md:grid-cols-2">
+          <Card className="bg-white/5 border-white/10 text-white">
+            <CardHeader>
+              <CardTitle>Interactive Calendar</CardTitle>
+              <CardDescription className="text-blue-200">Tap a day to inspect events or logs.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <CalendarDisplay serverId={serverId} />
+            </CardContent>
+          </Card>
+          <SimpleEventList serverId={serverId} />
+        </div>
+
+        <Card className="bg-white/5 border-white/10 text-white">
+          <CardHeader>
+            <CardTitle>Mission Tips</CardTitle>
+            <CardDescription className="text-blue-200">How to keep the fleet organized.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm text-blue-100">
+            <p>• Captain’s Log reserves a day on the calendar and updates the Discord embed automatically.</p>
+            <p>• Add Mission schedules community operations and keeps the mission log in sync.</p>
+            <p>• Removing an entry refreshes the embed via the new `/api/calendar/refresh` endpoint.</p>
+          </CardContent>
+        </Card>
+
+      <AlertDialog open={isConflictDialogOpen} onOpenChange={setIsConflictDialogOpen}>
             <AlertDialogContent>
                 <AlertDialogHeader>
                     <AlertDialogTitle>Event Conflict</AlertDialogTitle>
@@ -550,6 +656,6 @@ export default function CalendarPage() {
                 </AlertDialogFooter>
             </AlertDialogContent>
         </AlertDialog>
-    </div>
+      </div>
   );
 }

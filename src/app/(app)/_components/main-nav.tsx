@@ -55,23 +55,22 @@ export function MainNav() {
       <SidebarMenu>
         {navItems.map((item) => (
           <SidebarMenuItem key={item.href}>
-            <SidebarMenuButton
-              asChild
-              isActive={pathname.startsWith(item.href)}
-              className={cn(
-                'w-full gap-2 group-data-[collapsed=false]:justify-start group-data-[collapsed=true]:justify-center group-data-[collapsed=true]:px-2',
-                pathname.startsWith(item.href) &&
-                  'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground'
-              )}
-              tooltip={item.title}
-            >
-              <Link href={item.href}>
+            <Link href={item.href} className="w-full">
+              <SidebarMenuButton
+                isActive={pathname.startsWith(item.href)}
+                className={cn(
+                  'w-full gap-2 group-data-[collapsed=false]:justify-start group-data-[collapsed=true]:justify-center group-data-[collapsed=true]:px-2',
+                  pathname.startsWith(item.href) &&
+                    'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground'
+                )}
+                tooltip={item.title}
+              >
                 {item.icon}
                 <span className="truncate group-data-[collapsed=true]:hidden">
                   {item.title}
                 </span>
-              </Link>
-            </SidebarMenuButton>
+              </SidebarMenuButton>
+            </Link>
           </SidebarMenuItem>
         ))}
       </SidebarMenu>

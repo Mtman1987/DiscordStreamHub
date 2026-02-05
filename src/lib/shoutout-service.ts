@@ -4,6 +4,7 @@ import { db } from '@/firebase/server-init';
 import { getStreamByLogin, getClipsForUser } from '@/lib/twitch-api-service';
 import { sendShoutout } from '@/lib/discord-sync-service';
 import { getCurrentVipClip } from '@/lib/clip-rotation-service';
+import { getEmbedTemplates } from '@/lib/embed-templates';
 
 interface ShoutoutData {
   serverId: string;
@@ -52,27 +53,28 @@ async function generateShoutoutMessage(twitchLogin: string, stream: any, group: 
       return await generateHonoredGuestsShoutout(twitchLogin, stream, baseMessage);
 
     case 'Everyone Else':
-      return await generateMountaineerShoutout(twitchLogin, stream, baseMessage);
+      return await generateMountaineerShoutout(twitchLogin, stream, baseMessage, serverId);
 
     case 'Raid Pile':
       return await generateRaidPileShoutout(twitchLogin, stream, baseMessage);
 
     default:
-      return generateMountaineerShoutout(twitchLogin, stream, baseMessage);
+      return generateMountaineerShoutout(twitchLogin, stream, baseMessage, serverId);
   }
 }
 
 async function generateCrewShoutout(twitchLogin: string, stream: any, baseMessage: string, serverId: string): Promise<any> {
   const clip = await getCurrentVipClip(serverId);
+  const templates = await getEmbedTemplates(serverId);
   
   const embed = {
     author: {
-      name: `${stream.user_name} is now LIVE!`,
+      name: templates.crew.title.replace('{username}', stream.user_name),
       icon_url: 'https://cdn.discordapp.com/emojis/1284931162896334929.gif',
       url: `https://twitch.tv/${twitchLogin}`
     },
     title: `🚀 **${stream.title}**`,
-    description: `🌟 **Space Mountain Crew Member** 🌟\n\nOne of our amazing crew members is live! They help keep Space Mountain running smoothly. Show them some love and join the stream!`,
+    description: templates.crew.description,
     url: `https://twitch.tv/${twitchLogin}`,
     color: 0x00D9FF,
     fields: [
@@ -88,7 +90,7 @@ async function generateCrewShoutout(twitchLogin: string, stream: any, baseMessag
       },
       {
         name: '🚀 Crew Status',
-        value: 'Space Mountain Crew',
+        value: templates.crew.badge,
         inline: true
       }
     ],
@@ -101,7 +103,7 @@ async function generateCrewShoutout(twitchLogin: string, stream: any, baseMessag
       url: stream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080')
     },
     footer: {
-      text: 'Twitch • Crew Member Shoutout'
+      text: templates.crew.footer
     },
     timestamp: new Date().toISOString()
   };
@@ -112,6 +114,7 @@ async function generateCrewShoutout(twitchLogin: string, stream: any, baseMessag
 async function generatePartnersShoutout(twitchLogin: string, stream: any, baseMessage: string, serverId: string): Promise<any> {
   const { getUserByLogin } = await import('./twitch-api-service');
   const userInfo = await getUserByLogin(twitchLogin);
+  const templates = await getEmbedTemplates(serverId);
   
   const userDoc = await db.collection('servers').doc(serverId).collection('users')
     .where('twitchLogin', '==', twitchLogin).limit(1).get();
@@ -130,12 +133,12 @@ async function generatePartnersShoutout(twitchLogin: string, stream: any, baseMe
   
   const embed = {
     author: {
-      name: `${stream.user_name} is now LIVE!`,
+      name: templates.partners.title.replace('{username}', stream.user_name),
       icon_url: 'https://cdn.discordapp.com/emojis/1284931162896334929.gif',
       url: `https://twitch.tv/${twitchLogin}`
     },
     title: `🌌 **${stream.title}**`,
-    description: `⭐ **Space Mountain Partner** ⭐\n\nOne of our official streaming partners is live! They're a valued member of the Space Mountain community. Show them some love and join the stream!`,
+    description: templates.partners.description,
     url: `https://twitch.tv/${twitchLogin}`,
     color: 0x8B00FF,
     fields: [
@@ -151,7 +154,7 @@ async function generatePartnersShoutout(twitchLogin: string, stream: any, baseMe
       },
       {
         name: '🌟 Partner Status',
-        value: 'Official Space Mountain Partner',
+        value: templates.partners.badge,
         inline: true
       }
     ],
@@ -164,7 +167,7 @@ async function generatePartnersShoutout(twitchLogin: string, stream: any, baseMe
       url: stream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080')
     },
     footer: {
-      text: 'Twitch • Space Mountain Partner Shoutout'
+      text: templates.partners.footer
     },
     timestamp: new Date().toISOString()
   };
@@ -219,12 +222,13 @@ async function generateHonoredGuestsShoutout(twitchLogin: string, stream: any, b
   return { embeds: [embed] };
 }
 
-async function generateMountaineerShoutout(twitchLogin: string, stream: any, baseMessage: string): Promise<any> {
+async function generateMountaineerShoutout(twitchLogin: string, stream: any, baseMessage: string, serverId?: string): Promise<any> {
   const { getUserByLogin } = await import('./twitch-api-service');
   const userInfo = await getUserByLogin(twitchLogin);
+  const templates = serverId ? await getEmbedTemplates(serverId) : { community: { title: '🎬 {username} is LIVE!', footer: 'Twitch • Mountaineer Shoutout' } };
   
   const embed = {
-    title: baseMessage,
+    title: templates.community.title.replace('{username}', stream.user_name),
     description: `**${stream.title}**\n🎮 Playing: ${stream.game_name}\n👥 Viewers: ${stream.viewer_count}`,
     url: `https://twitch.tv/${twitchLogin}`,
     color: 0x9146FF,
@@ -235,7 +239,7 @@ async function generateMountaineerShoutout(twitchLogin: string, stream: any, bas
       url: stream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080')
     },
     footer: {
-      text: 'Twitch • Mountaineer Shoutout'
+      text: templates.community.footer
     },
     timestamp: new Date().toISOString()
   };

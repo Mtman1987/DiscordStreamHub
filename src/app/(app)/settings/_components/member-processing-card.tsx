@@ -5,11 +5,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Label } from '@/components/ui/label';
-import { Loader2, Users, Link, MessageSquare, CheckCircle, Send } from 'lucide-react';
+import { Loader2, Users, Link, CheckCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { getChannels } from '@/lib/discord-sync-service';
 
 interface ProcessedMemberData {
   totalMembers: number;
@@ -32,24 +29,7 @@ export function MemberProcessingCard({ serverId }: { serverId: string }) {
   const [isProcessing, setIsProcessing] = React.useState(false);
   const [isBatchLinking, setIsBatchLinking] = React.useState(false);
   const [processedData, setProcessedData] = React.useState<ProcessedMemberData | null>(null);
-  const [isGeneratingEmbed, setIsGeneratingEmbed] = React.useState<string | null>(null);
-  const [channels, setChannels] = React.useState<any[]>([]);
-  const [selectedChannel, setSelectedChannel] = React.useState('');
 
-  React.useEffect(() => {
-    if (serverId) {
-      loadChannels();
-    }
-  }, [serverId]);
-
-  const loadChannels = async () => {
-    try {
-      const channelData = await getChannels(serverId);
-      setChannels(channelData);
-    } catch (error) {
-      console.error('Error loading channels:', error);
-    }
-  };
 
   const handleProcessMembers = async () => {
     setIsProcessing(true);
@@ -119,50 +99,6 @@ export function MemberProcessingCard({ serverId }: { serverId: string }) {
       });
     } finally {
       setIsBatchLinking(false);
-    }
-  };
-
-  const handlePostEmbed = async (type: 'crew' | 'partners' | 'raid-pile' | 'honored-guests' | 'everyone-else') => {
-    if (!selectedChannel) {
-      toast({
-        title: "Channel Required",
-        description: "Please select a channel first.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsGeneratingEmbed(type);
-    try {
-      const group = type === 'crew' ? 'Crew' : type === 'partners' ? 'Partners' : type === 'raid-pile' ? 'Raid Pile' : type === 'honored-guests' ? 'Honored Guests' : 'Everyone Else';
-
-      const response = await fetch('/api/discord/post-template', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ serverId, channelId: selectedChannel, group })
-      });
-
-      if (response.ok) {
-        toast({
-          title: "Template Posted",
-          description: `${group} template posted to Discord.`,
-        });
-      } else {
-        const error = await response.json();
-        toast({
-          title: "Post Failed",
-          description: error.error || "Failed to post template.",
-          variant: "destructive",
-        });
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to post embed.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsGeneratingEmbed(null);
     }
   };
 
@@ -262,101 +198,15 @@ export function MemberProcessingCard({ serverId }: { serverId: string }) {
           </Alert>
         )}
 
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label>Select Channel for Templates</Label>
-            <Select value={selectedChannel} onValueChange={setSelectedChannel}>
-              <SelectTrigger>
-                <SelectValue placeholder="Choose a channel" />
-              </SelectTrigger>
-              <SelectContent>
-                {channels.map(channel => (
-                  <SelectItem key={channel.id} value={channel.id}>
-                    #{channel.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <h4 className="font-medium">Actions</h4>
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              variant="outline"
-              onClick={handleShowUnmatched}
-              disabled={!processedData}
-              className="justify-start col-span-2"
-            >
-              <Link className="mr-2 h-4 w-4" />
-              Copy Unmatched Users List
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => handlePostEmbed('crew')}
-              disabled={isGeneratingEmbed === 'crew' || !selectedChannel}
-              className="justify-start col-span-2"
-            >
-              {isGeneratingEmbed === 'crew' ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Send className="mr-2 h-4 w-4" />
-              )}
-              Crew Template
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => handlePostEmbed('partners')}
-              disabled={isGeneratingEmbed === 'partners' || !selectedChannel}
-              className="justify-start col-span-2"
-            >
-              {isGeneratingEmbed === 'partners' ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Send className="mr-2 h-4 w-4" />
-              )}
-              Partners Template
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => handlePostEmbed('raid-pile')}
-              disabled={isGeneratingEmbed === 'raid-pile' || !selectedChannel}
-              className="justify-start"
-            >
-              {isGeneratingEmbed === 'raid-pile' ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Send className="mr-2 h-4 w-4" />
-              )}
-              Raid Pile Template
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => handlePostEmbed('honored-guests')}
-              disabled={isGeneratingEmbed === 'honored-guests' || !selectedChannel}
-              className="justify-start"
-            >
-              {isGeneratingEmbed === 'honored-guests' ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Send className="mr-2 h-4 w-4" />
-              )}
-              Honored Guests Template
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => handlePostEmbed('everyone-else')}
-              disabled={isGeneratingEmbed === 'everyone-else' || !selectedChannel}
-              className="justify-start"
-            >
-              {isGeneratingEmbed === 'everyone-else' ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Send className="mr-2 h-4 w-4" />
-              )}
-              Mountaineer Shoutout
-            </Button>
-          </div>
-        </div>
+        <Button
+          variant="outline"
+          onClick={handleShowUnmatched}
+          disabled={!processedData}
+          className="justify-start w-full"
+        >
+          <Link className="mr-2 h-4 w-4" />
+          Copy Unmatched Users List
+        </Button>
       </CardContent>
     </Card>
   );
