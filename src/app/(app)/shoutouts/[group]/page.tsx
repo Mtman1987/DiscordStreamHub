@@ -34,6 +34,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { generateAllShoutoutsAction, updateUserGroupAction, updateUsersByRoleAction } from '@/lib/actions';
+import { deriveStreamStats, getMediaPreviewUrl } from '@/lib/shoutout-display';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import Image from 'next/image';
 import { Badge } from '@/components/ui/badge';
@@ -132,10 +133,8 @@ function OnlineStreamerCard({ streamer }: { streamer: UserProfile }) {
     }
   };
 
-  // Placeholder data
-  const viewerCount = Math.floor(Math.random() * 500) + 50;
-  const uptime = `${Math.floor(Math.random() * 4) + 1}h ${Math.floor(Math.random() * 60)}m`;
-  const points = Math.floor(Math.random() * 1500) + 200;
+  const stats = React.useMemo(() => deriveStreamStats(streamer), [streamer]);
+  const previewUrl = React.useMemo(() => getMediaPreviewUrl(streamer), [streamer]);
 
   return (
     <Card className="flex flex-col">
@@ -164,13 +163,14 @@ function OnlineStreamerCard({ streamer }: { streamer: UserProfile }) {
         </div>
       </CardHeader>
       <CardContent className="p-4 pt-0 space-y-4 flex-1">
-        <div className="aspect-video w-full overflow-hidden rounded-md">
+        <div className="aspect-video w-full overflow-hidden rounded-md bg-black">
             <Image
-                src={`https://picsum.photos/seed/stream-${streamer.discordUserId}/400/225`}
+                src={previewUrl}
                 alt={`Stream preview for ${streamer.username}`}
                 width={400}
                 height={225}
                 className="object-cover w-full h-full"
+                unoptimized
             />
         </div>
         <div className="bg-muted/50 p-3 rounded-md text-sm text-muted-foreground h-full">
@@ -183,18 +183,18 @@ function OnlineStreamerCard({ streamer }: { streamer: UserProfile }) {
          <div className="grid grid-cols-3 gap-2 w-full text-xs text-center">
             <div className="flex flex-col items-center gap-1 bg-secondary p-2 rounded-md">
                 <Users className="h-4 w-4 text-muted-foreground" />
-                <span className="font-semibold">{viewerCount}</span>
+                <span className="font-semibold">{stats.viewerCount ?? '—'}</span>
                 <span className="text-muted-foreground">Viewers</span>
             </div>
              <div className="flex flex-col items-center gap-1 bg-secondary p-2 rounded-md">
-                <Clock className="h-4 w-4 text-muted-foreground" />
-                <span className="font-semibold">{uptime}</span>
-                <span className="text-muted-foreground">Uptime</span>
+                <Trophy className="h-4 w-4 text-muted-foreground" />
+                <span className="font-semibold line-clamp-1">{stats.gameTitle}</span>
+                <span className="text-muted-foreground">Game</span>
             </div>
              <div className="flex flex-col items-center gap-1 bg-secondary p-2 rounded-md">
-                <Trophy className="h-4 w-4 text-muted-foreground" />
-                <span className="font-semibold">{points.toLocaleString()}</span>
-                <span className="text-muted-foreground">Points</span>
+                <Clock className="h-4 w-4 text-muted-foreground" />
+                <span className="font-semibold">{stats.updatedLabel ?? 'Not synced'}</span>
+                <span className="text-muted-foreground">Updated</span>
             </div>
         </div>
         <Button onClick={handlePostShoutout} className="w-full">
@@ -219,9 +219,6 @@ function OfflineStreamerTile({ streamer }: { streamer: UserProfile }) {
 }
 
 // --- Components for the "VIP" page layout ---
-const mockVipClip = {
-    gifUrl: "https://media.tenor.com/yG_mD8bW32EAAAAd/star-wars-celebration-lightsaber.gif",
-};
 
 function VipMemberCard({ streamer }: { streamer: UserProfile }) {
     const { toast } = useToast();
@@ -262,25 +259,26 @@ function VipMemberCard({ streamer }: { streamer: UserProfile }) {
         }
     };
     
-    // Placeholder data
-    const viewerCount = Math.floor(Math.random() * 500) + 50;
-    const uptime = `${Math.floor(Math.random() * 4) + 1}h ${Math.floor(Math.random() * 60)}m`;
-    const points = Math.floor(Math.random() * 1500) + 200;
+    const stats = React.useMemo(() => deriveStreamStats(streamer), [streamer]);
+    const previewUrl = React.useMemo(() => getMediaPreviewUrl(streamer), [streamer]);
 
     return (
         <Card className="grid md:grid-cols-12 overflow-hidden">
-            <div className="md:col-span-5 relative aspect-video md:aspect-auto w-full h-full group border-r-2">
+            <div className="md:col-span-5 relative aspect-video md:aspect-auto w-full h-full group border-r-2 bg-black">
                  <Image
-                    src={mockVipClip.gifUrl}
+                    src={previewUrl}
                     alt={`Twitch clip from ${streamer.username}`}
-                    layout="fill"
-                    objectFit="cover"
-                    unoptimized // GIFs should not be optimized by Next/image
+                    fill
+                    className="object-cover"
+                    unoptimized
+                    sizes="(max-width: 768px) 100vw, 480px"
                 />
                 <div className="absolute inset-0 bg-black/30 group-hover:bg-black/10 transition-colors flex items-center justify-center">
                     <PlayCircle className="h-12 w-12 text-white/70 group-hover:text-white group-hover:scale-110 transition-transform" />
                 </div>
-                <Badge className="absolute top-2 right-2" variant="destructive">Featured Clip</Badge>
+                <Badge className="absolute top-2 right-2" variant={streamer.isOnline ? 'destructive' : 'secondary'}>
+                    {streamer.isOnline ? 'Live Stream' : 'Offline'}
+                </Badge>
             </div>
 
             <div className="md:col-span-7 flex flex-col p-4">
@@ -331,18 +329,18 @@ function VipMemberCard({ streamer }: { streamer: UserProfile }) {
                      <div className="grid grid-cols-3 gap-2 w-full text-xs text-center">
                         <div className="flex flex-col items-center gap-1 bg-secondary p-2 rounded-md">
                             <Users className="h-4 w-4 text-muted-foreground" />
-                            <span className="font-semibold">{viewerCount}</span>
+                            <span className="font-semibold">{stats.viewerCount ?? '—'}</span>
                             <span className="text-muted-foreground">Viewers</span>
                         </div>
                         <div className="flex flex-col items-center gap-1 bg-secondary p-2 rounded-md">
-                            <Clock className="h-4 w-4 text-muted-foreground" />
-                            <span className="font-semibold">{uptime}</span>
-                            <span className="text-muted-foreground">Uptime</span>
+                            <Trophy className="h-4 w-4 text-muted-foreground" />
+                            <span className="font-semibold line-clamp-1">{stats.gameTitle}</span>
+                            <span className="text-muted-foreground">Game</span>
                         </div>
                         <div className="flex flex-col items-center gap-1 bg-secondary p-2 rounded-md">
-                            <Trophy className="h-4 w-4 text-muted-foreground" />
-                            <span className="font-semibold">{points.toLocaleString()}</span>
-                            <span className="text-muted-foreground">Points</span>
+                            <Clock className="h-4 w-4 text-muted-foreground" />
+                            <span className="font-semibold">{stats.updatedLabel ?? 'Not synced'}</span>
+                            <span className="text-muted-foreground">Updated</span>
                         </div>
                     </div>
                 </CardContent>

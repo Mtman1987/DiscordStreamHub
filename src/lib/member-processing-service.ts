@@ -469,8 +469,3 @@ export async function generateUnmatchedUsersEmbed(serverId: string): Promise<any
 export async function generateShoutoutTemplateEmbed(group: 'Raid Pile' | 'Everyone Else' | 'Honored Guests' | 'Partners' | 'Crew', userData?: any): Promise<any> {
   return memberProcessingService.generateShoutoutTemplateEmbed(group, userData);
 }
-
-export async function getUnmatchedUsers(serverId: string) {
-  const { getUnmatchedUsers: getUsers } = await import('@/lib/twitch-linking-service');
-  return getUsers(serverId);
-}

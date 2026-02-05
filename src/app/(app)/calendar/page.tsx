@@ -8,6 +8,7 @@ import {
   doc,
   deleteDoc,
   query,
+  getDoc,
 } from 'firebase/firestore';
 import { useFirestore, useUser, useDoc, useCollection, useMemoFirebase } from '@/firebase';
 import {
@@ -50,6 +51,7 @@ import { Separator } from '@/components/ui/separator';
 import { CalendarDisplay } from './_components/calendar-display';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Send } from 'lucide-react';
 
 // Define a type for the new event, making eventDateTime a Timestamp
 type NewCalendarEvent = Omit<CalendarEvent, 'id' | 'eventDateTime'> & {
@@ -127,6 +129,9 @@ export default function CalendarPage() {
   const { toast } = useToast();
   const [serverId, setServerId] = React.useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = React.useState<string | null>(null);
+  const [channels, setChannels] = React.useState<Array<{id: string, name: string}>>([]);
+  const [selectedChannelId, setSelectedChannelId] = React.useState('');
+  const [isPosting, setIsPosting] = React.useState(false);
 
   const [isEventDialogOpen, setIsEventDialogOpen] = React.useState(false);
   const [isLogDialogOpen, setIsLogDialogOpen] = React.useState(false);
@@ -142,7 +147,18 @@ export default function CalendarPage() {
     const storedUserId = localStorage.getItem('discordUserId');
     if (storedServerId) setServerId(storedServerId);
     if (storedUserId) setCurrentUserId(storedUserId);
-  }, []);
+    
+    if (firestore && storedServerId) {
+      const loadChannels = async () => {
+        const channelsRef = doc(firestore, 'servers', storedServerId, 'config', 'channels');
+        const docSnap = await getDoc(channelsRef);
+        if (docSnap.exists()) {
+          setChannels(docSnap.data().list || []);
+        }
+      };
+      loadChannels();
+    }
+  }, [firestore]);
 
   const allEventsQuery = useMemoFirebase(() => {
     if (!firestore || !serverId) return null;
@@ -312,6 +328,31 @@ export default function CalendarPage() {
     }
   };
 
+  const handlePostCalendar = async () => {
+    if (!serverId || !selectedChannelId) {
+      toast({ variant: 'destructive', title: 'Missing Information', description: 'Please select a channel first.' });
+      return;
+    }
+    setIsPosting(true);
+    try {
+      const response = await fetch('/api/calendar/post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ serverId, channelId: selectedChannelId }),
+      });
+      const result = await response.json();
+      if (response.ok) {
+        toast({ title: 'Calendar Posted!', description: 'The calendar has been posted to Discord.' });
+      } else {
+        throw new Error(result.error || 'Failed to post calendar');
+      }
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Error', description: error.message || 'Could not post calendar.' });
+    } finally {
+      setIsPosting(false);
+    }
+  };
+
 
   return (
     <div className="space-y-8">
@@ -459,8 +500,33 @@ export default function CalendarPage() {
       </PageHeader>
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        <div className="md:col-span-1">
+        <div className="md:col-span-1 space-y-8">
             <CalendarDisplay serverId={serverId} />
+            <Card>
+              <CardHeader>
+                <CardTitle>Post to Discord</CardTitle>
+                <CardDescription>Send the calendar to a Discord channel</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Channel</Label>
+                  <Select value={selectedChannelId} onValueChange={setSelectedChannelId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select channel..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {channels.map(channel => (
+                        <SelectItem key={channel.id} value={channel.id}>#{channel.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button onClick={handlePostCalendar} disabled={isPosting || !selectedChannelId} className="w-full">
+                  {isPosting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                  Post Calendar
+                </Button>
+              </CardContent>
+            </Card>
         </div>
         <div className="md:col-span-2">
             <SimpleEventList serverId={serverId} />

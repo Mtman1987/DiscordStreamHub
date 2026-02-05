@@ -9,17 +9,32 @@ import {
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { formatDistanceToNow } from 'date-fns';
-import { recentShoutouts } from '@/lib/data';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { collection, query, orderBy, limit } from 'firebase/firestore';
+import type { UserProfile } from '@/lib/types';
 
 export function RecentShoutouts() {
-  const [isLoading, setIsLoading] = React.useState(true);
+  const firestore = useFirestore();
+  const [serverId, setServerId] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    // Simulate loading
-    const timer = setTimeout(() => setIsLoading(false), 1000);
-    return () => clearTimeout(timer);
+    setServerId(localStorage.getItem('discordServerId'));
   }, []);
+
+  const usersRef = useMemoFirebase(() => {
+    if (!firestore || !serverId) return null;
+    return query(
+      collection(firestore, 'servers', serverId, 'users'),
+      orderBy('shoutoutGeneratedAt', 'desc'),
+      limit(5)
+    );
+  }, [firestore, serverId]);
+
+  const { data: users, isLoading } = useCollection<UserProfile>(usersRef);
+  const recentShoutouts = React.useMemo(() => {
+    return users?.filter(u => u.dailyShoutout && u.shoutoutGeneratedAt) || [];
+  }, [users]);
 
 
   return (
@@ -42,33 +57,36 @@ export function RecentShoutouts() {
             </div>
           ))}
 
-          {!isLoading && recentShoutouts.map((shoutout) => (
-              <div key={shoutout.id} className="flex flex-col gap-2">
+          {!isLoading && recentShoutouts.map((user) => {
+            const timestamp = user.shoutoutGeneratedAt?.toDate?.() || new Date();
+            const description = user.dailyShoutout?.embeds?.[0]?.description || user.dailyShoutout?.description || 'Shoutout generated';
+            return (
+              <div key={user.id} className="flex flex-col gap-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="font-semibold">{shoutout.streamerName}</span>
+                    <span className="font-semibold">{user.username}</span>
                     <Badge
                       variant={
-                        shoutout.groupType === 'VIP'
+                        user.group === 'VIP' || user.group === 'Crew'
                           ? 'default'
-                          : shoutout.groupType === 'Raid Train'
+                          : user.group === 'Raid Train'
                           ? 'destructive'
                           : 'secondary'
                       }
                     >
-                      {shoutout.groupType}
+                      {user.group}
                     </Badge>
                   </div>
                   <span className="text-sm text-muted-foreground">
-                    {formatDistanceToNow(shoutout.timestamp, { addSuffix: true })}
+                    {formatDistanceToNow(timestamp, { addSuffix: true })}
                   </span>
                 </div>
-                <p className="text-sm text-muted-foreground bg-secondary/50 p-3 rounded-md">
-                  {shoutout.message}
+                <p className="text-sm text-muted-foreground bg-secondary/50 p-3 rounded-md line-clamp-2">
+                  {description}
                 </p>
               </div>
-            )
-          )}
+            );
+          })}
           {!isLoading && (!recentShoutouts || recentShoutouts.length === 0) && (
             <p className="text-center text-muted-foreground py-10">No recent shoutouts found.</p>
           )}

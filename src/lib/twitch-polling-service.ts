@@ -223,6 +223,11 @@ class TwitchPollingService {
     let embed;
     
     if (group === 'Crew') {
+      // Increment clip index FIRST
+      const newIndex = (shoutoutState.currentClipIndex || 0) + 1;
+      await this.saveShoutoutState(serverId, discordUserId, { ...shoutoutState, currentClipIndex: newIndex });
+      
+      // Then get clip with new index
       const { getCurrentClipForUser } = await import('./clip-rotation-service');
       const clip = await getCurrentClipForUser(serverId, discordUserId);
       
@@ -247,6 +252,14 @@ class TwitchPollingService {
         timestamp: new Date().toISOString()
       };
     } else if (group === 'Partners') {
+      const { getUserByLogin } = await import('./twitch-api-service');
+      const userInfo = await getUserByLogin(twitchLogin);
+      
+      // Increment clip index FIRST
+      const newIndex = (shoutoutState.currentClipIndex || 0) + 1;
+      await this.saveShoutoutState(serverId, discordUserId, { ...shoutoutState, currentClipIndex: newIndex });
+      
+      // Then get clip with new index
       const { getCurrentClipForUser } = await import('./clip-rotation-service');
       const clip = await getCurrentClipForUser(serverId, discordUserId);
       
@@ -265,14 +278,20 @@ class TwitchPollingService {
           { name: '👥 Viewers', value: stream.viewer_count.toString(), inline: true },
           { name: '🌟 Partner Status', value: 'Official Space Mountain Partner', inline: true }
         ],
-        thumbnail: { url: stream.profile_image_url },
+        thumbnail: { url: userInfo?.profile_image_url || 'https://static-cdn.jtvnw.net/ttv-boxart/twitch-logo.png' },
         image: clip?.gifUrl ? { url: clip.gifUrl } : { url: stream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080') },
         footer: { text: 'Twitch • Space Mountain Partner Shoutout' },
         timestamp: new Date().toISOString()
       };
     } else if (group === 'Honored Guests') {
       const { getUserByLogin } = await import('./twitch-api-service');
+      const { getCurrentClipForUser } = await import('./clip-rotation-service');
       const userInfo = await getUserByLogin(twitchLogin);
+      const clip = await getCurrentClipForUser(serverId, discordUserId);
+      
+      // Check if user is in community spotlight
+      const spotlightDoc = await db.collection('servers').doc(serverId).collection('spotlight').doc('current').get();
+      const isSpotlight = spotlightDoc.exists && spotlightDoc.data()?.userId === discordUserId;
       
       embed = {
         title: `🚨 **${stream.user_name}** is now LIVE on Twitch!`,
@@ -280,8 +299,8 @@ class TwitchPollingService {
         url: `https://twitch.tv/${twitchLogin}`,
         color: 0xFF8C00,
         thumbnail: { url: userInfo?.profile_image_url || 'https://static-cdn.jtvnw.net/ttv-boxart/twitch-logo.png' },
-        image: { url: stream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080') },
-        footer: { text: 'Twitch • Honored Guest' },
+        image: clip?.gifUrl ? { url: clip.gifUrl } : { url: stream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080') },
+        footer: { text: isSpotlight ? 'Twitch • ⭐ COMMUNITY SPOTLIGHT ⭐' : 'Twitch • Honored Guest' },
         timestamp: new Date().toISOString()
       };
     } else if (group === 'Raid Pile') {
@@ -299,9 +318,15 @@ class TwitchPollingService {
         timestamp: new Date().toISOString()
       };
     } else {
-      // Everyone Else - fetch user profile image
+      // Everyone Else - fetch user profile image and check for GIF/spotlight
       const { getUserByLogin } = await import('./twitch-api-service');
+      const { getCurrentClipForUser } = await import('./clip-rotation-service');
       const userInfo = await getUserByLogin(twitchLogin);
+      const clip = await getCurrentClipForUser(serverId, discordUserId);
+      
+      // Check if user is in community spotlight
+      const spotlightDoc = await db.collection('servers').doc(serverId).collection('spotlight').doc('current').get();
+      const isSpotlight = spotlightDoc.exists && spotlightDoc.data()?.userId === discordUserId;
       
       embed = {
         title: `🚨 **${stream.user_name}** is now LIVE on Twitch!`,
@@ -309,8 +334,8 @@ class TwitchPollingService {
         url: `https://twitch.tv/${twitchLogin}`,
         color: 0x9146FF,
         thumbnail: { url: userInfo?.profile_image_url || 'https://static-cdn.jtvnw.net/ttv-boxart/twitch-logo.png' },
-        image: { url: stream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080') },
-        footer: { text: 'Twitch • Mountaineer Shoutout' },
+        image: clip?.gifUrl ? { url: clip.gifUrl } : { url: stream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080') },
+        footer: { text: isSpotlight ? 'Twitch • ⭐ COMMUNITY SPOTLIGHT ⭐' : 'Twitch • Mountaineer Shoutout' },
         timestamp: new Date().toISOString()
       };
     }

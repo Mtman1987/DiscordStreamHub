@@ -10,26 +10,39 @@ import {
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
-import { ArrowRight, Calendar, Users, Megaphone } from 'lucide-react';
+import { ArrowRight, Calendar, Users, Megaphone, BookOpen } from 'lucide-react';
 import { format } from 'date-fns';
-import { events } from '@/lib/data';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { collection, query, orderBy, limit, where } from 'firebase/firestore';
+import type { CalendarEvent } from '@/lib/types';
 
 const iconMap: Record<string, React.ReactNode> = {
   event: <Users className="h-4 w-4 text-muted-foreground" />,
   meeting: <Calendar className="h-4 w-4 text-muted-foreground" />,
   qotd: <Megaphone className="h-4 w-4 text-muted-foreground" />,
+  'captains-log': <BookOpen className="h-4 w-4 text-muted-foreground" />,
 };
 
 export function UpcomingEvents() {
-    const [isLoading, setIsLoading] = React.useState(true);
-    const upcomingEvents = events.slice(0, 3);
+    const firestore = useFirestore();
+    const [serverId, setServerId] = React.useState<string | null>(null);
 
     React.useEffect(() => {
-        // Simulate loading
-        const timer = setTimeout(() => setIsLoading(false), 1000);
-        return () => clearTimeout(timer);
+        setServerId(localStorage.getItem('discordServerId'));
     }, []);
+
+    const eventsRef = useMemoFirebase(() => {
+        if (!firestore || !serverId) return null;
+        return query(
+            collection(firestore, 'servers', serverId, 'calendarEvents'),
+            where('eventDateTime', '>=', new Date()),
+            orderBy('eventDateTime', 'asc'),
+            limit(3)
+        );
+    }, [firestore, serverId]);
+
+    const { data: events, isLoading } = useCollection<CalendarEvent>(eventsRef);
 
   return (
     <Card>
@@ -56,20 +69,23 @@ export function UpcomingEvents() {
               </div>
             </div>
           ))}
-          {!isLoading && upcomingEvents.map((event) => (
-            <div key={event.id} className="flex items-center gap-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-secondary">
-                {iconMap[event.type] || <Calendar className="h-4 w-4 text-muted-foreground" />}
+          {!isLoading && events && events.map((event) => {
+            const eventDate = event.eventDateTime?.toDate?.() || new Date();
+            return (
+              <div key={event.id} className="flex items-center gap-4">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-secondary">
+                  {iconMap[event.type] || <Calendar className="h-4 w-4 text-muted-foreground" />}
+                </div>
+                <div className="flex-1">
+                  <p className="font-medium">{event.eventName}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {format(eventDate, 'MMM d, yyyy')}
+                  </p>
+                </div>
               </div>
-              <div className="flex-1">
-                <p className="font-medium">{event.title}</p>
-                <p className="text-sm text-muted-foreground">
-                  {format(event.date, 'MMM d, yyyy')}
-                </p>
-              </div>
-            </div>
-          ))}
-           {!isLoading && (!upcomingEvents || upcomingEvents.length === 0) && (
+            );
+          })}
+           {!isLoading && (!events || events.length === 0) && (
              <p className="text-center text-muted-foreground py-6">No upcoming events scheduled.</p>
            )}
         </div>

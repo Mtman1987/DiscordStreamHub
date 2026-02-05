@@ -97,6 +97,6 @@ export async function convertClipToGif(
     await unlink(tempGif).catch(() => {});
     await unlink(tempMp4).catch(() => {});
     
-    return 'https://media.tenor.com/yG_mD8bW32EAAAAd/star-wars-celebration-lightsaber.gif';
+    return null; // No fallback - just use static image
   }
 }

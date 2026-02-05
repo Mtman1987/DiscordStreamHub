@@ -49,13 +49,13 @@ async function generateShoutoutMessage(twitchLogin: string, stream: any, group: 
       return generatePartnersShoutout(twitchLogin, stream, baseMessage, serverId);
 
     case 'Honored Guests':
-      return generateHonoredGuestsShoutout(twitchLogin, stream, baseMessage);
+      return await generateHonoredGuestsShoutout(twitchLogin, stream, baseMessage);
 
     case 'Everyone Else':
-      return generateMountaineerShoutout(twitchLogin, stream, baseMessage);
+      return await generateMountaineerShoutout(twitchLogin, stream, baseMessage);
 
     case 'Raid Pile':
-      return generateRaidPileShoutout(twitchLogin, stream, baseMessage);
+      return await generateRaidPileShoutout(twitchLogin, stream, baseMessage);
 
     default:
       return generateMountaineerShoutout(twitchLogin, stream, baseMessage);
@@ -110,14 +110,22 @@ async function generateCrewShoutout(twitchLogin: string, stream: any, baseMessag
 }
 
 async function generatePartnersShoutout(twitchLogin: string, stream: any, baseMessage: string, serverId: string): Promise<any> {
-  // Get the user's Discord ID to fetch their specific clip
+  const { getUserByLogin } = await import('./twitch-api-service');
+  const userInfo = await getUserByLogin(twitchLogin);
+  
   const userDoc = await db.collection('servers').doc(serverId).collection('users')
     .where('twitchLogin', '==', twitchLogin).limit(1).get();
   
   let clip = null;
+  let partnerDiscordLink = 'https://discord.gg/spacemountain';
+  
   if (!userDoc.empty) {
     const { getCurrentClipForUser } = await import('./clip-rotation-service');
     clip = await getCurrentClipForUser(serverId, userDoc.docs[0].id);
+    const userData = userDoc.docs[0].data();
+    if (userData.partnerDiscordLink) {
+      partnerDiscordLink = userData.partnerDiscordLink;
+    }
   }
   
   const embed = {
@@ -148,7 +156,7 @@ async function generatePartnersShoutout(twitchLogin: string, stream: any, baseMe
       }
     ],
     thumbnail: {
-      url: stream.profile_image_url
+      url: userInfo?.profile_image_url || 'https://static-cdn.jtvnw.net/ttv-boxart/twitch-logo.png'
     },
     image: clip?.gifUrl ? {
       url: clip.gifUrl
@@ -161,17 +169,43 @@ async function generatePartnersShoutout(twitchLogin: string, stream: any, baseMe
     timestamp: new Date().toISOString()
   };
 
-  return { embeds: [embed] };
+  return { 
+    embeds: [embed],
+    components: [
+      {
+        type: 1,
+        components: [
+          {
+            type: 2,
+            style: 5,
+            label: 'Watch on Twitch',
+            url: `https://twitch.tv/${twitchLogin}`,
+            emoji: { name: '📺' }
+          },
+          {
+            type: 2,
+            style: 5,
+            label: 'Join Their Discord',
+            url: partnerDiscordLink,
+            emoji: { name: '💬' }
+          }
+        ]
+      }
+    ]
+  };
 }
 
-function generateHonoredGuestsShoutout(twitchLogin: string, stream: any, baseMessage: string): any {
+async function generateHonoredGuestsShoutout(twitchLogin: string, stream: any, baseMessage: string): Promise<any> {
+  const { getUserByLogin } = await import('./twitch-api-service');
+  const userInfo = await getUserByLogin(twitchLogin);
+  
   const embed = {
     title: `🚨 **${stream.user_name}** is now LIVE on Twitch!`,
     description: `**${stream.title}**\n🎮 Playing: ${stream.game_name}\n👥 Viewers: ${stream.viewer_count}\n\n✨ *Honored Guest*`,
     url: `https://twitch.tv/${twitchLogin}`,
     color: 0xFF8C00,
     thumbnail: {
-      url: 'https://static-cdn.jtvnw.net/ttv-boxart/twitch-logo.png'
+      url: userInfo?.profile_image_url || 'https://static-cdn.jtvnw.net/ttv-boxart/twitch-logo.png'
     },
     image: {
       url: stream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080')
@@ -185,14 +219,17 @@ function generateHonoredGuestsShoutout(twitchLogin: string, stream: any, baseMes
   return { embeds: [embed] };
 }
 
-function generateMountaineerShoutout(twitchLogin: string, stream: any, baseMessage: string): any {
+async function generateMountaineerShoutout(twitchLogin: string, stream: any, baseMessage: string): Promise<any> {
+  const { getUserByLogin } = await import('./twitch-api-service');
+  const userInfo = await getUserByLogin(twitchLogin);
+  
   const embed = {
     title: baseMessage,
     description: `**${stream.title}**\n🎮 Playing: ${stream.game_name}\n👥 Viewers: ${stream.viewer_count}`,
     url: `https://twitch.tv/${twitchLogin}`,
     color: 0x9146FF,
     thumbnail: {
-      url: 'https://static-cdn.jtvnw.net/ttv-boxart/twitch-logo.png'
+      url: userInfo?.profile_image_url || 'https://static-cdn.jtvnw.net/ttv-boxart/twitch-logo.png'
     },
     image: {
       url: stream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080')
@@ -206,14 +243,17 @@ function generateMountaineerShoutout(twitchLogin: string, stream: any, baseMessa
   return { embeds: [embed] };
 }
 
-function generateRaidPileShoutout(twitchLogin: string, stream: any, baseMessage: string): any {
+async function generateRaidPileShoutout(twitchLogin: string, stream: any, baseMessage: string): Promise<any> {
+  const { getUserByLogin } = await import('./twitch-api-service');
+  const userInfo = await getUserByLogin(twitchLogin);
+  
   const embed = {
     title: `🚨 **${stream.user_name}** is now LIVE on Twitch!`,
     description: `**${stream.title}**\n🎮 Playing: ${stream.game_name}\n👥 Viewers: ${stream.viewer_count}`,
     url: `https://twitch.tv/${twitchLogin}`,
     color: 0x4ECDC4,
     thumbnail: {
-      url: 'https://static-cdn.jtvnw.net/ttv-boxart/twitch-logo.png'
+      url: userInfo?.profile_image_url || 'https://static-cdn.jtvnw.net/ttv-boxart/twitch-logo.png'
     },
     image: {
       url: stream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080')

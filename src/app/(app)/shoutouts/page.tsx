@@ -1,132 +1,212 @@
 'use client';
+
 import * as React from 'react';
-import { collection } from 'firebase/firestore';
-import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
-import { PageHeader } from '@/components/page-header';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardFooter,
-} from '@/components/ui/card';
-import type { UserProfile } from '@/lib/types';
+import { useFirestore } from '@/firebase';
+import { collection, query, getDocs, doc, deleteDoc } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
-import Link from 'next/link';
-import { Users, ArrowRight } from 'lucide-react';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/page-header';
+import { Loader2, Trash2 } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
-type GroupCardProps = {
-  groupName: 'VIP' | 'Partners' | 'Crew' | 'Community' | 'Raid Train' | 'Raid Pile';
-  description: string;
-  href: string;
-  users: UserProfile[] | undefined;
-  isLoading: boolean;
-};
-
-const groupIconMap = {
-    VIP: <Users className="h-8 w-8 text-yellow-400" />,
-    Partners: <Users className="h-8 w-8 text-yellow-400" />,
-    Crew: <Users className="h-8 w-8 text-cyan-400" />,
-    Community: <Users className="h-8 w-8 text-blue-400" />,
-    'Raid Train': <Users className="h-8 w-8 text-orange-400" />,
-    'Raid Pile': <Users className="h-8 w-8 text-red-400" />,
-}
-
-function GroupCard({ groupName, description, href, users, isLoading }: GroupCardProps) {
-    const memberCount = React.useMemo(() => {
-        if (!users) return '...';
-        return users.filter(u => u.group === groupName).length;
-    }, [users, groupName]);
-
-  return (
-    <Card className="flex flex-col">
-      <CardHeader className="flex flex-row items-start gap-4">
-        {groupIconMap[groupName]}
-        <div>
-          <CardTitle className="font-headline">{groupName}</CardTitle>
-          <CardDescription>{description}</CardDescription>
-        </div>
-      </CardHeader>
-      <CardContent className="flex-1">
-        <div className="font-bold text-2xl">
-            {isLoading ? <Skeleton className="h-8 w-16" /> : `${memberCount} Members`}
-        </div>
-      </CardContent>
-      <CardFooter>
-        <Button asChild className="w-full">
-          <Link href={href}>
-            Manage Group <ArrowRight className="ml-2 h-4 w-4" />
-          </Link>
-        </Button>
-      </CardFooter>
-    </Card>
-  );
+interface ActiveShoutout {
+  discordUserId: string;
+  username: string;
+  twitchLogin: string;
+  messageId: string;
+  channelId: string;
+  isLive: boolean;
 }
 
 export default function ShoutoutsPage() {
-    const firestore = useFirestore();
-    const [serverId, setServerId] = React.useState<string | null>(null);
+  const firestore = useFirestore();
+  const { toast } = useToast();
+  const [serverId, setServerId] = React.useState<string | null>(null);
+  const [shoutouts, setShoutouts] = React.useState<ActiveShoutout[]>([]);
+  const [isLoading, setIsLoading] = React.useState(false);
+  const [deletingIds, setDeletingIds] = React.useState<Set<string>>(new Set());
 
-    React.useEffect(() => {
-        setServerId(localStorage.getItem('discordServerId'));
-    }, []);
+  React.useEffect(() => {
+    const storedServerId = localStorage.getItem('discordServerId');
+    if (storedServerId) setServerId(storedServerId);
+  }, []);
 
-    const usersCollectionRef = useMemoFirebase(() => {
-        if (!firestore || !serverId) return null;
-        return collection(firestore, 'servers', serverId, 'users');
-    }, [firestore, serverId]);
+  const loadShoutouts = React.useCallback(async () => {
+    if (!firestore || !serverId) return;
+    
+    setIsLoading(true);
+    try {
+      const usersRef = collection(firestore, 'servers', serverId, 'users');
+      const usersSnapshot = await getDocs(usersRef);
+      
+      const activeShoutouts: ActiveShoutout[] = [];
+      
+      for (const userDoc of usersSnapshot.docs) {
+        const userData = userDoc.data();
+        const shoutoutStateRef = doc(firestore, 'servers', serverId, 'users', userDoc.id, 'shoutoutState', 'current');
+        const shoutoutStateSnap = await getDocs(query(collection(firestore, 'servers', serverId, 'users', userDoc.id, 'shoutoutState')));
+        
+        if (!shoutoutStateSnap.empty) {
+          const shoutoutData = shoutoutStateSnap.docs[0].data();
+          activeShoutouts.push({
+            discordUserId: userDoc.id,
+            username: userData.username || 'Unknown',
+            twitchLogin: userData.twitchLogin || 'Unknown',
+            messageId: shoutoutData.messageId || '',
+            channelId: shoutoutData.channelId || '',
+            isLive: shoutoutData.isLive || false
+          });
+        }
+      }
+      
+      setShoutouts(activeShoutouts);
+    } catch (error) {
+      console.error('Error loading shoutouts:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to load shoutouts'
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [firestore, serverId, toast]);
 
-    const { data: allUsers, isLoading: isLoadingUsers } = useCollection<UserProfile>(usersCollectionRef);
+  React.useEffect(() => {
+    if (serverId) {
+      loadShoutouts();
+    }
+  }, [serverId, loadShoutouts]);
 
+  const handleDeleteShoutout = async (discordUserId: string, twitchLogin: string) => {
+    if (!firestore || !serverId) return;
+    
+    setDeletingIds(prev => new Set(prev).add(discordUserId));
+    try {
+      const shoutoutStateRef = doc(firestore, 'servers', serverId, 'users', discordUserId, 'shoutoutState', 'current');
+      await deleteDoc(shoutoutStateRef);
+      
+      toast({
+        title: 'Shoutout Cleared',
+        description: `Cleared shoutout state for ${twitchLogin}`
+      });
+      
+      await loadShoutouts();
+    } catch (error) {
+      console.error('Error deleting shoutout:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to delete shoutout'
+      });
+    } finally {
+      setDeletingIds(prev => {
+        const next = new Set(prev);
+        next.delete(discordUserId);
+        return next;
+      });
+    }
+  };
+
+  const handleClearAll = async () => {
+    if (!firestore || !serverId) return;
+    if (!confirm('Clear ALL active shoutouts? This will remove all shoutout states.')) return;
+    
+    setIsLoading(true);
+    try {
+      for (const shoutout of shoutouts) {
+        const shoutoutStateRef = doc(firestore, 'servers', serverId, 'users', shoutout.discordUserId, 'shoutoutState', 'current');
+        await deleteDoc(shoutoutStateRef);
+      }
+      
+      toast({
+        title: 'All Cleared',
+        description: 'All shoutout states have been cleared'
+      });
+      
+      await loadShoutouts();
+    } catch (error) {
+      console.error('Error clearing all:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to clear all shoutouts'
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
-    <div className="space-y-8">
-      <PageHeader
-        title="AI Shoutout Center"
-        description="Manage your shoutout groups and generate AI-powered messages."
-      />
+    <div className="min-h-screen bg-gradient-to-b from-[#040b1f] via-[#071235] to-[#040818] text-white">
+      <div className="max-w-6xl mx-auto px-6 py-10 space-y-8">
+        <PageHeader
+          title="Shoutout Management"
+          description="View and manage active stream shoutouts"
+        >
+          <div className="flex gap-3">
+            <Button onClick={loadShoutouts} disabled={isLoading}>
+              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Refresh
+            </Button>
+            <Button onClick={handleClearAll} variant="destructive" disabled={isLoading || shoutouts.length === 0}>
+              Clear All
+            </Button>
+          </div>
+        </PageHeader>
 
-      <div className="space-y-4">
-        <h2 className="text-2xl font-headline text-primary">Group Management</h2>
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
-          <GroupCard
-            groupName="Crew"
-            description="Space Mountain crew and staff members."
-            href="/shoutouts/crew"
-            users={allUsers}
-            isLoading={isLoadingUsers}
-          />
-          <GroupCard
-            groupName="Partners"
-            description="Official Space Mountain streaming partners."
-            href="/shoutouts/partners"
-            users={allUsers}
-            isLoading={isLoadingUsers}
-          />
-          <GroupCard
-            groupName="Community"
-            description="General members of your community."
-            href="/shoutouts/community"
-            users={allUsers}
-            isLoading={isLoadingUsers}
-          />
-          <GroupCard
-            groupName="Raid Train"
-            description="Participants in scheduled raid trains."
-            href="/shoutouts/raid-train"
-            users={allUsers}
-            isLoading={isLoadingUsers}
-          />
-          <GroupCard
-            groupName="Raid Pile"
-            description="Spontaneous group raids."
-            href="/shoutouts/raid-pile"
-            users={allUsers}
-            isLoading={isLoadingUsers}
-          />
-        </div>
+        <Card className="bg-white/5 border-white/10 text-white">
+          <CardHeader>
+            <CardTitle>Active Shoutouts ({shoutouts.length})</CardTitle>
+            <CardDescription className="text-blue-200">
+              These users currently have active shoutout states. Delete to force a fresh post on next poll.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ScrollArea className="h-[600px]">
+              {isLoading ? (
+                <div className="flex justify-center py-10">
+                  <Loader2 className="h-8 w-8 animate-spin" />
+                </div>
+              ) : shoutouts.length === 0 ? (
+                <p className="text-center text-muted-foreground py-10">No active shoutouts</p>
+              ) : (
+                <div className="space-y-2">
+                  {shoutouts.map(shoutout => (
+                    <div
+                      key={shoutout.discordUserId}
+                      className="flex items-center justify-between p-4 bg-secondary/50 rounded-lg"
+                    >
+                      <div className="flex-1">
+                        <p className="font-semibold">{shoutout.username}</p>
+                        <p className="text-sm text-muted-foreground">
+                          Twitch: {shoutout.twitchLogin} • {shoutout.isLive ? '🟢 Live' : '🔴 Offline'}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Message ID: {shoutout.messageId}
+                        </p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="text-destructive"
+                        onClick={() => handleDeleteShoutout(shoutout.discordUserId, shoutout.twitchLogin)}
+                        disabled={deletingIds.has(shoutout.discordUserId)}
+                      >
+                        {deletingIds.has(shoutout.discordUserId) ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </ScrollArea>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

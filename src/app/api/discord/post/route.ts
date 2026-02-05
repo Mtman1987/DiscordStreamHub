@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(request: NextRequest) {
   try {
-    const { channelId, content } = await request.json();
+    const { channelId, content, embeds, components } = await request.json();
 
     if (!channelId) {
       return NextResponse.json(
@@ -23,13 +23,19 @@ export async function POST(request: NextRequest) {
 
     const discordApiEndpoint = `https://discord.com/api/v10/channels/${channelId}/messages`;
 
+    const payload: any = {};
+    if (content) payload.content = content;
+    if (embeds) payload.embeds = embeds;
+    if (components) payload.components = components;
+    if (!content && !embeds) payload.content = 'Hello from Firebase Studio! The bot is connected. ✅';
+
     const response = await fetch(discordApiEndpoint, {
       method: 'POST',
       headers: {
         Authorization: `Bot ${botToken}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ content: content || 'Hello from Firebase Studio! The bot is connected. ✅' }),
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {

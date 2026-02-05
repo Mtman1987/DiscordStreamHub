@@ -33,11 +33,15 @@ export function getMediaPreviewUrl(streamer: UserProfile): string {
     if (typeof shoutout.content === 'string' && shoutout.content.startsWith('http')) {
       return shoutout.content;
     }
-    const embedImage =
-      shoutout.embeds?.[0]?.image?.url ||
-      shoutout.embeds?.[0]?.thumbnail?.url;
+    // Prioritize large image over thumbnail
+    const embedImage = shoutout.embeds?.[0]?.image?.url;
     if (embedImage) {
       return embedImage;
+    }
+    // Only use thumbnail if no large image exists
+    const embedThumbnail = shoutout.embeds?.[0]?.thumbnail?.url;
+    if (embedThumbnail && !embedThumbnail.includes('profile_image')) {
+      return embedThumbnail;
     }
   }
   return streamer.avatarUrl;

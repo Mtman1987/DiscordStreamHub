@@ -194,67 +194,86 @@ export function buildCalendarButtons(serverId: string) {
 }
 
 export async function storeCalendarMessageMeta(serverId: string, meta: CalendarMessageMeta) {
-  await db.collection('servers').doc(serverId).set({
-    calendarMessageMeta: {
-      ...meta,
-      lastUpdated: new Date(),
-    },
+  const serverRef = db.collection('servers').doc(serverId);
+  const serverDoc = await serverRef.get();
+  const existingMeta = serverDoc.data()?.calendarMessages || [];
+  
+  // Add new calendar to array
+  const updatedMeta = [...existingMeta, {
+    ...meta,
+    lastUpdated: new Date(),
+  }];
+  
+  await serverRef.set({
+    calendarMessages: updatedMeta,
   }, { merge: true });
 }
 
 export async function refreshCalendarMessage(serverId: string) {
   const serverDoc = await db.collection('servers').doc(serverId).get();
-  const meta = serverDoc.data()?.calendarMessageMeta as CalendarMessageMeta | undefined;
+  const calendars = serverDoc.data()?.calendarMessages as CalendarMessageMeta[] | undefined;
 
-  if (!meta?.channelId || !meta?.messageId) {
+  if (!calendars || calendars.length === 0) {
     console.warn(`[CalendarRefresh] No stored Discord metadata for server ${serverId}`);
-    return { success: false, message: 'Missing Discord message metadata' };
-  }
-
-  const monthOffset = meta.monthOffset ?? 0;
-  const calendarImage = await generateCalendarImage(serverId, monthOffset);
-  if (!calendarImage) {
-    return { success: false, message: 'Failed to generate calendar image' };
-  }
-
-  const imageUrl = await uploadCalendarImage(serverId, calendarImage);
-  const { missionEmbed, calendarEmbed } = await generateCalendarEmbeds(serverId, imageUrl);
-
-  const payload: any = {
-    embeds: [missionEmbed, calendarEmbed],
-  };
-
-  if (meta.includeButtons ?? true) {
-    payload.components = buildCalendarButtons(serverId);
+    return { success: false, message: 'No calendar messages found' };
   }
 
   const botToken = ensureBotToken();
+  const updatedCalendars: CalendarMessageMeta[] = [];
 
-  const response = await fetch(
-    `https://discord.com/api/v10/channels/${meta.channelId}/messages/${meta.messageId}`,
-    {
-      method: 'PATCH',
-      headers: {
-        'Authorization': `Bot ${botToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
+  for (const meta of calendars) {
+    const monthOffset = meta.monthOffset ?? 0;
+    const calendarImage = await generateCalendarImage(serverId, monthOffset);
+    if (!calendarImage) continue;
+
+    const imageUrl = await uploadCalendarImage(serverId, calendarImage);
+    const { missionEmbed, calendarEmbed } = await generateCalendarEmbeds(serverId, imageUrl);
+
+    const payload: any = {
+      embeds: [missionEmbed, calendarEmbed],
+    };
+
+    if (meta.includeButtons ?? true) {
+      payload.components = buildCalendarButtons(serverId);
     }
-  );
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('[CalendarRefresh] Discord error:', response.status, errorText);
-    return { success: false, message: 'Failed to update Discord message' };
+    const response = await fetch(
+      `https://discord.com/api/v10/channels/${meta.channelId}/messages/${meta.messageId}`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bot ${botToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      }
+    );
+
+    if (response.ok) {
+      // Keep this calendar
+      updatedCalendars.push({
+        ...meta,
+        lastImageUrl: imageUrl,
+        monthOffset,
+        lastUpdated: new Date(),
+      });
+    } else if (response.status === 404) {
+      // Message deleted - don't add to updated list
+      console.log(`[CalendarRefresh] Message ${meta.messageId} not found, removing from list`);
+    } else {
+      // Other error - keep trying
+      const errorText = await response.text();
+      console.error(`[CalendarRefresh] Discord error for ${meta.messageId}:`, response.status, errorText);
+      updatedCalendars.push(meta);
+    }
   }
 
-  await storeCalendarMessageMeta(serverId, {
-    ...meta,
-    lastImageUrl: imageUrl,
-    monthOffset,
-  });
+  // Save updated list (removes 404'd messages)
+  await db.collection('servers').doc(serverId).set({
+    calendarMessages: updatedCalendars,
+  }, { merge: true });
 
-  return { success: true };
+  return { success: true, updated: updatedCalendars.length };
 }
 
 export async function generateCalendarEmbeds(serverId: string, imageUrl: string) {
@@ -274,25 +293,28 @@ export async function uploadCalendarImageFromGenerator(serverId: string, monthOf
 
 export async function shiftCalendarMonth(serverId: string, delta: number) {
   const serverDoc = await db.collection('servers').doc(serverId).get();
-  const meta = serverDoc.data()?.calendarMessageMeta as CalendarMessageMeta | undefined;
+  const calendars = serverDoc.data()?.calendarMessages as CalendarMessageMeta[] | undefined;
 
-  if (!meta?.channelId || !meta?.messageId) {
-    return { success: false, message: 'Missing Discord message metadata' };
+  if (!calendars || calendars.length === 0) {
+    return { success: false, message: 'No calendar messages found' };
   }
 
-  const currentOffset = meta.monthOffset ?? 0;
-  const nextOffset = Math.max(-6, Math.min(6, currentOffset + delta));
-
-  await storeCalendarMessageMeta(serverId, {
-    ...meta,
-    monthOffset: nextOffset,
+  // Update all calendars
+  const updatedCalendars = calendars.map(meta => {
+    const currentOffset = meta.monthOffset ?? 0;
+    const nextOffset = Math.max(-6, Math.min(6, currentOffset + delta));
+    return { ...meta, monthOffset: nextOffset };
   });
 
-  const monthLabel = format(addMonths(new Date(), nextOffset), 'MMMM yyyy');
+  await db.collection('servers').doc(serverId).set({
+    calendarMessages: updatedCalendars,
+  }, { merge: true });
+
+  const monthLabel = format(addMonths(new Date(), updatedCalendars[0].monthOffset ?? 0), 'MMMM yyyy');
   const refreshResult = await refreshCalendarMessage(serverId);
   return {
     ...refreshResult,
     monthLabel,
-    monthOffset: nextOffset,
+    monthOffset: updatedCalendars[0].monthOffset ?? 0,
   };
 }

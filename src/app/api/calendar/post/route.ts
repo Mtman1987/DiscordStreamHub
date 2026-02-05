@@ -38,13 +38,13 @@ export async function POST(request: NextRequest) {
 
     await storeCalendarMessageMeta(serverId, {
       channelId,
-      messageId: result.id,
+      messageId: result.messageId,
       includeButtons: true,
       lastImageUrl: imageUrl,
       monthOffset,
     });
 
-    return NextResponse.json({ success: true, messageId: result.id });
+    return NextResponse.json({ success: true, messageId: result.messageId });
 
   } catch (error) {
     console.error('Calendar post error:', error);
