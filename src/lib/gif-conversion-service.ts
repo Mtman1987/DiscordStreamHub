@@ -2,14 +2,15 @@
 
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { unlink, writeFile } from 'fs/promises';
+import { unlink, writeFile, mkdir, readFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { storage } from '@/firebase/server-init';
+import { existsSync } from 'fs';
 import puppeteer from 'puppeteer';
 import { getClipVideoUrl } from './clip-url-finder';
 
 const execAsync = promisify(exec);
+const STORAGE_PATH = process.env.STORAGE_PATH || '/data/clips';
 
 export interface GifConversionOptions {
   serverId?: string;
@@ -35,54 +36,40 @@ export async function convertClipToGif(
   try {
     console.log(`[GifConversion] Recording clip for ${streamerName}`);
     
-    // Step 1: Get MP4 URL
     const mp4Url = await getClipVideoUrl(clipUrl);
     if (!mp4Url) throw new Error('Failed to get video URL');
     console.log(`[GifConversion] Downloading MP4...`);
     
-    // Step 2: Download MP4 to temp
     const mp4Response = await fetch(mp4Url);
     if (!mp4Response.ok) throw new Error(`Failed to download MP4: ${mp4Response.status}`);
     const mp4Buffer = Buffer.from(await mp4Response.arrayBuffer());
     await writeFile(tempMp4, mp4Buffer);
     console.log(`[GifConversion] Downloaded ${mp4Buffer.length} bytes`);
     
-    // Step 3: Upload to Firebase Storage
-    console.log(`[GifConversion] Uploading MP4 to Firebase...`);
-    const mp4StoragePath = `clips/${streamerName}/${clipId}.mp4`;
-    const bucket = storage.bucket();
-    await bucket.upload(tempMp4, {
-      destination: mp4StoragePath,
-      metadata: { contentType: 'video/mp4' }
-    });
-    const mp4File = bucket.file(mp4StoragePath);
-    await mp4File.makePublic();
-    const cleanMp4Url = `https://storage.googleapis.com/${bucket.name}/${mp4StoragePath}`;
+    console.log(`[GifConversion] Uploading MP4 to local storage...`);
+    const streamerDir = join(STORAGE_PATH, streamerName);
+    if (!existsSync(streamerDir)) {
+      await mkdir(streamerDir, { recursive: true });
+    }
+    const mp4StoragePath = join(streamerDir, `${clipId}.mp4`);
+    await writeFile(mp4StoragePath, mp4Buffer);
+    const cleanMp4Url = `/api/media/${streamerName}/${clipId}.mp4`;
     console.log(`[GifConversion] Clean MP4 URL: ${cleanMp4Url}`);
     
-    // Step 4: Convert MP4 directly to GIF with FFmpeg (no browser needed)
     console.log(`[GifConversion] Converting MP4 to GIF with FFmpeg...`);
     
     const palettePath = join(tmpdir(), `${clipId}_palette.png`);
     await execAsync(`ffmpeg -y -i "${tempMp4}" -vf "fps=${fps},scale=400:-1:flags=lanczos,palettegen" "${palettePath}"`);
     await execAsync(`ffmpeg -y -t ${maxDuration} -i "${tempMp4}" -i "${palettePath}" -filter_complex "fps=${fps},scale=400:-1:flags=lanczos[x];[x][1:v]paletteuse" "${tempGif}"`);
     
-    console.log(`[GifConversion] Uploading GIF to Firebase Storage`);
+    console.log(`[GifConversion] Uploading GIF to local storage`);
     
-    const gifStoragePath = `clips/${streamerName}/${Date.now()}.gif`;
-    await bucket.upload(tempGif, {
-      destination: gifStoragePath,
-      metadata: {
-        contentType: 'image/gif',
-        metadata: { clipId, streamerName, createdAt: new Date().toISOString() }
-      }
-    });
+    const timestamp = Date.now();
+    const gifStoragePath = join(streamerDir, `${timestamp}.gif`);
+    const gifBuffer = await readFile(tempGif);
+    await writeFile(gifStoragePath, gifBuffer);
+    const gifUrl = `/api/media/${streamerName}/${timestamp}.gif`;
 
-    const gifFile = bucket.file(gifStoragePath);
-    await gifFile.makePublic();
-    const gifUrl = `https://storage.googleapis.com/${bucket.name}/${gifStoragePath}`;
-
-    // Cleanup
     await unlink(palettePath).catch(() => {});
     await unlink(tempGif).catch(() => {});
     await unlink(tempMp4).catch(() => {});
@@ -97,6 +84,6 @@ export async function convertClipToGif(
     await unlink(tempGif).catch(() => {});
     await unlink(tempMp4).catch(() => {});
     
-    return null; // No fallback - just use static image
+    return null;
   }
 }

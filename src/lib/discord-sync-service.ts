@@ -317,3 +317,7 @@ export async function editDiscordMessage(serverId: string, channelId: string, me
   return discordSyncService.editMessage(serverId, channelId, messageId, messageData);
 }
 
+export async function postDiscordMessage(serverId: string, channelId: string, messageData: any): Promise<string | null> {
+  return discordSyncService.sendShoutout(serverId, channelId, messageData);
+}
+

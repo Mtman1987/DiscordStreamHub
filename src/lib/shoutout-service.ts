@@ -1,9 +1,9 @@
 'use server';
 
 import { db } from '@/firebase/server-init';
-import { getStreamByLogin, getClipsForUser } from '@/lib/twitch-api-service';
+import { getStreamByLogin } from '@/lib/twitch-api-service';
 import { sendShoutout } from '@/lib/discord-sync-service';
-import { getCurrentVipClip } from '@/lib/clip-rotation-service';
+import { getCurrentClipForUser } from '@/lib/clip-rotation-service';
 import { getEmbedTemplates } from '@/lib/embed-templates';
 
 interface ShoutoutData {
@@ -64,8 +64,25 @@ async function generateShoutoutMessage(twitchLogin: string, stream: any, group: 
 }
 
 async function generateCrewShoutout(twitchLogin: string, stream: any, baseMessage: string, serverId: string): Promise<any> {
-  const clip = await getCurrentVipClip(serverId);
+  const { getUserByLogin } = await import('./twitch-api-service');
   const templates = await getEmbedTemplates(serverId);
+  const userInfo = await getUserByLogin(twitchLogin);
+
+  const userDoc = await db.collection('servers').doc(serverId).collection('users')
+    .where('twitchLogin', '==', twitchLogin).limit(1).get();
+
+  let clip = null;
+  if (!userDoc.empty) {
+    clip = await getCurrentClipForUser(serverId, userDoc.docs[0].id);
+  }
+
+  const bannerUrl = `/api/media/banners/${twitchLogin}.gif`;
+  const fallbackBannerUrl = process.env.CREW_BANNER_GIF_URL || 'https://via.placeholder.com/1920x120/00D9FF/FFFFFF?text=SPACE+MOUNTAIN+CREW';
+
+  const bannerEmbed = {
+    image: { url: bannerUrl },
+    color: 0x00D9FF
+  };
   
   const embed = {
     author: {
@@ -95,26 +112,23 @@ async function generateCrewShoutout(twitchLogin: string, stream: any, baseMessag
       }
     ],
     thumbnail: {
-      url: stream.thumbnail_url.replace('{width}', '320').replace('{height}', '180')
+      url: userInfo?.profile_image_url || 'https://static-cdn.jtvnw.net/ttv-boxart/twitch-logo.png'
     },
-    image: clip?.gifUrl ? {
-      url: clip.gifUrl
-    } : {
-      url: stream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080')
-    },
+    image: clip?.gifUrl ? { url: clip.gifUrl } : { url: fallbackBannerUrl },
     footer: {
       text: templates.crew.footer
     },
     timestamp: new Date().toISOString()
   };
 
-  return { embeds: [embed] };
+  return { embeds: [bannerEmbed, embed] };
 }
 
 async function generatePartnersShoutout(twitchLogin: string, stream: any, baseMessage: string, serverId: string): Promise<any> {
   const { getUserByLogin } = await import('./twitch-api-service');
   const userInfo = await getUserByLogin(twitchLogin);
   const templates = await getEmbedTemplates(serverId);
+  const fallbackGifUrl = process.env.CREW_BANNER_GIF_URL || 'https://via.placeholder.com/1920x120/00D9FF/FFFFFF?text=SPACE+MOUNTAIN+CREW';
   
   const userDoc = await db.collection('servers').doc(serverId).collection('users')
     .where('twitchLogin', '==', twitchLogin).limit(1).get();
@@ -161,11 +175,7 @@ async function generatePartnersShoutout(twitchLogin: string, stream: any, baseMe
     thumbnail: {
       url: userInfo?.profile_image_url || 'https://static-cdn.jtvnw.net/ttv-boxart/twitch-logo.png'
     },
-    image: clip?.gifUrl ? {
-      url: clip.gifUrl
-    } : {
-      url: stream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080')
-    },
+    image: clip?.gifUrl ? { url: clip.gifUrl } : { url: fallbackGifUrl },
     footer: {
       text: templates.partners.footer
     },

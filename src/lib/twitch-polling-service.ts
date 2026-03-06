@@ -218,6 +218,9 @@ class TwitchPollingService {
         isLive: true,
         messageId,
         channelId: shoutoutChannelId,
+        discordUserId,
+        twitchLogin,
+        group,
         lastUpdated: new Date(),
         currentClipIndex: 0,
         streamStartedAt: new Date()
@@ -236,8 +239,13 @@ class TwitchPollingService {
     const { editDiscordMessage } = await import('./discord-sync-service');
     
     let embed;
+    let embedsToSend: any[] = [];
+    let componentsToSend: any[] | undefined = undefined;
     
     if (group === 'Crew') {
+      const { getUserByLogin } = await import('./twitch-api-service');
+      const userInfo = await getUserByLogin(twitchLogin);
+
       // Increment clip index FIRST
       const newIndex = (shoutoutState.currentClipIndex || 0) + 1;
       await this.saveShoutoutState(serverId, discordUserId, { ...shoutoutState, currentClipIndex: newIndex });
@@ -245,6 +253,12 @@ class TwitchPollingService {
       // Then get clip with new index
       const { getCurrentClipForUser } = await import('./clip-rotation-service');
       const clip = await getCurrentClipForUser(serverId, discordUserId);
+      const bannerUrl = `/api/media/banners/${twitchLogin}.gif`;
+      const fallbackBannerUrl = process.env.CREW_BANNER_GIF_URL || 'https://via.placeholder.com/1920x120/00D9FF/FFFFFF?text=SPACE+MOUNTAIN+CREW';
+      const bannerEmbed = {
+        image: { url: bannerUrl },
+        color: 0x00D9FF
+      };
       
       embed = {
         author: {
@@ -261,14 +275,18 @@ class TwitchPollingService {
           { name: '👥 Viewers', value: stream.viewer_count.toString(), inline: true },
           { name: '🚀 Crew Status', value: 'Space Mountain Crew', inline: true }
         ],
-        thumbnail: { url: stream.thumbnail_url.replace('{width}', '320').replace('{height}', '180') },
-        image: clip?.gifUrl ? { url: clip.gifUrl } : { url: stream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080') },
+        thumbnail: { url: userInfo?.profile_image_url || 'https://static-cdn.jtvnw.net/ttv-boxart/twitch-logo.png' },
+        image: clip?.gifUrl ? { url: clip.gifUrl } : { url: fallbackBannerUrl },
         footer: { text: 'Twitch • Crew Member Shoutout' },
         timestamp: new Date().toISOString()
       };
+      embedsToSend = [bannerEmbed, embed];
     } else if (group === 'Partners') {
       const { getUserByLogin } = await import('./twitch-api-service');
       const userInfo = await getUserByLogin(twitchLogin);
+      const userDoc = await db.collection('servers').doc(serverId).collection('users').doc(discordUserId).get();
+      const partnerDiscordLink = userDoc.data()?.partnerDiscordLink || 'https://discord.gg/spacemountain';
+      const fallbackGifUrl = process.env.CREW_BANNER_GIF_URL || 'https://via.placeholder.com/1920x120/00D9FF/FFFFFF?text=SPACE+MOUNTAIN+CREW';
       
       // Increment clip index FIRST
       const newIndex = (shoutoutState.currentClipIndex || 0) + 1;
@@ -294,14 +312,40 @@ class TwitchPollingService {
           { name: '🌟 Partner Status', value: 'Official Space Mountain Partner', inline: true }
         ],
         thumbnail: { url: userInfo?.profile_image_url || 'https://static-cdn.jtvnw.net/ttv-boxart/twitch-logo.png' },
-        image: clip?.gifUrl ? { url: clip.gifUrl } : { url: stream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080') },
+        image: clip?.gifUrl ? { url: clip.gifUrl } : { url: fallbackGifUrl },
         footer: { text: 'Twitch • Space Mountain Partner Shoutout' },
         timestamp: new Date().toISOString()
       };
+      embedsToSend = [embed];
+      componentsToSend = [
+        {
+          type: 1,
+          components: [
+            {
+              type: 2,
+              style: 5,
+              label: 'Watch on Twitch',
+              url: `https://twitch.tv/${twitchLogin}`,
+              emoji: { name: '📺' }
+            },
+            {
+              type: 2,
+              style: 5,
+              label: 'Join Their Discord',
+              url: partnerDiscordLink,
+              emoji: { name: '💬' }
+            }
+          ]
+        }
+      ];
     } else if (group === 'Honored Guests') {
       const { getUserByLogin } = await import('./twitch-api-service');
       const { getCurrentClipForUser } = await import('./clip-rotation-service');
       const userInfo = await getUserByLogin(twitchLogin);
+
+      // Rotate through available GIFs on each refresh
+      const newIndex = (shoutoutState.currentClipIndex || 0) + 1;
+      await this.saveShoutoutState(serverId, discordUserId, { ...shoutoutState, currentClipIndex: newIndex });
       const clip = await getCurrentClipForUser(serverId, discordUserId);
       
       // Check if user is in community spotlight
@@ -318,6 +362,7 @@ class TwitchPollingService {
         footer: { text: isSpotlight ? 'Twitch • ⭐ COMMUNITY SPOTLIGHT ⭐' : 'Twitch • Honored Guest' },
         timestamp: new Date().toISOString()
       };
+      embedsToSend = [embed];
     } else if (group === 'Raid Pile') {
       const { getUserByLogin } = await import('./twitch-api-service');
       const userInfo = await getUserByLogin(twitchLogin);
@@ -332,11 +377,16 @@ class TwitchPollingService {
         footer: { text: 'Twitch • Raid Pile Shoutout 🎯' },
         timestamp: new Date().toISOString()
       };
+      embedsToSend = [embed];
     } else {
       // Everyone Else - fetch user profile image and check for GIF/spotlight
       const { getUserByLogin } = await import('./twitch-api-service');
       const { getCurrentClipForUser } = await import('./clip-rotation-service');
       const userInfo = await getUserByLogin(twitchLogin);
+
+      // Rotate through available GIFs on each refresh
+      const newIndex = (shoutoutState.currentClipIndex || 0) + 1;
+      await this.saveShoutoutState(serverId, discordUserId, { ...shoutoutState, currentClipIndex: newIndex });
       const clip = await getCurrentClipForUser(serverId, discordUserId);
       
       // Check if user is in community spotlight
@@ -353,10 +403,15 @@ class TwitchPollingService {
         footer: { text: isSpotlight ? 'Twitch • ⭐ COMMUNITY SPOTLIGHT ⭐' : 'Twitch • Mountaineer Shoutout' },
         timestamp: new Date().toISOString()
       };
+      embedsToSend = [embed];
     }
     
     try {
-      await editDiscordMessage(serverId, shoutoutState.channelId, shoutoutState.messageId, { embeds: [embed] });
+      const messagePayload: any = { embeds: embedsToSend.length > 0 ? embedsToSend : [embed] };
+      if (componentsToSend) {
+        messagePayload.components = componentsToSend;
+      }
+      await editDiscordMessage(serverId, shoutoutState.channelId, shoutoutState.messageId, messagePayload);
       console.log(`[TwitchPolling] Updated shoutout for ${stream.user_login}`);
     } catch (error) {
       console.log(`[TwitchPolling] Message deleted for ${stream.user_login}, clearing state`);

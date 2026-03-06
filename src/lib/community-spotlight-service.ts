@@ -33,9 +33,10 @@ export async function manageCommunitySpotlight(serverId: string): Promise<void> 
     if (oldSpotlightUserId && oldSpotlightUserId !== newSpotlightMember.discordUserId) {
       const oldShoutoutState = await getShoutoutState(serverId, oldSpotlightUserId);
       if (oldShoutoutState?.messageId) {
-        const oldStream = await getStreamByLogin(oldShoutoutState.twitchLogin || '');
+        const oldMember = liveMembers.find(m => m.discordUserId === oldSpotlightUserId);
+        const oldTwitchLogin = oldMember?.twitchLogin || oldShoutoutState.twitchLogin || '';
+        const oldStream = oldTwitchLogin ? await getStreamByLogin(oldTwitchLogin) : null;
         if (oldStream) {
-          const oldMember = liveMembers.find(m => m.discordUserId === oldSpotlightUserId);
           const oldEmbed = oldMember?.group === 'Honored Guests' ? {
             title: `🚨 **${oldStream.user_name}** is now LIVE on Twitch!`,
             description: `**${oldStream.title}**\n🎮 Playing: ${oldStream.game_name}\n👥 Viewers: ${oldStream.viewer_count}\n\n✨ *Honored Guest*`,
@@ -122,7 +123,7 @@ async function getLiveCommunityMembers(serverId: string) {
     }
   }
   
-  return members;
+  return members.sort((a, b) => a.twitchLogin.localeCompare(b.twitchLogin));
 }
 
 async function getShoutoutState(serverId: string, discordUserId: string): Promise<any> {

@@ -4,6 +4,7 @@ import { TwitchBotLinkingCard } from './_components/twitch-bot-linking-card';
 import { TwitchPollingSettings } from './_components/twitch-polling-settings';
 import { MemberProcessingCard } from './_components/member-processing-card';
 import { EmbedTemplatesCard } from './_components/embed-templates-card';
+import { PartnerScheduleSettings } from './_components/partner-schedule-settings';
 import { Separator } from '@/components/ui/separator';
 
 export function SettingsClientComponents({ serverId }: { serverId: string }) {
@@ -53,6 +54,15 @@ export function SettingsClientComponents({ serverId }: { serverId: string }) {
         <h2 className="text-2xl font-bold mb-2">5. Start Monitoring</h2>
         <p className="text-muted-foreground mb-4">Activate automatic stream monitoring</p>
         <TwitchPollingSettings />
+      </div>
+
+      <Separator />
+
+      {/* Step 6: Partner Schedules */}
+      <div>
+        <h2 className="text-2xl font-bold mb-2">6. Partner Schedule Calendars</h2>
+        <p className="text-muted-foreground mb-4">Deploy Twitch schedule calendars to partner threads</p>
+        <PartnerScheduleSettings serverId={serverId} />
       </div>
     </div>
   );

@@ -25,3 +25,7 @@ primary_region = "iad"
   memory = '2gb'
   cpu_kind = 'shared'
   cpus = 2
+
+[mounts]
+  source = "discord_stream_data"
+  destination = "/data"

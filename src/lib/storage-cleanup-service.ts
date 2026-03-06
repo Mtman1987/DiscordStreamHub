@@ -1,11 +1,11 @@
 'use server';
 
 import { db } from '@/firebase/server-init';
-import { firebaseStorage } from './firebase-storage-service';
+import { localStorageService } from './local-storage-service';
 
 class StorageCleanupService {
-  private readonly CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
-  private readonly MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+  private readonly CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
+  private readonly MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
   async cleanupExpiredGifs(serverId: string): Promise<void> {
     try {
@@ -23,27 +23,22 @@ class StorageCleanupService {
         const age = Date.now() - cachedAt.getTime();
 
         if (age > this.MAX_AGE_MS) {
-          // Mark for deletion
           if (data.firebaseFileName) {
             expiredFiles.push(data.firebaseFileName);
           }
-          
-          // Remove from Firestore
           batch.delete(doc.ref);
         }
       }
 
-      // Delete expired files from Firebase Storage
       for (const fileName of expiredFiles) {
         try {
-          await firebaseStorage.deleteGif(fileName);
+          await localStorageService.deleteGif(fileName);
           console.log(`Deleted expired GIF: ${fileName}`);
         } catch (error) {
           console.error(`Failed to delete GIF ${fileName}:`, error);
         }
       }
 
-      // Commit Firestore deletions
       if (expiredFiles.length > 0) {
         await batch.commit();
         console.log(`Cleaned up ${expiredFiles.length} expired GIFs`);
@@ -58,12 +53,10 @@ class StorageCleanupService {
 
   async getStorageUsage(serverId: string): Promise<{ count: number; totalSize: string }> {
     try {
-      const cacheRef = db.collection('servers').doc(serverId).collection('clipCache');
-      const snapshot = await cacheRef.get();
-
+      const { count, totalSize } = await localStorageService.getStorageUsage();
       return {
-        count: snapshot.size,
-        totalSize: 'Unknown' // Firebase Storage doesn't easily provide file sizes
+        count,
+        totalSize: `${(totalSize / 1024 / 1024).toFixed(2)} MB`
       };
     } catch (error) {
       console.error('Error getting storage usage:', error);

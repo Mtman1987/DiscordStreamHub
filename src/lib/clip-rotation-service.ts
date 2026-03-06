@@ -4,7 +4,11 @@ import { db } from '@/firebase/server-init';
 import { getUserByLogin, getClipsForUser } from './twitch-api-service';
 import { convertClipToGif } from './gif-conversion-service';
 import { deleteGif } from './firebase-storage-service';
-import { getClipVideoUrl } from './clip-url-finder';
+import { readdir } from 'fs/promises';
+import { join } from 'path';
+import { existsSync } from 'fs';
+
+const STORAGE_PATH = process.env.STORAGE_PATH || '/data/clips';
 
 interface CachedClip {
   clipId: string;
@@ -68,7 +72,6 @@ export async function bulkFetchClips(serverId: string): Promise<void> {
 
 export async function fetchNewClipOnLive(serverId: string, userId: string, twitchLogin: string): Promise<void> {
   try {
-    // Check if already fetched today
     const lastFetch = await getLastClipFetch(serverId, userId);
     const now = Date.now();
     
@@ -83,16 +86,17 @@ export async function fetchNewClipOnLive(serverId: string, userId: string, twitc
     const clips = await getClipsForUser(twitchUser.id, 20);
     if (clips.length === 0) return;
 
-    // Get existing GIFs from Storage
-    const { storage } = await import('@/firebase/server-init');
-    const bucket = storage.bucket();
-    const [files] = await bucket.getFiles({ prefix: `clips/${twitchLogin}/` });
-    const existingGifs = new Set(files.filter(f => f.name.endsWith('.gif')).map(f => {
-      const parts = f.name.split('/');
-      return parts[parts.length - 1].replace('.gif', '');
-    }));
+    const streamerDir = join(STORAGE_PATH, twitchLogin);
+    const existingGifs = new Set<string>();
     
-    // Find first clip we don't have
+    if (existsSync(streamerDir)) {
+      const files = await readdir(streamerDir);
+      files.filter(f => f.endsWith('.gif')).forEach(f => {
+        const clipId = f.replace('.gif', '').split('_')[1];
+        if (clipId) existingGifs.add(clipId);
+      });
+    }
+    
     const newClip = clips.find(c => !existingGifs.has(c.id));
     if (!newClip) return;
     
@@ -106,13 +110,13 @@ export async function fetchNewClipOnLive(serverId: string, userId: string, twitc
     );
 
     if (gifUrl) {
-      // Delete oldest if we have 10+
-      const gifs = files.filter(f => f.name.endsWith('.gif'));
+      const files = await readdir(streamerDir);
+      const gifs = files.filter(f => f.endsWith('.gif')).sort();
+      
       if (gifs.length >= 10) {
-        await gifs[0].delete();
-        // Also delete corresponding MP4
-        const mp4Name = gifs[0].name.replace('.gif', '.mp4');
-        await bucket.file(mp4Name).delete().catch(() => {});
+        await deleteGif(`${twitchLogin}/${gifs[0].replace('.gif', '')}`);
+        const mp4Name = gifs[0].replace('.gif', '.mp4');
+        await deleteGif(`${twitchLogin}/${mp4Name.replace('.mp4', '')}`);
       }
       
       await setLastClipFetch(serverId, userId, now);
@@ -122,14 +126,6 @@ export async function fetchNewClipOnLive(serverId: string, userId: string, twitc
     console.error(`[ClipFetching] Error for ${twitchLogin}:`, error);
   }
 }
-
-
-
-
-
-
-
-
 
 async function getLastClipFetch(serverId: string, userId: string): Promise<number | null> {
   const doc = await db.collection('servers').doc(serverId)
@@ -149,11 +145,11 @@ export async function getCurrentClipForUser(serverId: string, userId: string): P
   const twitchLogin = userDoc.data()?.twitchLogin;
   if (!twitchLogin) return null;
 
-  const { storage } = await import('@/firebase/server-init');
-  const bucket = storage.bucket();
-  const [files] = await bucket.getFiles({ prefix: `clips/${twitchLogin}/` });
+  const streamerDir = join(STORAGE_PATH, twitchLogin);
+  if (!existsSync(streamerDir)) return null;
   
-  const gifs = files.filter(f => f.name.endsWith('.gif'));
+  const files = await readdir(streamerDir);
+  const gifs = files.filter(f => f.endsWith('.gif')).sort();
   if (gifs.length === 0) return null;
 
   const stateDoc = await db.collection('servers').doc(serverId)
@@ -162,11 +158,11 @@ export async function getCurrentClipForUser(serverId: string, userId: string): P
   const currentIndex = stateDoc.data()?.currentClipIndex || 0;
 
   const file = gifs[currentIndex % gifs.length];
-  const [url] = await file.getSignedUrl({ action: 'read', expires: '03-01-2500' });
+  const gifUrl = `/api/media/${twitchLogin}/${file}`;
 
   return {
-    clipId: file.name.split('/').pop()?.replace('.gif', '') || '',
-    gifUrl: url,
+    clipId: file.replace('.gif', ''),
+    gifUrl,
     twitchLogin,
     title: 'Clip',
     createdAt: new Date().toISOString(),

@@ -3,12 +3,13 @@
 import puppeteer from 'puppeteer';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { writeFile, unlink, readFile } from 'fs/promises';
+import { writeFile, unlink, readFile, mkdir } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { storage } from '@/firebase/server-init';
+import { existsSync } from 'fs';
 
 const execAsync = promisify(exec);
+const STORAGE_PATH = process.env.STORAGE_PATH || '/data/clips';
 
 export async function generateCrewBanners(crewMembers: string[]): Promise<void> {
   console.log('[BannerGen] Generating crew banners...');
@@ -48,6 +49,7 @@ export async function generateCommanderBanner(): Promise<string> {
 }
 
 async function recordBannerToGif(htmlPath: string, username: string): Promise<string> {
+  const bannerKey = username.toLowerCase();
   const tempGif = join(tmpdir(), `banner_${username}.gif`);
   const palettePath = join(tmpdir(), `banner_${username}_palette.png`);
   const fps = 30;
@@ -66,10 +68,8 @@ async function recordBannerToGif(htmlPath: string, username: string): Promise<st
     await page.setViewport({ width: 1920, height: 200 });
     await page.goto(`file://${htmlPath}`, { waitUntil: 'networkidle0' });
     
-    // Wait for animations to start
     await new Promise(resolve => setTimeout(resolve, 1000));
     
-    // Capture frames
     const frameCount = Math.floor(duration * fps);
     for (let i = 0; i < frameCount; i++) {
       const framePath = join(tmpdir(), `banner_${username}_frame_${i.toString().padStart(3, '0')}.png`);
@@ -82,23 +82,19 @@ async function recordBannerToGif(htmlPath: string, username: string): Promise<st
     await browser.close();
     browser = null;
     
-    // Convert to GIF
     await execAsync(`ffmpeg -y -framerate ${fps} -i "${join(tmpdir(), `banner_${username}_frame_%03d.png`)}" -vf "palettegen" "${palettePath}"`);
     await execAsync(`ffmpeg -y -framerate ${fps} -i "${join(tmpdir(), `banner_${username}_frame_%03d.png`)}" -i "${palettePath}" -filter_complex "paletteuse" "${tempGif}"`);
     
-    // Upload to Firebase
-    const storagePath = `banners/${username}.gif`;
-    const bucket = storage.bucket();
-    await bucket.upload(tempGif, {
-      destination: storagePath,
-      metadata: { contentType: 'image/gif' }
-    });
+    const bannersDir = join(STORAGE_PATH, 'banners');
+    if (!existsSync(bannersDir)) {
+      await mkdir(bannersDir, { recursive: true });
+    }
     
-    const file = bucket.file(storagePath);
-    await file.makePublic();
-    const gifUrl = `https://storage.googleapis.com/${bucket.name}/${storagePath}`;
+    const storagePath = join(bannersDir, `${bannerKey}.gif`);
+    const gifBuffer = await readFile(tempGif);
+    await writeFile(storagePath, gifBuffer);
+    const gifUrl = `/api/media/banners/${bannerKey}.gif`;
     
-    // Cleanup
     for (const fp of framePaths) await unlink(fp).catch(() => {});
     await unlink(palettePath).catch(() => {});
     await unlink(tempGif).catch(() => {});

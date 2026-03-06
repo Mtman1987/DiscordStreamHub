@@ -1,15 +1,17 @@
 'use server';
 
-import { db, storage } from '@/firebase/server-init';
+import { db } from '@/firebase/server-init';
 import { getUserByLogin, getClipsForUser } from './twitch-api-service';
 import { getClipVideoUrl } from './clip-url-finder';
-import { writeFile, unlink } from 'fs/promises';
+import { writeFile, unlink, mkdir, readFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { existsSync } from 'fs';
 
 const execAsync = promisify(exec);
+const STORAGE_PATH = process.env.STORAGE_PATH || '/data/clips';
 
 interface ClipMp4 {
   clipId: string;
@@ -67,17 +69,14 @@ export async function seedMp4s(serverId: string): Promise<void> {
           
           await writeFile(tempMp4, mp4Buffer);
           
-          // Upload to Firebase
-          const mp4StoragePath = `clips/${user.twitchLogin}/${clip.id}.mp4`;
-          const bucket = storage.bucket();
-          await bucket.upload(tempMp4, {
-            destination: mp4StoragePath,
-            metadata: { contentType: 'video/mp4' }
-          });
-          
-          const mp4File = bucket.file(mp4StoragePath);
-          await mp4File.makePublic();
-          const storedMp4Url = `https://storage.googleapis.com/${bucket.name}/${mp4StoragePath}`;
+          // Upload to local storage
+          const streamerDir = join(STORAGE_PATH, user.twitchLogin);
+          if (!existsSync(streamerDir)) {
+            await mkdir(streamerDir, { recursive: true });
+          }
+          const mp4StoragePath = join(streamerDir, `${clip.id}.mp4`);
+          await writeFile(mp4StoragePath, mp4Buffer);
+          const storedMp4Url = `/api/media/${user.twitchLogin}/${clip.id}.mp4`;
           
           // Save MP4 reference
           await db.collection('servers').doc(serverId)
@@ -163,17 +162,16 @@ async function convertSingleMp4ToGif(serverId: string, userId: string, mp4: Clip
     await execAsync(`ffmpeg -y -i "${tempMp4}" -vf "fps=${fps},scale=400:-1:flags=lanczos,palettegen" "${palettePath}"`);
     await execAsync(`ffmpeg -y -t ${maxDuration} -i "${tempMp4}" -i "${palettePath}" -filter_complex "fps=${fps},scale=400:-1:flags=lanczos[x];[x][1:v]paletteuse" "${tempGif}"`);
     
-    // Upload GIF
-    const gifStoragePath = `clips/${mp4.twitchLogin}/${Date.now()}.gif`;
-    const bucket = storage.bucket();
-    await bucket.upload(tempGif, {
-      destination: gifStoragePath,
-      metadata: { contentType: 'image/gif' }
-    });
-    
-    const gifFile = bucket.file(gifStoragePath);
-    await gifFile.makePublic();
-    const gifUrl = `https://storage.googleapis.com/${bucket.name}/${gifStoragePath}`;
+    // Upload GIF to local storage
+    const streamerDir = join(STORAGE_PATH, mp4.twitchLogin);
+    if (!existsSync(streamerDir)) {
+      await mkdir(streamerDir, { recursive: true });
+    }
+    const timestamp = Date.now();
+    const gifStoragePath = join(streamerDir, `${timestamp}.gif`);
+    const gifBuffer = await readFile(tempGif);
+    await writeFile(gifStoragePath, gifBuffer);
+    const gifUrl = `/api/media/${mp4.twitchLogin}/${timestamp}.gif`;
     
     // Save to clips collection
     await db.collection('servers').doc(serverId)
