@@ -21,5 +21,6 @@ twitch-video-url-finder-master
 public/downloaded-logs-*.json
 *.bat
 *.sh
+!scripts/start.sh
 full_app_code.txt
 app tree.txt
