@@ -11,6 +11,7 @@ import { getClipVideoUrl } from './clip-url-finder';
 
 const execAsync = promisify(exec);
 const STORAGE_PATH = process.env.STORAGE_PATH || '/data/clips';
+const CLIP_GIF_VERSION = '2026-05-02-1';
 
 export interface GifConversionOptions {
   serverId?: string;
@@ -66,8 +67,16 @@ export async function convertClipToGif(
     
     const timestamp = Date.now();
     const gifStoragePath = join(streamerDir, `${timestamp}.gif`);
+    const metaPath = join(streamerDir, `${timestamp}.gif.meta.json`);
     const gifBuffer = await readFile(tempGif);
     await writeFile(gifStoragePath, gifBuffer);
+    await writeFile(metaPath, JSON.stringify({
+      version: CLIP_GIF_VERSION,
+      clipId,
+      streamerName,
+      duration: maxDuration,
+      createdAt: new Date().toISOString()
+    }, null, 2));
     const gifUrl = `/api/media/${streamerName}/${timestamp}.gif`;
 
     await unlink(palettePath).catch(() => {});

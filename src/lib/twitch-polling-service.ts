@@ -3,6 +3,7 @@
 import { db } from '@/firebase/server-init';
 import { getStreamByLogin } from '@/lib/twitch-api-service';
 import { sendShoutoutToDiscord, getUserGroup } from '@/lib/shoutout-service';
+import { getCrewBannerUrl } from '@/lib/banner-generation-service';
 
 interface PollingState {
   isPolling: boolean;
@@ -253,8 +254,8 @@ class TwitchPollingService {
       // Then get clip with new index
       const { getCurrentClipForUser } = await import('./clip-rotation-service');
       const clip = await getCurrentClipForUser(serverId, discordUserId);
-      const bannerUrl = `/api/media/banners/${twitchLogin}.gif`;
       const fallbackBannerUrl = process.env.CREW_BANNER_GIF_URL || 'https://via.placeholder.com/1920x120/00D9FF/FFFFFF?text=SPACE+MOUNTAIN+CREW';
+      const bannerUrl = (await getCrewBannerUrl(twitchLogin)) || fallbackBannerUrl;
       const bannerEmbed = {
         image: { url: bannerUrl },
         color: 0x00D9FF

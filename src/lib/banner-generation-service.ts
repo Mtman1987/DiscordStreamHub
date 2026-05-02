@@ -10,6 +10,7 @@ import { existsSync } from 'fs';
 
 const execAsync = promisify(exec);
 const STORAGE_PATH = process.env.STORAGE_PATH || '/data/clips';
+const BANNER_VERSION = '2026-05-02-1';
 
 export async function generateCrewBanners(crewMembers: string[]): Promise<void> {
   console.log('[BannerGen] Generating crew banners...');
@@ -36,6 +37,44 @@ export async function generateCrewBanners(crewMembers: string[]): Promise<void> 
   }
   
   console.log('[BannerGen] 🎉 All crew banners generated!');
+}
+
+export async function getCrewBannerUrl(username: string): Promise<string | null> {
+  const bannerKey = username.toLowerCase();
+  const bannersDir = join(STORAGE_PATH, 'banners');
+  const bannerPath = join(bannersDir, `${bannerKey}.gif`);
+  const metaPath = join(bannersDir, `${bannerKey}.gif.meta.json`);
+  const bannerUrl = `/api/media/banners/${bannerKey}.gif?v=${BANNER_VERSION}`;
+
+  try {
+    if (!existsSync(bannersDir)) {
+      await mkdir(bannersDir, { recursive: true });
+    }
+
+    let needsRefresh = !existsSync(bannerPath);
+
+    if (!needsRefresh) {
+      try {
+        const raw = await readFile(metaPath, 'utf-8');
+        const meta = JSON.parse(raw) as { version?: string };
+        needsRefresh = meta.version !== BANNER_VERSION;
+      } catch {
+        needsRefresh = true;
+      }
+    }
+
+    if (needsRefresh) {
+      await generateCrewBanners([username]);
+    }
+
+    if (existsSync(bannerPath)) {
+      return bannerUrl;
+    }
+  } catch (error) {
+    console.error(`[BannerGen] Failed to resolve banner for ${username}:`, error);
+  }
+
+  return null;
 }
 
 export async function generateCommanderBanner(): Promise<string> {
@@ -91,8 +130,13 @@ async function recordBannerToGif(htmlPath: string, username: string): Promise<st
     }
     
     const storagePath = join(bannersDir, `${bannerKey}.gif`);
+    const metaPath = join(bannersDir, `${bannerKey}.gif.meta.json`);
     const gifBuffer = await readFile(tempGif);
     await writeFile(storagePath, gifBuffer);
+    await writeFile(metaPath, JSON.stringify({
+      version: BANNER_VERSION,
+      generatedAt: new Date().toISOString()
+    }, null, 2));
     const gifUrl = `/api/media/banners/${bannerKey}.gif`;
     
     for (const fp of framePaths) await unlink(fp).catch(() => {});

@@ -4,6 +4,7 @@ import { db } from '@/firebase/server-init';
 import { getStreamByLogin } from '@/lib/twitch-api-service';
 import { sendShoutout } from '@/lib/discord-sync-service';
 import { getCurrentClipForUser } from '@/lib/clip-rotation-service';
+import { getCrewBannerUrl } from '@/lib/banner-generation-service';
 import { getEmbedTemplates } from '@/lib/embed-templates';
 
 interface ShoutoutData {
@@ -76,8 +77,8 @@ async function generateCrewShoutout(twitchLogin: string, stream: any, baseMessag
     clip = await getCurrentClipForUser(serverId, userDoc.docs[0].id);
   }
 
-  const bannerUrl = `/api/media/banners/${twitchLogin}.gif`;
   const fallbackBannerUrl = process.env.CREW_BANNER_GIF_URL || 'https://via.placeholder.com/1920x120/00D9FF/FFFFFF?text=SPACE+MOUNTAIN+CREW';
+  const bannerUrl = (await getCrewBannerUrl(twitchLogin)) || fallbackBannerUrl;
 
   const bannerEmbed = {
     image: { url: bannerUrl },

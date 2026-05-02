@@ -60,7 +60,11 @@ function parseICalDate(icalDate: string): string {
   return `${year}-${month}-${day}T${hour}:${minute}:${second}Z`;
 }
 
-export async function generateScheduleEmbed(userId: string, serverId: string) {
+export async function generateScheduleEmbed(
+  userId: string,
+  serverId: string,
+  options: { forceRefresh?: boolean } = {}
+) {
   const userDoc = await db.collection('servers').doc(serverId).collection('users').doc(userId).get();
   const userData = userDoc.data();
   
@@ -70,29 +74,49 @@ export async function generateScheduleEmbed(userId: string, serverId: string) {
 
   const username = userData.twitchLogin;
   const broadcasterId = userData.twitchId;
-  
-  const segments = await fetchTwitchSchedule(broadcasterId, '');
+  const forceRefresh = options.forceRefresh ?? false;
   
   const eventsRef = db.collection('servers').doc(serverId).collection('users').doc(userId).collection('scheduleEvents');
-  const batch = db.batch();
-  
-  const oldEvents = await eventsRef.get();
-  oldEvents.docs.forEach(doc => batch.delete(doc.ref));
-  
-  segments.forEach(seg => {
-    const docRef = eventsRef.doc();
-    batch.set(docRef, {
-      eventName: seg.title,
-      description: 'Twitch Stream',
-      eventDateTime: new Date(seg.start_time),
-      type: 'stream',
-      isRecurring: seg.is_recurring
+  let imageUrl: string | null = null;
+
+  if (!forceRefresh) {
+    const fs = await import('fs/promises');
+    const path = await import('path');
+    const userCalendarDir = path.join('/data/clips', username, 'calendar');
+
+    try {
+      const files = await fs.readdir(userCalendarDir);
+      const pngFiles = files.filter(f => f.endsWith('.png')).sort().reverse();
+      if (pngFiles.length > 0) {
+        imageUrl = `https://discord-stream-hub-new.fly.dev/api/media/${username}/calendar/${pngFiles[0]}`;
+        console.log('[PartnerSchedule] Using existing calendar:', imageUrl);
+      }
+    } catch (readError) {
+      console.log('[PartnerSchedule] No existing calendar found, will generate new one');
+    }
+  }
+
+  if (!imageUrl) {
+    const segments = await fetchTwitchSchedule(broadcasterId, '');
+    const batch = db.batch();
+    const oldEvents = await eventsRef.get();
+    oldEvents.docs.forEach(doc => batch.delete(doc.ref));
+
+    segments.forEach(seg => {
+      const docRef = eventsRef.doc();
+      batch.set(docRef, {
+        eventName: seg.title,
+        description: 'Twitch Stream',
+        eventDateTime: new Date(seg.start_time),
+        type: 'stream',
+        isRecurring: seg.is_recurring
+      });
     });
-  });
-  
-  await batch.commit();
-  
-  const imageUrl = await generatePartnerCalendarImage(userId, serverId);
+
+    await batch.commit();
+
+    imageUrl = await generatePartnerCalendarImage(userId, serverId);
+  }
   
   if (!imageUrl) {
     console.error('[PartnerSchedule] Failed to generate image');

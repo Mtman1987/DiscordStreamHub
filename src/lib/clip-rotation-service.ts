@@ -4,11 +4,12 @@ import { db } from '@/firebase/server-init';
 import { getUserByLogin, getClipsForUser } from './twitch-api-service';
 import { convertClipToGif } from './gif-conversion-service';
 import { deleteGif } from './firebase-storage-service';
-import { readdir } from 'fs/promises';
+import { readdir, readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
 
 const STORAGE_PATH = process.env.STORAGE_PATH || '/data/clips';
+const CLIP_GIF_VERSION = '2026-05-02-1';
 
 interface CachedClip {
   clipId: string;
@@ -70,12 +71,12 @@ export async function bulkFetchClips(serverId: string): Promise<void> {
   console.log('[ClipFetching] 🎉 Bulk fetch complete!');
 }
 
-export async function fetchNewClipOnLive(serverId: string, userId: string, twitchLogin: string): Promise<void> {
+export async function fetchNewClipOnLive(serverId: string, userId: string, twitchLogin: string, force = false): Promise<void> {
   try {
     const lastFetch = await getLastClipFetch(serverId, userId);
     const now = Date.now();
     
-    if (lastFetch && now - lastFetch < 24 * 60 * 60 * 1000) {
+    if (!force && lastFetch && now - lastFetch < 24 * 60 * 60 * 1000) {
       console.log(`[ClipFetching] ${twitchLogin} already fetched today`);
       return;
     }
@@ -150,8 +151,31 @@ export async function getCurrentClipForUser(serverId: string, userId: string): P
   
   const files = await readdir(streamerDir);
   const gifs = files.filter(f => f.endsWith('.gif')).sort();
-  if (gifs.length === 0) return null;
+  const versionedGifs = await getVersionedClipFiles(streamerDir, gifs);
 
+  if (versionedGifs.length === 0 && gifs.length > 0) {
+    await fetchNewClipOnLive(serverId, userId, twitchLogin, true);
+    const refreshedFiles = await readdir(streamerDir).catch(() => [] as string[]);
+    const refreshedGifs = refreshedFiles.filter(f => f.endsWith('.gif')).sort();
+    const refreshedVersioned = await getVersionedClipFiles(streamerDir, refreshedGifs);
+
+    if (refreshedVersioned.length === 0) {
+      return null;
+    }
+
+    return buildClipPayload(twitchLogin, refreshedVersioned, serverId, userId);
+  }
+
+  if (versionedGifs.length === 0) return null;
+  return buildClipPayload(twitchLogin, versionedGifs, serverId, userId);
+}
+
+async function buildClipPayload(
+  twitchLogin: string,
+  gifs: string[],
+  serverId: string,
+  userId: string
+): Promise<CachedClip | null> {
   const stateDoc = await db.collection('servers').doc(serverId)
     .collection('users').doc(userId)
     .collection('shoutoutState').doc('current').get();
@@ -168,6 +192,25 @@ export async function getCurrentClipForUser(serverId: string, userId: string): P
     createdAt: new Date().toISOString(),
     cachedAt: new Date().toISOString()
   };
+}
+
+async function getVersionedClipFiles(streamerDir: string, gifs: string[]): Promise<string[]> {
+  const versioned: string[] = [];
+
+  for (const file of gifs) {
+    const metaPath = join(streamerDir, `${file}.meta.json`);
+    try {
+      const raw = await readFile(metaPath, 'utf-8');
+      const meta = JSON.parse(raw) as { version?: string };
+      if (meta.version === CLIP_GIF_VERSION) {
+        versioned.push(file);
+      }
+    } catch {
+      // Ignore legacy clips without metadata.
+    }
+  }
+
+  return versioned.sort();
 }
 
 export async function getCurrentVipClip(serverId: string): Promise<CachedClip | null> {

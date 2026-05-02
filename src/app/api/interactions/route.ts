@@ -370,7 +370,7 @@ export async function POST(request: NextRequest) {
       const { generateScheduleEmbed, savePartnerScheduleThread } = await import('@/lib/partner-schedule-service');
       const { postDiscordMessage } = await import('@/lib/discord-sync-service');
       
-      const embed = await generateScheduleEmbed(userId, serverId);
+      const embed = await generateScheduleEmbed(userId, serverId, { forceRefresh: true });
       console.log('[PartnerUsername] Embed generated:', !!embed);
       
       if (embed) {
