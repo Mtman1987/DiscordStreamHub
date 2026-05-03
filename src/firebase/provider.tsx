@@ -100,7 +100,14 @@ export const useFirebase = (): FirebaseServicesAndUser => {
   }
 
   if (!context.areServicesAvailable || !context.firebaseApp || !context.firestore || !context.auth) {
-    throw new Error('Firebase core services not available. Check FirebaseProvider props.');
+    return {
+      firebaseApp: null as any,
+      firestore: null as any,
+      auth: null as any,
+      user: context.user,
+      isUserLoading: context.isUserLoading,
+      userError: context.userError,
+    };
   }
 
   return {
@@ -115,17 +122,17 @@ export const useFirebase = (): FirebaseServicesAndUser => {
 
 export const useAuth = (): Auth => {
   const { auth } = useFirebase();
-  return auth;
+  return auth as Auth;
 };
 
 export const useFirestore = (): Firestore => {
   const { firestore } = useFirebase();
-  return firestore;
+  return firestore as Firestore;
 };
 
 export const useFirebaseApp = (): FirebaseApp => {
   const { firebaseApp } = useFirebase();
-  return firebaseApp;
+  return firebaseApp as FirebaseApp;
 };
 
 export const useUser = (): UserHookResult => {
