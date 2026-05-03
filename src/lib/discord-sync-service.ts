@@ -305,6 +305,10 @@ export async function getRoles(serverId: string): Promise<string[]> {
   return discordSyncService.getRoles(serverId);
 }
 
+export async function getRoleMappings(serverId: string): Promise<Record<string, string>> {
+  return discordSyncService.getRoleMappings(serverId);
+}
+
 export async function updateRoleMappings(serverId: string, mappings: Record<string, string>): Promise<void> {
   return discordSyncService.updateRoleMappings(serverId, mappings);
 }
