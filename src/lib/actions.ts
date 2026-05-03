@@ -150,14 +150,8 @@ export async function generateAllShoutoutsAction(prevState: any, formData: FormD
       return { status: 'success' as const, results: [{ streamerName: 'N/A', success: true, message: 'No online community members found to generate shoutouts for.' }], error: undefined };
     }
 
-    const uiResults = results.map(user => ({
-        streamerName: user.username,
-        success: true,
-        message: 'Shoutout generated successfully. Ready to post.'
-    }));
-
     revalidatePath(`/shoutouts/community`);
-    return { status: 'success' as const, results: uiResults, error: undefined };
+    return { status: 'success' as const, results, error: undefined };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'An unknown error occurred.';
     return { status: 'error' as const, results: [], error: message };

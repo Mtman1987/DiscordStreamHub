@@ -209,6 +209,44 @@ export class PointsService {
     return { points: newPoints };
   }
 
+  async getUserRank(userId: string, serverId?: string): Promise<{ rank: number; points: number } | null> {
+    const actualServerId = serverId || process.env.HARDCODED_GUILD_ID || 'default';
+    const userRef = db.collection('servers').doc(actualServerId).collection('leaderboard').doc(userId);
+    const userDoc = await userRef.get();
+
+    if (!userDoc.exists) {
+      return null;
+    }
+
+    const userPoints = Number(userDoc.data()?.points || 0);
+    const leaderboardSnapshot = await db
+      .collection('servers')
+      .doc(actualServerId)
+      .collection('leaderboard')
+      .orderBy('points', 'desc')
+      .get();
+
+    const rank = leaderboardSnapshot.docs.findIndex((doc) => doc.id === userId) + 1;
+    return { rank: rank > 0 ? rank : leaderboardSnapshot.docs.length + 1, points: userPoints };
+  }
+
+  async getUserPoints(userId: string, serverId?: string): Promise<{ username?: string; displayName?: string; points: number } | null> {
+    const actualServerId = serverId || process.env.HARDCODED_GUILD_ID || 'default';
+    const userRef = db.collection('servers').doc(actualServerId).collection('leaderboard').doc(userId);
+    const userDoc = await userRef.get();
+
+    if (!userDoc.exists) {
+      return null;
+    }
+
+    const data = userDoc.data() || {};
+    return {
+      username: data.lastEventMetadata?.username as string | undefined,
+      displayName: data.lastEventMetadata?.displayName as string | undefined,
+      points: Number(data.points || 0),
+    };
+  }
+
   async getLeaderboard(limit: number = 50, serverId?: string): Promise<any[]> {
     const actualServerId = serverId || process.env.HARDCODED_GUILD_ID || 'default';
     

@@ -1,6 +1,7 @@
 import { addMonths, format } from 'date-fns';
 import { db } from '@/firebase/server-init';
 import { generateCalendarImage } from '@/ai/flows/generate-calendar-image';
+import { postCalendarToDiscord as postCalendarToDiscordNew } from './calendar-discord-service-new';
 
 type CalendarMessageMeta = {
   channelId: string;
@@ -331,4 +332,8 @@ export async function shiftCalendarMonth(serverId: string, delta: number) {
     monthLabel,
     monthOffset: updatedCalendars[0].monthOffset ?? 0,
   };
+}
+
+export async function generateAndPostCalendar(serverId: string, channelId: string) {
+  return postCalendarToDiscordNew(serverId, channelId, 0);
 }

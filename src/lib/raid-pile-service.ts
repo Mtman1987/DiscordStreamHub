@@ -46,7 +46,7 @@ export class RaidPileService {
     availablePile.members.push(member);
     availablePile.lastUpdated = new Date().toISOString();
 
-    await setDoc(doc(db, 'raidPiles', availablePile.id), availablePile);
+    await db.collection('raidPiles').doc(availablePile.id).set(availablePile);
     await this.checkForSplit();
 
     return { success: true, pileId: availablePile.id };
@@ -61,7 +61,7 @@ export class RaidPileService {
         pile.members.splice(memberIndex, 1);
         pile.lastUpdated = new Date().toISOString();
         
-        await setDoc(doc(db, 'raidPiles', pile.id), pile);
+        await db.collection('raidPiles').doc(pile.id).set(pile);
         await this.checkForMerge();
         return true;
       }
@@ -126,7 +126,7 @@ export class RaidPileService {
       const member = pile.members.find(m => m.userId === userId);
       if (member) {
         member.lastRaidedAt = new Date().toISOString();
-        await setDoc(doc(db, 'raidPiles', pile.id), pile);
+        await db.collection('raidPiles').doc(pile.id).set(pile);
         break;
       }
     }
@@ -140,7 +140,7 @@ export class RaidPileService {
       if (member) {
         member.currentViewers = viewers;
         member.isLive = isLive;
-        await setDoc(doc(db, 'raidPiles', pile.id), pile);
+        await db.collection('raidPiles').doc(pile.id).set(pile);
         break;
       }
     }
@@ -179,7 +179,7 @@ export class RaidPileService {
       lastUpdated: new Date().toISOString()
     };
     
-    await setDoc(doc(db, 'raidPiles', pileId), pile);
+    await db.collection('raidPiles').doc(pileId).set(pile);
     return pile;
   }
 
@@ -202,7 +202,7 @@ export class RaidPileService {
     // Update original pile
     pile.members = firstHalf;
     pile.lastUpdated = new Date().toISOString();
-    await setDoc(doc(db, 'raidPiles', pile.id), pile);
+    await db.collection('raidPiles').doc(pile.id).set(pile);
     
     // Create new pile for second half
     const newPileId = `pile_${Date.now()}`;
@@ -216,7 +216,7 @@ export class RaidPileService {
       lastUpdated: new Date().toISOString()
     };
     
-    await setDoc(doc(db, 'raidPiles', newPileId), newPile);
+    await db.collection('raidPiles').doc(newPileId).set(newPile);
   }
 
   private async checkForMerge(): Promise<void> {
@@ -242,17 +242,16 @@ export class RaidPileService {
     });
     
     mainPile.lastUpdated = new Date().toISOString();
-    await setDoc(doc(db, 'raidPiles', mainPile.id), mainPile);
+    await db.collection('raidPiles').doc(mainPile.id).set(mainPile);
     
     // Delete other piles
     for (const pile of otherPiles) {
-      await deleteDoc(doc(db, 'raidPiles', pile.id));
+      await db.collection('raidPiles').doc(pile.id).delete();
     }
   }
 
   async getAllPiles(): Promise<RaidPile[]> {
-    const q = query(collection(db, 'raidPiles'), orderBy('createdAt'));
-    const querySnapshot = await getDocs(q);
+    const querySnapshot = await db.collection('raidPiles').orderBy('createdAt').get();
     
     const piles: RaidPile[] = [];
     querySnapshot.forEach(doc => {
