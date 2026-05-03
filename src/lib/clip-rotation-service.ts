@@ -1,15 +1,19 @@
 'use server';
 
-import { db } from '@/firebase/server-init';
+import { db } from '@/lib/db';
 import { getUserByLogin, getClipsForUser } from './twitch-api-service';
 import { convertClipToGif } from './gif-conversion-service';
-import { deleteGif } from './firebase-storage-service';
-import { readdir, readFile, writeFile } from 'fs/promises';
+import { deleteGif } from './local-storage-service';
+import { readdir } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
 
 const STORAGE_PATH = process.env.STORAGE_PATH || '/data/clips';
-const CLIP_GIF_VERSION = '2026-05-02-1';
+
+// In-memory cooldown guard — survives within process lifetime
+// Firestore is the source of truth, this prevents race conditions within a poll cycle
+const clipCooldowns = new Map<string, number>();
+const COOLDOWN_MS = 12 * 60 * 60 * 1000;
 
 interface CachedClip {
   clipId: string;
@@ -42,7 +46,7 @@ export async function bulkFetchClips(serverId: string): Promise<void> {
       
       let successCount = 0;
       for (const clip of clips) {
-        if (successCount >= 10) break;
+        if (successCount >= 6) break;
         
         const gifUrl = await convertClipToGif(
           clip.url,
@@ -60,71 +64,288 @@ export async function bulkFetchClips(serverId: string): Promise<void> {
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
       
-      console.log(`[ClipFetching] ✅ Completed ${user.twitchLogin}`);
+      console.log(`[ClipFetching] Completed ${user.twitchLogin}`);
       
       await new Promise(resolve => setTimeout(resolve, 2000));
     } catch (error) {
-      console.error(`[ClipFetching] ❌ Error for ${user.twitchLogin}:`, error);
+      console.error(`[ClipFetching] Error for ${user.twitchLogin}:`, error);
     }
   }
   
-  console.log('[ClipFetching] 🎉 Bulk fetch complete!');
+  console.log('[ClipFetching] Bulk fetch complete!');
 }
 
-export async function fetchNewClipOnLive(serverId: string, userId: string, twitchLogin: string, force = false): Promise<void> {
+export async function fetchNewClipOnLive(serverId: string, userId: string, twitchLogin: string): Promise<void> {
   try {
-    const lastFetch = await getLastClipFetch(serverId, userId);
     const now = Date.now();
+    const cacheKey = `${serverId}_${userId}`;
     
-    if (!force && lastFetch && now - lastFetch < 24 * 60 * 60 * 1000) {
-      console.log(`[ClipFetching] ${twitchLogin} already fetched today`);
+    // In-memory guard first (prevents race conditions within same process)
+    const memCooldown = clipCooldowns.get(cacheKey);
+    if (memCooldown && now - memCooldown < COOLDOWN_MS) {
+      console.log(`[ClipFetching] ${twitchLogin} cooldown (memory): ${Math.round((COOLDOWN_MS - (now - memCooldown)) / 60000)}min remaining`);
       return;
     }
+    
+    // Firestore check (persists across restarts)
+    const lastFetch = await getLastClipFetch(serverId, userId);
+    if (lastFetch && now - lastFetch < COOLDOWN_MS) {
+      clipCooldowns.set(cacheKey, lastFetch);
+      console.log(`[ClipFetching] ${twitchLogin} cooldown (firestore): ${Math.round((COOLDOWN_MS - (now - lastFetch)) / 60000)}min remaining`);
+      return;
+    }
+    
+    // Don't set cooldown yet - only set after success
 
     const twitchUser = await getUserByLogin(twitchLogin);
     if (!twitchUser) return;
 
-    const clips = await getClipsForUser(twitchUser.id, 20);
-    if (clips.length === 0) return;
-
-    const streamerDir = join(STORAGE_PATH, twitchLogin);
-    const existingGifs = new Set<string>();
-    
-    if (existsSync(streamerDir)) {
-      const files = await readdir(streamerDir);
-      files.filter(f => f.endsWith('.gif')).forEach(f => {
-        const clipId = f.replace('.gif', '').split('_')[1];
-        if (clipId) existingGifs.add(clipId);
-      });
+    console.log(`[ClipFetching] Fetching 100 clips for ${twitchLogin}...`);
+    let clips = await getClipsForUser(twitchUser.id, 100);
+    if (clips.length === 0) {
+      console.log(`[ClipFetching] No clips found for ${twitchLogin}, auto-creating clip...`);
+      const { createClip } = await import('./twitch-api-service');
+      const newClipId = await createClip(twitchUser.id, serverId);
+      if (newClipId) {
+        await new Promise(resolve => setTimeout(resolve, 15000));
+        clips = await getClipsForUser(twitchUser.id, 10);
+        if (clips.length > 0) {
+          console.log(`[ClipFetching] Auto-created clip ready for ${twitchLogin}`);
+        }
+      }
+      // If still no clips, record the live stream directly
+      if (clips.length === 0) {
+        console.log(`[ClipFetching] No clips available, recording live stream for ${twitchLogin}...`);
+        const recorded = await recordLiveStream(twitchLogin);
+        if (recorded > 0) {
+          console.log(`[ClipFetching] Recorded ${recorded} GIFs from live stream for ${twitchLogin}`);
+          clipCooldowns.set(cacheKey, now);
+          await setLastClipFetch(serverId, userId, now);
+        } else {
+          console.log(`[ClipFetching] Live stream recording failed for ${twitchLogin}`);
+        }
+        return;
+      }
     }
-    
-    const newClip = clips.find(c => !existingGifs.has(c.id));
-    if (!newClip) return;
-    
-    const gifUrl = await convertClipToGif(
-      newClip.url,
-      newClip.id,
-      twitchLogin,
-      Math.min(newClip.duration, 60),
-      'stream',
-      { serverId }
-    );
 
-    if (gifUrl) {
-      const files = await readdir(streamerDir);
-      const gifs = files.filter(f => f.endsWith('.gif')).sort();
+    console.log(`[ClipFetching] Found ${clips.length} clips, trying newest 5 first...`);
+    let successCount = 0;
+    const targetGifs = 2;
+    
+    // Try 5 newest first
+    const newestClips = clips.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 5);
+    for (const clip of newestClips) {
+      if (successCount >= targetGifs) break;
       
-      if (gifs.length >= 10) {
-        await deleteGif(`${twitchLogin}/${gifs[0].replace('.gif', '')}`);
-        const mp4Name = gifs[0].replace('.gif', '.mp4');
-        await deleteGif(`${twitchLogin}/${mp4Name.replace('.mp4', '')}`);
+      try {
+        const gifPath = await convertClipToGif(
+          clip.url,
+          clip.id,
+          twitchLogin,
+          Math.min(clip.duration, 30),
+          'stream',
+          { serverId }
+        );
+
+        if (gifPath && !gifPath.includes('tenor.com')) {
+          successCount++;
+          console.log(`[ClipFetching] Success ${successCount}/${targetGifs} for ${twitchLogin}`);
+        }
+      } catch (clipError) {
+        console.log(`[ClipFetching] Clip ${clip.id} failed, trying next...`);
       }
       
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
+    
+    // If didn't get 2, try 5 most popular
+    if (successCount < targetGifs) {
+      console.log(`[ClipFetching] Only got ${successCount}, trying 5 most popular...`);
+      const popularClips = clips.sort((a, b) => b.view_count - a.view_count).slice(0, 5);
+      
+      for (const clip of popularClips) {
+        if (successCount >= targetGifs) break;
+        
+        try {
+          const gifPath = await convertClipToGif(
+            clip.url,
+            clip.id,
+            twitchLogin,
+            Math.min(clip.duration, 30),
+            'stream',
+            { serverId }
+          );
+
+          if (gifPath && !gifPath.includes('tenor.com')) {
+            successCount++;
+            console.log(`[ClipFetching] Success ${successCount}/${targetGifs} for ${twitchLogin}`);
+          }
+        } catch (clipError) {
+          console.log(`[ClipFetching] Clip ${clip.id} failed, trying next...`);
+        }
+        
+        await new Promise(resolve => setTimeout(resolve, 300));
+      }
+    }
+    
+    // Only set cooldown after success
+    if (successCount > 0) {
+      clipCooldowns.set(cacheKey, now);
       await setLastClipFetch(serverId, userId, now);
-      console.log(`[ClipFetching] Fetched new clip for ${twitchLogin}`);
+      console.log(`[ClipFetching] Completed ${twitchLogin}: ${successCount} GIFs created`);
+    } else {
+      console.log(`[ClipFetching] No GIFs from clips, recording live stream for ${twitchLogin}...`);
+      const recorded = await recordLiveStream(twitchLogin);
+      if (recorded > 0) {
+        clipCooldowns.set(cacheKey, now);
+        await setLastClipFetch(serverId, userId, now);
+        console.log(`[ClipFetching] Completed ${twitchLogin}: ${recorded} GIFs from live recording`);
+      } else {
+        console.log(`[ClipFetching] Failed to create any GIFs for ${twitchLogin}`);
+      }
     }
   } catch (error) {
     console.error(`[ClipFetching] Error for ${twitchLogin}:`, error);
+  }
+}
+
+async function recordLiveStream(twitchLogin: string): Promise<number> {
+  const { exec } = await import('child_process');
+  const { promisify } = await import('util');
+  const { writeFile, mkdir, readdir: readdirAsync, unlink, readFile: readFileAsync, rmdir } = await import('fs/promises');
+  const { tmpdir } = await import('os');
+  const { join: joinPath } = await import('path');
+  const { existsSync: existsSyncLocal } = await import('fs');
+  const execAsync = promisify(exec);
+  const puppeteer = await import('puppeteer');
+
+  const streamerDir = joinPath(STORAGE_PATH, twitchLogin);
+  if (!existsSyncLocal(streamerDir)) await mkdir(streamerDir, { recursive: true });
+
+  let browser;
+  try {
+    console.log(`[LiveRecord] Launching browser for ${twitchLogin}...`);
+    browser = await puppeteer.default.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--autoplay-policy=no-user-gesture-required'],
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+    });
+
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1280, height: 720 });
+
+    const embedUrl = `https://player.twitch.tv/?channel=${twitchLogin}&parent=localhost&muted=true`;
+    console.log(`[LiveRecord] Navigating to ${embedUrl}`);
+    await page.goto(embedUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+
+    // Wait for player to appear
+    await page.waitForSelector('video', { timeout: 15000 }).catch(() => {});
+    await new Promise(resolve => setTimeout(resolve, 3000));
+
+    // Click through content classification / mature content gate / play button
+    // Try multiple times since overlays can stack
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const clicked = await page.evaluate(() => {
+        // Mature content warning "Start Watching" button
+        const startBtn = document.querySelector('button[data-a-target="content-classification-gate-overlay-start-watching-button"]') as HTMLElement;
+        if (startBtn) { startBtn.click(); return 'mature-gate'; }
+        // Generic overlay click handler (dismisses overlays)
+        const overlay = document.querySelector('[data-a-target="player-overlay-click-handler"]') as HTMLElement;
+        if (overlay) { overlay.click(); return 'overlay'; }
+        // Play/pause button
+        const playBtn = document.querySelector('[data-a-target="player-play-pause-button"]') as HTMLElement;
+        if (playBtn) { playBtn.click(); return 'play-btn'; }
+        return null;
+      });
+      if (clicked) console.log(`[LiveRecord] Clicked: ${clicked} (attempt ${attempt + 1})`);
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+
+    // Final click on video element itself to ensure playback
+    await page.click('video').catch(() => {});
+    await new Promise(resolve => setTimeout(resolve, 5000));
+
+    // Verify video is actually playing
+    const isPlaying = await page.evaluate(() => {
+      const video = document.querySelector('video') as HTMLVideoElement;
+      return video && !video.paused && video.readyState >= 2;
+    });
+    if (!isPlaying) {
+      console.log(`[LiveRecord] Video not playing, trying one more click...`);
+      await page.click('video').catch(() => {});
+      await new Promise(resolve => setTimeout(resolve, 3000));
+    }
+
+    const finalCheck = await page.evaluate(() => {
+      const video = document.querySelector('video') as HTMLVideoElement;
+      return { paused: video?.paused, readyState: video?.readyState, currentTime: video?.currentTime };
+    });
+    console.log(`[LiveRecord] Video state: paused=${finalCheck.paused}, readyState=${finalCheck.readyState}, currentTime=${finalCheck.currentTime}`);
+
+    if (finalCheck.paused || (finalCheck.readyState || 0) < 2) {
+      console.log(`[LiveRecord] Video still not playing for ${twitchLogin}, aborting`);
+      return 0;
+    }
+
+    let successCount = 0;
+
+    for (let i = 0; i < 2; i++) {
+      const tempGif = joinPath(tmpdir(), `live_${twitchLogin}_${i}_${Date.now()}.gif`);
+      const frameDir = joinPath(tmpdir(), `frames_${twitchLogin}_${i}_${Date.now()}`);
+      const palettePath = joinPath(tmpdir(), `palette_${twitchLogin}_${i}_${Date.now()}.png`);
+
+      try {
+        console.log(`[LiveRecord] Recording 30s clip ${i + 1}/2 for ${twitchLogin}...`);
+        await mkdir(frameDir, { recursive: true });
+
+        const fps = 10;
+        const totalFrames = fps * 30;
+        const interval = 1000 / fps;
+
+        for (let f = 0; f < totalFrames; f++) {
+          const frame = await page.screenshot({ type: 'png', clip: { x: 0, y: 0, width: 1280, height: 720 } });
+          await writeFile(joinPath(frameDir, `frame_${String(f).padStart(5, '0')}.png`), frame as Buffer);
+          await new Promise(resolve => setTimeout(resolve, interval));
+        }
+
+        console.log(`[LiveRecord] Captured ${totalFrames} frames, assembling GIF...`);
+        await execAsync(`ffmpeg -y -framerate ${fps} -i "${joinPath(frameDir, 'frame_%05d.png')}" -vf "fps=${fps},scale=480:-1:flags=lanczos,palettegen" "${palettePath}"`);
+        await execAsync(`ffmpeg -y -framerate ${fps} -i "${joinPath(frameDir, 'frame_%05d.png')}" -i "${palettePath}" -filter_complex "fps=${fps},scale=480:-1:flags=lanczos[x];[x][1:v]paletteuse" -loop 0 "${tempGif}"`);
+
+        // Enforce 10 GIF limit
+        const existing = (await readdirAsync(streamerDir)).filter(f => f.endsWith('.gif')).sort();
+        if (existing.length >= 5) {
+          for (const old of existing.slice(0, existing.length - 4)) {
+            await unlink(joinPath(streamerDir, old)).catch(() => {});
+          }
+        }
+
+        const gifBuffer = await readFileAsync(tempGif);
+        await writeFile(joinPath(streamerDir, `${Date.now()}.gif`), gifBuffer);
+        successCount++;
+        console.log(`[LiveRecord] GIF ${successCount}/2 saved for ${twitchLogin}`);
+      } catch (clipErr) {
+        console.error(`[LiveRecord] Clip ${i + 1} failed:`, clipErr);
+      } finally {
+        await unlink(palettePath).catch(() => {});
+        await unlink(tempGif).catch(() => {});
+        const frameFiles = await readdirAsync(frameDir).catch(() => [] as string[]);
+        for (const f of frameFiles) await unlink(joinPath(frameDir, f)).catch(() => {});
+        await rmdir(frameDir).catch(() => {});
+      }
+
+      // Gap between recordings for different content
+      if (i === 0 && successCount > 0) {
+        await new Promise(resolve => setTimeout(resolve, 5000));
+      }
+    }
+
+    return successCount;
+  } catch (error) {
+    console.error(`[LiveRecord] Error for ${twitchLogin}:`, error);
+    return 0;
+  } finally {
+    if (browser) await browser.close().catch(() => {});
   }
 }
 
@@ -141,76 +362,23 @@ async function setLastClipFetch(serverId: string, userId: string, timestamp: num
 }
 
 export async function getCurrentClipForUser(serverId: string, userId: string): Promise<CachedClip | null> {
+  const { getCurrentGifForUser } = await import('./discord-gif-storage');
+  const gif = await getCurrentGifForUser(serverId, userId);
+  
+  if (!gif) return null;
+
   const userDoc = await db.collection('servers').doc(serverId)
     .collection('users').doc(userId).get();
-  const twitchLogin = userDoc.data()?.twitchLogin;
-  if (!twitchLogin) return null;
-
-  const streamerDir = join(STORAGE_PATH, twitchLogin);
-  if (!existsSync(streamerDir)) return null;
-  
-  const files = await readdir(streamerDir);
-  const gifs = files.filter(f => f.endsWith('.gif')).sort();
-  const versionedGifs = await getVersionedClipFiles(streamerDir, gifs);
-
-  if (versionedGifs.length === 0 && gifs.length > 0) {
-    await fetchNewClipOnLive(serverId, userId, twitchLogin, true);
-    const refreshedFiles = await readdir(streamerDir).catch(() => [] as string[]);
-    const refreshedGifs = refreshedFiles.filter(f => f.endsWith('.gif')).sort();
-    const refreshedVersioned = await getVersionedClipFiles(streamerDir, refreshedGifs);
-
-    if (refreshedVersioned.length === 0) {
-      return null;
-    }
-
-    return buildClipPayload(twitchLogin, refreshedVersioned, serverId, userId);
-  }
-
-  if (versionedGifs.length === 0) return null;
-  return buildClipPayload(twitchLogin, versionedGifs, serverId, userId);
-}
-
-async function buildClipPayload(
-  twitchLogin: string,
-  gifs: string[],
-  serverId: string,
-  userId: string
-): Promise<CachedClip | null> {
-  const stateDoc = await db.collection('servers').doc(serverId)
-    .collection('users').doc(userId)
-    .collection('shoutoutState').doc('current').get();
-  const currentIndex = stateDoc.data()?.currentClipIndex || 0;
-
-  const file = gifs[currentIndex % gifs.length];
-  const gifUrl = `/api/media/${twitchLogin}/${file}`;
+  const twitchLogin = userDoc.data()?.twitchLogin || 'unknown';
 
   return {
-    clipId: file.replace('.gif', ''),
-    gifUrl,
+    clipId: gif.clipId,
+    gifUrl: gif.discordUrl,
     twitchLogin,
     title: 'Clip',
-    createdAt: new Date().toISOString(),
-    cachedAt: new Date().toISOString()
+    createdAt: gif.uploadedAt,
+    cachedAt: gif.uploadedAt
   };
-}
-
-async function getVersionedClipFiles(streamerDir: string, gifs: string[]): Promise<string[]> {
-  const versioned: string[] = [];
-
-  for (const file of gifs) {
-    const metaPath = join(streamerDir, `${file}.meta.json`);
-    try {
-      const raw = await readFile(metaPath, 'utf-8');
-      const meta = JSON.parse(raw) as { version?: string };
-      if (meta.version === CLIP_GIF_VERSION) {
-        versioned.push(file);
-      }
-    } catch {
-      // Ignore legacy clips without metadata.
-    }
-  }
-
-  return versioned.sort();
 }
 
 export async function getCurrentVipClip(serverId: string): Promise<CachedClip | null> {

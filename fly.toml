@@ -1,31 +1,41 @@
-app = "discord-stream-hub"
-primary_region = "iad"
+app = 'discord-stream-hub-new'
+primary_region = 'iad'
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = 'Dockerfile'
+  [build.args]
+    NEXT_PUBLIC_TWITCH_CLIENT_ID = 'rxmohc28tthq0nudfd6iwx0sgy88dp'
+    NEXT_PUBLIC_APP_URL = 'https://discord-stream-hub-new.fly.dev'
+    NEXT_PUBLIC_BASE_URL = 'https://discord-stream-hub-new.fly.dev'
+    NEXT_PUBLIC_DISCORD_CLIENT_ID = '1279582181768957963'
+    NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET = ''
+    NEXT_PUBLIC_HARDCODED_GUILD_ID = '1240832965865635881'
+    NEXT_PUBLIC_HARDCODED_ADMIN_DISCORD_ID = '767875979561009173'
+    NEXT_PUBLIC_HARDCODED_ADMIN_TWITCH_ID = '94371378'
 
 [env]
-  NODE_ENV = "production"
+  NODE_ENV = 'production'
+
+[[mounts]]
+  source = 'discord_stream_data'
+  destination = '/data'
+  initial_size = '10gb'
 
 [http_service]
   internal_port = 3000
   force_https = true
-  auto_stop_machines = false
+  auto_stop_machines = 'off'
   auto_start_machines = true
-  min_machines_running = 1
-  
+  min_machines_running = 2
+
   [[http_service.checks]]
-    grace_period = "30s"
-    interval = "15s"
-    method = "GET"
-    timeout = "5s"
-    path = "/api/health"
+    interval = '30s'
+    timeout = '10s'
+    grace_period = '60s'
+    method = 'GET'
+    path = '/api/health'
 
 [[vm]]
   memory = '2gb'
   cpu_kind = 'shared'
   cpus = 2
-
-[mounts]
-  source = "discord_stream_data"
-  destination = "/data"

@@ -5,7 +5,11 @@ import { sendShoutoutToDiscord } from '@/lib/shoutout-service';
 
 export async function POST(request: NextRequest) {
   try {
-    const { serverId, channelId, twitchLogin, discordUserId } = await request.json();
+    const body = await request.json();
+    const serverId = body.serverId || body.guildId || body.discordServerId;
+    const channelId = body.channelId;
+    const twitchLogin = body.twitchLogin;
+    const discordUserId = body.discordUserId || body.userId;
 
     if (!serverId || !channelId || !twitchLogin || !discordUserId) {
       return NextResponse.json({

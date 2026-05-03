@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/firebase/server-init';
+import { db } from '@/lib/db';
 
 export async function GET(request: NextRequest) {
   try {
-    const serverId = request.nextUrl.searchParams.get('serverId');
+    const serverId =
+      request.nextUrl.searchParams.get('serverId') ||
+      request.nextUrl.searchParams.get('guildId') ||
+      request.nextUrl.searchParams.get('discordServerId');
     
     if (!serverId) {
       return NextResponse.json({ error: 'serverId required' }, { status: 400 });

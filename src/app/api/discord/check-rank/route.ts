@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/firebase/server-init';
+import { db } from '@/lib/db';
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId, username, serverId } = await request.json();
+    const body = await request.json();
+    const userId = body.userId || body.discordUserId;
+    const username = body.username || body.discordUsername;
+    const serverId = body.serverId || body.guildId || body.discordServerId;
     
     if (!userId || !serverId) {
       return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 });

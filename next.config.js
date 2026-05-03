@@ -1,10 +1,15 @@
 /** @type {import('next').NextConfig} */
-const path = require('path');
-
 const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '50mb',
+    },
+  },
+  // Increase body size limit for API routes (clip uploads)
+  serverExternalPackages: ['discord-verify', 'puppeteer-screen-recorder', 'better-sqlite3', 'sql.js'],
   images: {
     remotePatterns: [
       {
@@ -46,13 +51,12 @@ const nextConfig = {
     ],
   },
   // Required for discord-verify to work
-  serverExternalPackages: ['discord-verify'],
-  webpack: (config) => {
-    config.resolve.alias = {
-      ...(config.resolve.alias || {}),
-      'firebase/firestore': path.resolve(__dirname, 'src/lib/firestore-shim.ts'),
-    };
-    return config;
+  serverExternalPackages: ['discord-verify', 'puppeteer-screen-recorder', 'better-sqlite3', 'sql.js'],
+  turbopack: {
+    resolveAlias: {
+      'firebase/firestore': './src/lib/firestore-shim.ts',
+      'firebase/auth': './src/lib/firestore-shim.ts',
+    },
   },
 };
 
