@@ -306,26 +306,30 @@ body { width: 1200px; height: 900px; background: linear-gradient(135deg, #581c87
     const screenshot = await page.screenshot({ type: 'png' });
     await browser.close();
 
-    const { getStorage } = await import('firebase-admin/storage');
-    const { app } = await import('@/firebase/server-init');
-    const STORAGE_BUCKET = process.env.FIREBASE_STORAGE_BUCKET || process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
+    const fs = await import('fs/promises');
+    const path = await import('path');
+    const userCalendarDir = path.join('/data/clips', username, 'calendar');
     
-    if (!STORAGE_BUCKET) {
-      console.error('[PartnerCalendar] Storage bucket not configured');
-      return null;
+    await fs.mkdir(userCalendarDir, { recursive: true });
+
+    try {
+      const files = await fs.readdir(userCalendarDir);
+      for (const file of files) {
+        if (file.endsWith('.png')) {
+          await fs.unlink(path.join(userCalendarDir, file));
+        }
+      }
+    } catch (cleanupError) {
+      console.log('[PartnerCalendar] Cleanup skipped:', cleanupError);
     }
 
-    const bucket = getStorage(app).bucket(STORAGE_BUCKET);
-    const fileName = `partner-calendars/${serverId}/${userId}-${Date.now()}.png`;
-    const file = bucket.file(fileName);
+    const fileName = `calendar-${Date.now()}.png`;
+    const filePath = path.join(userCalendarDir, fileName);
 
-    await file.save(screenshot, {
-      metadata: { contentType: 'image/png' },
-      public: true,
-    });
+    await fs.writeFile(filePath, screenshot);
 
-    const publicUrl = `https://storage.googleapis.com/${STORAGE_BUCKET}/${fileName}`;
-    console.log('[PartnerCalendar] Image uploaded:', publicUrl);
+    const publicUrl = `https://discord-stream-hub-new.fly.dev/api/media/${username}/calendar/${fileName}`;
+    console.log('[PartnerCalendar] Image saved to volume:', publicUrl);
     return publicUrl;
   } catch (error) {
     console.error('[PartnerCalendar] Error generating image:', error);

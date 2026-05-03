@@ -1,24 +1,21 @@
 'use client';
 
-import { firebaseConfig } from '@/firebase/config';
-import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore'
+// Firebase client SDK removed - using local file-based database on server
+// These are no-op stubs to prevent import errors in existing client components
 
-// IMPORTANT: DO NOT MODIFY THIS FUNCTION
 export function initializeFirebase() {
-  if (getApps().length) {
-    return getSdks(getApp());
-  }
-  const firebaseApp = initializeApp(firebaseConfig);
-  return getSdks(firebaseApp);
+  return {
+    firebaseApp: null as any,
+    auth: null as any,
+    firestore: null as any,
+  };
 }
 
-export function getSdks(firebaseApp: FirebaseApp) {
+export function getSdks(firebaseApp: any) {
   return {
     firebaseApp,
-    auth: getAuth(firebaseApp),
-    firestore: getFirestore(firebaseApp)
+    auth: null as any,
+    firestore: null as any,
   };
 }
 
@@ -31,8 +28,5 @@ export * from './non-blocking-login';
 export * from './errors';
 export * from './error-emitter';
 
-// Note: The below provider is for client-side usage only.
-// Use `import { FirebaseComponentsProvider } from '@/firebase';`
-// to access all client-side Firebase providers and hooks.
 import { FirebaseClientProvider as FirebaseComponentsProvider } from '@/firebase/client-provider';
 export { FirebaseComponentsProvider };

@@ -1,9 +1,4 @@
-import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
-import { firebaseConfig } from './config';
-
-// Initialize Firebase
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-const db = getFirestore(app);
-
+// Firebase client SDK removed - using local file-based database
+const app = null;
+const db = null;
 export { app, db };

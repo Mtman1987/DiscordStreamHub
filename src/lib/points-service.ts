@@ -1,5 +1,4 @@
-import { FieldValue, Timestamp } from 'firebase-admin/firestore';
-import { db } from '@/firebase/server-init';
+import { FieldValue, Timestamp, db } from '@/firebase/server-init';
 import type { LeaderboardSettings } from '@/lib/types';
 
 export type PointsEventType =

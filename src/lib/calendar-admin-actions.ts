@@ -1,8 +1,7 @@
 'use server';
 
-import { Timestamp } from 'firebase-admin/firestore';
 import { format } from 'date-fns';
-import { db } from '@/firebase/server-init';
+import { Timestamp, db } from '@/firebase/server-init';
 import { refreshCalendarMessage } from '@/lib/calendar-discord-service';
 
 type CaptainLogPayload = {

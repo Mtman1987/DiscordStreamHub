@@ -1,9 +1,6 @@
 import { addMonths, format } from 'date-fns';
-import { getStorage } from 'firebase-admin/storage';
-import { app, db } from '@/firebase/server-init';
+import { db } from '@/firebase/server-init';
 import { generateCalendarImage } from '@/ai/flows/generate-calendar-image';
-
-const STORAGE_BUCKET = process.env.FIREBASE_STORAGE_BUCKET || process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
 
 type CalendarMessageMeta = {
   channelId: string;
@@ -24,26 +21,36 @@ function ensureBotToken() {
 
 async function uploadCalendarImage(serverId: string, calendarImage: string): Promise<string | null> {
   try {
-    if (!STORAGE_BUCKET) {
-      console.warn('[Calendar] Storage bucket not configured, skipping image upload');
-      return null;
-    }
-
     const base64Data = calendarImage.replace(/^data:image\/png;base64,/, '');
     const imageBuffer = Buffer.from(base64Data, 'base64');
+    const fs = await import('fs/promises');
+    const path = await import('path');
+    const calendarDir = path.join('/data/clips', 'admin-calendar', serverId);
 
-    const bucket = getStorage(app).bucket(STORAGE_BUCKET);
-    const fileName = `calendar-images/${serverId}/calendar-${Date.now()}.png`;
-    const file = bucket.file(fileName);
+    await fs.mkdir(calendarDir, { recursive: true });
 
-    await file.save(imageBuffer, {
-      metadata: { contentType: 'image/png' },
-      public: true,
-    });
+    try {
+      const files = await fs.readdir(calendarDir);
+      for (const file of files) {
+        if (file.endsWith('.png')) {
+          await fs.unlink(path.join(calendarDir, file));
+        }
+      }
+    } catch (cleanupError) {
+      console.log('[AdminCalendar] Cleanup skipped:', cleanupError);
+    }
 
-    return `https://storage.googleapis.com/${STORAGE_BUCKET}/${fileName}`;
+    const timestamp = Date.now();
+    const fileName = `calendar-${timestamp}.png`;
+    const filePath = path.join(calendarDir, fileName);
+
+    await fs.writeFile(filePath, imageBuffer);
+
+    const publicUrl = `https://discord-stream-hub-new.fly.dev/api/media/admin-calendar/${serverId}/${fileName}`;
+    console.log('[AdminCalendar] Image saved to volume:', publicUrl);
+    return publicUrl;
   } catch (error) {
-    console.warn('[Calendar] Firebase rate limit or error, falling back to text-only embed:', error);
+    console.warn('[Calendar] Error saving to volume:', error);
     return null;
   }
 }

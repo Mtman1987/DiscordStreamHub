@@ -1,51 +1,32 @@
+import { db } from '@/lib/db';
 
-import admin from 'firebase-admin';
-import { getFirestore, Firestore } from 'firebase-admin/firestore';
-import { getAuth, Auth } from 'firebase-admin/auth';
-import * as fs from 'fs';
-import * as path from 'path';
+// Auth stub - not needed for server-side operations
+const auth = null;
+const app = null;
 
-let db: Firestore;
-let auth: Auth;
-let app: admin.app.App;
+// Stub FieldValue and Timestamp for compatibility
+const FieldValue = {
+  increment: (n: number) => ({ _increment: n }),
+  serverTimestamp: () => new Date(),
+};
 
-try {
-  if (!admin.apps.length) {
-    console.log('[Firebase Admin] Initializing SDK...');
-    
-    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-      const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-      admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount),
-        projectId: 'studio-9468926194-e03ac'
-      });
-      console.log('[Firebase Admin] Initialized with environment variable.');
-    } 
-    else {
-      const keyPath = path.resolve(process.cwd(), 'studio-9468926194-e03ac-firebase-adminsdk-fbsvc-28f637ffb4.json');
-      
-      if (!fs.existsSync(keyPath)) {
-        throw new Error(`Service account key not found. Set FIREBASE_SERVICE_ACCOUNT env var or place file at: ${keyPath}`);
-      }
-
-      const serviceAccount = JSON.parse(fs.readFileSync(keyPath, 'utf8'));
-      admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount),
-        projectId: 'studio-9468926194-e03ac'
-      });
-      console.log('[Firebase Admin] Initialized with service account file.');
-    }
+class Timestamp {
+  seconds: number;
+  nanoseconds: number;
+  constructor(seconds: number, nanoseconds: number) {
+    this.seconds = seconds;
+    this.nanoseconds = nanoseconds;
   }
-  
-  app = admin.app();
-  db = getFirestore();
-  auth = getAuth();
-
-} catch (error) {
-  console.error('[Firebase Admin] CRITICAL: SDK initialization failed.', error);
-  db = {} as Firestore;
-  auth = {} as Auth;
-  app = {} as admin.app.App;
+  toDate(): Date { return new Date(this.seconds * 1000); }
+  static now(): Timestamp {
+    const ms = Date.now();
+    return new Timestamp(Math.floor(ms / 1000), 0);
+  }
+  static fromDate(date: Date): Timestamp {
+    return new Timestamp(Math.floor(date.getTime() / 1000), 0);
+  }
 }
 
-export { db, auth, app };
+console.log('[SQLiteDB] Server init: using SQLite via @/lib/db');
+
+export { db, auth, app, FieldValue, Timestamp };
