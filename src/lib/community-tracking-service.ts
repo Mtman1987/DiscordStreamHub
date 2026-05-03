@@ -1,5 +1,4 @@
-import { db } from '@/firebase/client';
-import { collection, doc, getDoc, setDoc, updateDoc, increment, query, where, getDocs } from 'firebase/firestore';
+import { db } from '@/firebase/server-init';
 import { PointsService } from './points-service';
 
 export interface CommunityActivity {
@@ -89,12 +88,12 @@ export class CommunityTrackingService {
       metadata
     };
 
-    await setDoc(doc(collection(db, 'communityActivity')), activity);
+    await db.collection('communityActivity').doc().set(activity);
   }
 
   private async updateUserMetrics(userId: string, username: string, displayName: string, activityType: string, metadata?: any): Promise<void> {
-    const metricsRef = doc(db, 'userMetrics', userId);
-    const metricsDoc = await getDoc(metricsRef);
+    const metricsRef = db.collection('userMetrics').doc(userId);
+    const metricsDoc = await metricsRef.get();
 
     const updates: any = {
       userId,
@@ -104,19 +103,19 @@ export class CommunityTrackingService {
     };
 
     if (activityType === 'message') {
-      updates.totalMessages = increment(1);
+      updates.totalMessages = (metricsDoc.data()?.totalMessages || 0) + 1;
     } else if (activityType === 'help_reaction') {
-      updates.helpfulReactions = increment(1);
+      updates.helpfulReactions = (metricsDoc.data()?.helpfulReactions || 0) + 1;
     } else if (activityType === 'voice_minute') {
-      updates.voiceMinutes = increment(metadata?.minutes || 1);
+      updates.voiceMinutes = (metricsDoc.data()?.voiceMinutes || 0) + (metadata?.minutes || 1);
     } else if (activityType === 'stream_attendance') {
-      updates.streamAttendance = increment(1);
+      updates.streamAttendance = (metricsDoc.data()?.streamAttendance || 0) + 1;
     }
 
     if (metricsDoc.exists()) {
-      await updateDoc(metricsRef, updates);
+      await metricsRef.update(updates);
     } else {
-      await setDoc(metricsRef, {
+      await metricsRef.set({
         ...updates,
         totalMessages: activityType === 'message' ? 1 : 0,
         helpfulReactions: activityType === 'help_reaction' ? 1 : 0,
@@ -128,8 +127,8 @@ export class CommunityTrackingService {
   }
 
   async getUserMetrics(userId: string): Promise<UserMetrics | null> {
-    const metricsRef = doc(db, 'userMetrics', userId);
-    const metricsDoc = await getDoc(metricsRef);
+    const metricsRef = db.collection('userMetrics').doc(userId);
+    const metricsDoc = await metricsRef.get();
     
     if (metricsDoc.exists()) {
       return metricsDoc.data() as UserMetrics;
@@ -138,13 +137,8 @@ export class CommunityTrackingService {
   }
 
   async getTopContributors(limit: number = 10): Promise<UserMetrics[]> {
-    const q = query(collection(db, 'userMetrics'));
-    const querySnapshot = await getDocs(q);
-    
-    const contributors: UserMetrics[] = [];
-    querySnapshot.forEach(doc => {
-      contributors.push(doc.data() as UserMetrics);
-    });
+    const snapshot = await db.collection('userMetrics').get();
+    const contributors = snapshot.docs.map(doc => doc.data() as UserMetrics);
 
     return contributors
       .sort((a, b) => (b.helpfulReactions + b.totalMessages) - (a.helpfulReactions + a.totalMessages))
@@ -156,20 +150,18 @@ export class CommunityTrackingService {
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     
-    const q = query(
-      collection(db, 'userMetrics'),
-      where('lastSeen', '>=', yesterday.toISOString())
-    );
-    
-    const querySnapshot = await getDocs(q);
+    const querySnapshot = await db.collection('userMetrics').get();
     const pointsService = PointsService.getInstance();
     
-    for (const doc of querySnapshot.docs) {
+    for (const doc of querySnapshot.docs.filter((entry) => {
+      const user = entry.data() as UserMetrics;
+      return user.lastSeen >= yesterday.toISOString();
+    })) {
       const user = doc.data() as UserMetrics;
       await pointsService.addPoints(user.userId, user.username, user.displayName, dailyBonus);
       
-      await updateDoc(doc.ref, {
-        dailyStreak: increment(1)
+      await doc.ref.update({
+        dailyStreak: (user.dailyStreak || 0) + 1
       });
     }
   }

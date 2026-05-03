@@ -1,10 +1,9 @@
 /** @type {import('next').NextConfig} */
+const path = require('path');
+
 const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
-  },
-  eslint: {
-    ignoreDuringBuilds: true,
   },
   images: {
     remotePatterns: [
@@ -48,6 +47,13 @@ const nextConfig = {
   },
   // Required for discord-verify to work
   serverExternalPackages: ['discord-verify'],
+  webpack: (config) => {
+    config.resolve.alias = {
+      ...(config.resolve.alias || {}),
+      'firebase/firestore': path.resolve(__dirname, 'src/lib/firestore-shim.ts'),
+    };
+    return config;
+  },
 };
 
 module.exports = nextConfig;

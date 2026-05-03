@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getFirestore } from 'firebase-admin/firestore';
 import { db } from '@/firebase/server-init';
 
 export async function POST(request: NextRequest) {

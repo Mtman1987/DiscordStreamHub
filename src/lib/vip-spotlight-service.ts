@@ -1,12 +1,13 @@
 'use server';
 
 import { db } from '@/firebase/server-init';
-import type { DocumentData } from 'firebase-admin/firestore';
 import { getUserByLogin, getStreamByUserId } from './twitch-api-service';
 import { generateShoutoutCardGif } from './shoutout-card-service';
 import { getUserTodaysClips, manageUserClips } from './clip-management-service';
 import { DAILY_CLIP_LIMIT } from './clip-settings';
 import { isVipGroup } from './group-utils';
+
+type DocumentData = any;
 
 export interface VipSpotlightData {
   streamerName: string;

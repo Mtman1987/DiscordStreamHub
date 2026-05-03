@@ -1,5 +1,11 @@
 import { LucideIcon } from 'lucide-react';
-import { Timestamp } from 'firebase/firestore';
+
+export type TimestampLike =
+  | { toDate: () => Date }
+  | Date
+  | string
+  | number
+  | { seconds: number; nanoseconds?: number };
 
 export interface NavItem {
   title: string;
@@ -24,19 +30,19 @@ export interface UserProfile {
   roles: string[];
   partnerDiscordLink?: string; // Custom Discord invite link for partners
   dailyShoutout?: any; // This will be the Discord Embed JSON
-  shoutoutGeneratedAt?: Timestamp;
+  shoutoutGeneratedAt?: TimestampLike;
   lastTwitchData?: {
     viewerCount?: number;
     gameTitle?: string;
     isLive?: boolean;
-    updatedAt?: Timestamp | Date | string;
+    updatedAt?: TimestampLike;
   };
 }
 
 export interface CalendarEvent {
   id: string; // Firestore document ID
   eventName: string;
-  eventDateTime: Timestamp;
+  eventDateTime: TimestampLike;
   description: string;
   type: 'event' | 'meeting' | 'qotd' | 'captains-log';
   userId: string;
@@ -73,7 +79,7 @@ export interface DiscordMessage {
     channelId: string;
     userProfileId: string;
     messageContent: string;
-    timestamp: Timestamp;
+    timestamp: TimestampLike;
     originalAuthor: {
         name: string;
         avatar: string;
@@ -84,6 +90,6 @@ export interface DiscordMessage {
         authorId: string;
         authorName: string;
         authorAvatar: string;
-        timestamp: Timestamp | Date; // Allow both for optimistic updates
+        timestamp: TimestampLike; // Allow both for optimistic updates
     };
 }

@@ -1,4 +1,4 @@
-import { FieldValue, Timestamp, db } from '@/firebase/server-init';
+import { Timestamp, db } from '@/firebase/server-init';
 import type { LeaderboardSettings } from '@/lib/types';
 
 export type PointsEventType =
@@ -145,9 +145,13 @@ export async function awardPoints({
     .collection(collectionName)
     .doc(userId);
 
+  const currentDoc = await leaderboardRef.get();
+  const currentPoints = (currentDoc.exists ? currentDoc.data()?.points : 0) || 0;
+  const newPoints = typeof currentPoints === 'number' ? currentPoints + pointsToAward : pointsToAward;
+
   const payload = {
     userProfileId: userId,
-    points: FieldValue.increment(pointsToAward),
+    points: newPoints,
     lastUpdated: new Date().toISOString(),
     lastEventType: eventType,
     lastEventSource: source ?? 'unknown',
@@ -184,18 +188,25 @@ export class PointsService {
     return PointsService.instance;
   }
 
-  async addPoints(userId: string, username: string, displayName: string, points: number): Promise<void> {
+  async addPoints(userId: string, username: string, displayName: string, points: number): Promise<{ points: number }> {
     // For now, we'll use a default server ID. In a real implementation, this should be passed as a parameter
     const serverId = process.env.HARDCODED_GUILD_ID || 'default';
-    
-    await awardPoints({
-      serverId,
-      userId,
-      eventType: 'admin_message', // Default event type for manual point additions
-      quantity: points,
-      source: 'manual',
-      metadata: { username, displayName }
-    });
+
+    const leaderboardRef = db.collection('servers').doc(serverId).collection('leaderboard').doc(userId);
+    const currentDoc = await leaderboardRef.get();
+    const currentPoints = (currentDoc.exists ? currentDoc.data()?.points : 0) || 0;
+    const newPoints = currentPoints + points;
+
+    await leaderboardRef.set({
+      userProfileId: userId,
+      points: newPoints,
+      lastUpdated: new Date().toISOString(),
+      lastEventType: 'admin_message',
+      lastEventSource: 'manual',
+      lastEventMetadata: { username, displayName },
+    }, { merge: true });
+
+    return { points: newPoints };
   }
 
   async getLeaderboard(limit: number = 50, serverId?: string): Promise<any[]> {

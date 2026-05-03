@@ -1,9 +1,11 @@
 'use server';
 
 import { db } from "@/firebase/server-init";
-import type { DocumentReference, DocumentSnapshot } from 'firebase-admin/firestore';
 import { deleteGif } from "./firebase-storage-service";
 import { DAILY_CLIP_LIMIT } from "./clip-settings";
+
+type DocumentReference = any;
+type DocumentSnapshot = any;
 
 interface ClipRecord {
   gifUrl: string;

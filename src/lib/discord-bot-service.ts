@@ -3,7 +3,8 @@
 
 import { db } from '@/firebase/server-init';
 import { isVipGroup } from './group-utils';
-import type { DocumentData } from 'firebase-admin/firestore';
+
+type DocumentData = any;
 
 /**
  * This service is now in a diagnostic mode.

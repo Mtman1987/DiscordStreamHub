@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getStorage } from 'firebase-admin/storage';
-import { app, db } from '@/firebase/server-init';
 import { generateLeaderboardImage } from '@/ai/flows/generate-leaderboard-image';
-
-const STORAGE_BUCKET = process.env.FIREBASE_STORAGE_BUCKET || process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
+import { saveFile } from '@/lib/local-storage-service';
 
 export async function POST(request: NextRequest) {
   try {
@@ -18,17 +15,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Failed to generate leaderboard image' }, { status: 500 });
     }
 
-    // Upload to Firebase Storage
+    // Save the generated image to local storage so it can be served from /api/media
     const base64Data = leaderboardImage.replace(/^data:image\/png;base64,/, '');
     const imageBuffer = Buffer.from(base64Data, 'base64');
-    const bucket = getStorage(app).bucket(STORAGE_BUCKET!);
     const fileName = `leaderboard-images/${serverId}/leaderboard-${Date.now()}.png`;
-    const file = bucket.file(fileName);
-    await file.save(imageBuffer, {
-      metadata: { contentType: 'image/png' },
-      public: true,
-    });
-    const imageUrl = `https://storage.googleapis.com/${STORAGE_BUCKET}/${fileName}`;
+    const imageUrl = await saveFile(fileName, imageBuffer);
 
     const components = [
       {

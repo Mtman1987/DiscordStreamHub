@@ -15,20 +15,9 @@ import { Label } from '@/components/ui/label';
 import { BotMessageSquare, LogIn, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Separator } from '@/components/ui/separator';
-import { useAuth } from '@/firebase';
-import { signInAnonymously } from 'firebase/auth';
 
 export default function LoginPage() {
   const router = useRouter();
-  const auth = useAuth();
-  
-  React.useEffect(() => {
-    if (auth) {
-        signInAnonymously(auth).catch((error) => {
-            console.error("Anonymous sign-in failed:", error);
-        });
-    }
-  }, [auth]);
 
   const handleLogin = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();

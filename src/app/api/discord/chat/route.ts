@@ -48,12 +48,14 @@ export async function POST(request: NextRequest) {
         .doc(serverId)
         .collection('users')
         .doc(userId);
+      const existingUser = await userRef.get();
+      const currentMessageCount = (existingUser.exists ? existingUser.data()?.messageCount : 0) || 0;
       
-      await userRef.update({
+      await userRef.set({
         lastMessageAt: new Date(),
         lastChannelId: channelId,
-        messageCount: db.FieldValue.increment(1),
-      });
+        messageCount: currentMessageCount + 1,
+      }, { merge: true });
     }
 
     return NextResponse.json({ success: true });

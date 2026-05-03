@@ -1,0 +1,199 @@
+'use client';
+
+// Client-side Firestore compatibility shim.
+// Existing pages still import from `firebase/firestore`, but the app now reads
+// and writes through the local /api/db layer.
+
+import { dbGet, dbSet, dbUpdate, dbDelete, dbList } from '@/hooks/use-db';
+
+class StubDocRef {
+  _path: string;
+
+  constructor(path: string) {
+    this._path = path;
+  }
+
+  get id() {
+    return this._path.split('/').pop() || '';
+  }
+
+  get path() {
+    return this._path;
+  }
+}
+
+class StubCollRef {
+  _path: string;
+
+  constructor(path: string) {
+    this._path = path;
+  }
+
+  get path() {
+    return this._path;
+  }
+}
+
+export function doc(firestoreOrRef: any, ...pathSegments: string[]): StubDocRef {
+  if (firestoreOrRef instanceof StubDocRef || firestoreOrRef instanceof StubCollRef) {
+    return new StubDocRef(`${firestoreOrRef._path}/${pathSegments.join('/')}`);
+  }
+
+  return new StubDocRef(pathSegments.join('/'));
+}
+
+export function collection(firestoreOrRef: any, ...pathSegments: string[]): StubCollRef {
+  if (firestoreOrRef instanceof StubDocRef || firestoreOrRef instanceof StubCollRef) {
+    return new StubCollRef(`${firestoreOrRef._path}/${pathSegments.join('/')}`);
+  }
+
+  return new StubCollRef(pathSegments.join('/'));
+}
+
+export function query(ref: any, ..._constraints: any[]): any {
+  return ref;
+}
+
+export function orderBy(_field: string, _direction?: string): any {
+  return null;
+}
+
+export function limit(_n: number): any {
+  return null;
+}
+
+export function where(_field: string, _op: string, _value: any): any {
+  return null;
+}
+
+function reviveTimestamps(obj: any): any {
+  if (!obj || typeof obj !== 'object') {
+    return obj;
+  }
+
+  if (obj._type === 'timestamp' && typeof obj.seconds === 'number') {
+    return new Timestamp(obj.seconds, obj.nanoseconds || 0);
+  }
+
+  if (
+    typeof obj.seconds === 'number' &&
+    typeof obj.nanoseconds === 'number' &&
+    Object.keys(obj).length <= 3
+  ) {
+    return new Timestamp(obj.seconds, obj.nanoseconds);
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.map(reviveTimestamps);
+  }
+
+  const result: any = {};
+  for (const [key, value] of Object.entries(obj)) {
+    result[key] = reviveTimestamps(value);
+  }
+
+  return result;
+}
+
+export async function getDoc(ref: StubDocRef): Promise<{ exists: () => boolean; data: () => any; id: string }> {
+  const result = await dbGet(ref._path);
+
+  return {
+    exists: () => !!result,
+    data: () => reviveTimestamps(result),
+    id: ref.id,
+  };
+}
+
+export async function getDocs(ref: StubCollRef): Promise<{ docs: Array<{ id: string; data: () => any; ref: StubDocRef }> }> {
+  const results = await dbList(ref._path);
+
+  return {
+    docs: results.map(item => ({
+      id: item.id,
+      data: () => reviveTimestamps(item),
+      ref: new StubDocRef(`${ref._path}/${item.id}`),
+    })),
+  };
+}
+
+export async function setDoc(ref: StubDocRef, data: any, options?: any): Promise<void> {
+  await dbSet(ref._path, data, options?.merge);
+}
+
+export async function updateDoc(ref: StubDocRef, data: any): Promise<void> {
+  await dbUpdate(ref._path, data);
+}
+
+export async function deleteDoc(ref: StubDocRef): Promise<void> {
+  await dbDelete(ref._path);
+}
+
+export async function addDoc(ref: StubCollRef, data: any): Promise<StubDocRef> {
+  const res = await fetch('/api/db', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: ref._path, data }),
+  });
+  const json = await res.json();
+  return new StubDocRef(`${ref._path}/${json.id || 'unknown'}`);
+}
+
+export function onSnapshot(ref: any, callback: (snap: any) => void): () => void {
+  if (ref instanceof StubDocRef) {
+    dbGet(ref._path)
+      .then(data => {
+        callback({
+          exists: () => !!data,
+          data: () => reviveTimestamps(data),
+          id: ref.id,
+        });
+      })
+      .catch(() => {});
+  } else if (ref instanceof StubCollRef) {
+    dbList(ref._path)
+      .then(results => {
+        callback({
+          docs: results.map(item => ({
+            id: item.id,
+            data: () => reviveTimestamps(item),
+            ref: new StubDocRef(`${ref._path}/${item.id}`),
+          })),
+        });
+      })
+      .catch(() => {});
+  }
+
+  return () => {};
+}
+
+export class Timestamp {
+  seconds: number;
+  nanoseconds: number;
+
+  constructor(seconds: number, nanoseconds: number) {
+    this.seconds = seconds;
+    this.nanoseconds = nanoseconds;
+  }
+
+  toDate(): Date {
+    return new Date(this.seconds * 1000);
+  }
+
+  toMillis(): number {
+    return this.seconds * 1000;
+  }
+
+  static fromDate(date: Date): Timestamp {
+    return new Timestamp(Math.floor(date.getTime() / 1000), 0);
+  }
+
+  static now(): Timestamp {
+    return Timestamp.fromDate(new Date());
+  }
+
+  toJSON() {
+    return { seconds: this.seconds, nanoseconds: this.nanoseconds };
+  }
+}
+

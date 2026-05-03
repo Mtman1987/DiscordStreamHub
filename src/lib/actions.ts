@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { db } from '@/firebase/server-init';
-import { FieldValue, Timestamp } from '@/firebase/server-init';
+import { Timestamp } from '@/firebase/server-init';
 import { replyToMessage } from '@/lib/reply-service';
 import { Buffer } from 'node:buffer';
 
