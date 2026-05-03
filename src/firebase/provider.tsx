@@ -96,7 +96,14 @@ export const useFirebase = (): FirebaseServicesAndUser => {
   const context = useContext(FirebaseContext);
 
   if (context === undefined) {
-    throw new Error('useFirebase must be used within a FirebaseProvider.');
+    return {
+      firebaseApp: null as any,
+      firestore: null as any,
+      auth: null as any,
+      user: null,
+      isUserLoading: false,
+      userError: null,
+    };
   }
 
   if (!context.areServicesAvailable || !context.firebaseApp || !context.firestore || !context.auth) {
@@ -139,7 +146,11 @@ export const useUser = (): UserHookResult => {
   const context = useContext(FirebaseContext);
 
   if (context === undefined) {
-    throw new Error('useUser must be used within a FirebaseProvider.');
+    return {
+      user: null,
+      isUserLoading: false,
+      userError: null,
+    };
   }
 
   return {
