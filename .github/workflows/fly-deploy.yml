@@ -1,0 +1,28 @@
+name: Fly Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-web:
+    name: Deploy discord-stream-hub-new
+    runs-on: ubuntu-latest
+    concurrency: fly-deploy-discord-stream-hub
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@v1
+      - name: Check Fly token
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "FLY_API_TOKEN is not set"
+            exit 1
+          fi
+      - name: Deploy web app
+        run: flyctl deploy --remote-only --config fly.toml
