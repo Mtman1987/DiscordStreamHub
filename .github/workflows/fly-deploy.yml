@@ -26,4 +26,4 @@ jobs:
             exit 1
           fi
       - name: Deploy web app
-        run: flyctl deploy --remote-only --config fly.toml
+        run: flyctl deploy --remote-only --config fly.toml --access-token "$FLY_API_TOKEN"
