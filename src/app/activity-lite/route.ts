@@ -116,7 +116,7 @@ function html(clientId: string) {
       </aside>
     </section>
   </main>
-  <script src="/activity-lite.js" defer></script>
+  <script src="/activity-lite.js?v=${Date.now()}" defer></script>
 </body>
 </html>`;
 }

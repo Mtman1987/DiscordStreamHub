@@ -5,7 +5,7 @@ function js(clientId: string) {
 const CLIENT_ID = ${JSON.stringify(clientId)};
 const params = new URLSearchParams(location.search);
 const clean = (value) => String(value || '').replace(/[^a-zA-Z0-9_-]/g, '-');
-const sessionId = clean((params.get('guild_id') || 'local') + '-' + (params.get('channel_id') || 'watch'));
+let sessionId = clean((params.get('guild_id') || 'local') + '-' + (params.get('channel_id') || 'watch'));
 const video = document.getElementById('video');
 const empty = document.getElementById('empty');
 const statusEl = document.getElementById('activity-status');
@@ -131,6 +131,10 @@ function loadMedia(item) {
 
 function render(nextState) {
   state = nextState;
+  if (state.id && state.id !== sessionId) {
+    sessionId = state.id;
+    document.getElementById('room').textContent = 'Room ' + sessionId;
+  }
   empty.style.display = state.current ? 'none' : 'grid';
   document.querySelectorAll('[data-action="next"]').forEach((button) => { button.disabled = !state.queue.length; });
   popoutBtn.disabled = !state.current;

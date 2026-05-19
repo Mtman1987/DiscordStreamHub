@@ -262,6 +262,24 @@ export function getWatchSession(sessionId: string, guildId?: string, channelId?:
   return sessions.get(sessionId) || createSession(sessionId, guildId, channelId);
 }
 
+export function getResolvedWatchSession(sessionId: string, guildId?: string, channelId?: string) {
+  const exact = getWatchSession(sessionId, guildId, channelId);
+  if (exact.current || exact.queue.length) return exact;
+
+  const guildPrefix = safeId(`${guildId || sessionId.split('-')[0] || 'local'}-`);
+  const activeSessions = Array.from(sessions.values())
+    .filter((session) => session.id !== exact.id)
+    .filter((session) => session.id.startsWith(guildPrefix))
+    .filter((session) => session.current || session.queue.length)
+    .sort((a, b) => {
+      const aTime = Date.parse(a.events[0]?.at || '') || a.playback.updatedAt || 0;
+      const bTime = Date.parse(b.events[0]?.at || '') || b.playback.updatedAt || 0;
+      return bTime - aTime;
+    });
+
+  return activeSessions[0] || exact;
+}
+
 export function getWatchSessionId(guildId: string, channelId: string) {
   return safeId(`${guildId || 'local'}-${channelId || 'watch'}`);
 }
