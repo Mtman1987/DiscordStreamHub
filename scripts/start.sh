@@ -1,12 +1,20 @@
 #!/bin/sh
 
 # 1. Seed database from export (skips if data exists)
-node scripts/seed-local-db.js
+if [ -f scripts/seed-local-db.js ]; then
+  node scripts/seed-local-db.js
+else
+  echo "[Startup] No seed-local-db.js found; skipping seed"
+fi
 
 # 2. Do not clean Discord channels on normal deploys. This deletes live bot
 # messages and shoutout state, so keep it as an explicit emergency action only.
 if [ "$RUN_DEPLOY_CLEANUP" = "true" ]; then
-  node scripts/clean-channels.js
+  if [ -f scripts/clean-channels.js ]; then
+    node scripts/clean-channels.js
+  else
+    echo "[Startup] RUN_DEPLOY_CLEANUP=true but clean-channels.js is missing; skipping cleanup"
+  fi
 else
   echo "[Startup] Skipping deploy channel cleanup"
 fi

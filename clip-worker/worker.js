@@ -310,6 +310,11 @@ async function pushGifToDSH(gifBuffer, streamerName) {
 // ── Stale folder cleanup (30 days no live = delete folder) ──
 async function cleanStaleFolders() {
   try {
+    if (process.env.ENABLE_STALE_CLIP_CLEANUP !== 'true') {
+      console.log('[ClipWorker] Stale folder cleanup disabled');
+      return;
+    }
+
     console.log('[ClipWorker] Checking for stale clip folders...');
     const res = await fetch(`${DSH_URL}/api/clips/stale?serverId=${SERVER_ID}`, {
       headers: { Authorization: `Bearer ${WORKER_SECRET}` },

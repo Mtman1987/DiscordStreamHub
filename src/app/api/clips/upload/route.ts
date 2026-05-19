@@ -71,6 +71,10 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
+    if (process.env.ENABLE_STALE_CLIP_DELETE !== 'true') {
+      return NextResponse.json({ error: 'Stale clip deletion is disabled' }, { status: 403 });
+    }
+
     const auth = request.headers.get('authorization');
     if (auth !== `Bearer ${WORKER_SECRET}`) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

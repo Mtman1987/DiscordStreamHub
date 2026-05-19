@@ -17,6 +17,10 @@ DEPLOY_MANUAL.md
 .idx
 docs
 scripts
+!scripts/
+!scripts/start.sh
+!scripts/watch-voice-bot.ts
+!scripts/register-activity-command.ts
 twitch-video-url-finder-master
 public/downloaded-logs-*.json
 volume-backup/
@@ -25,8 +29,5 @@ clip-worker/
 DSH-ISSUES-LIST.txt
 *.bat
 *.sh
-!scripts/start.sh
-!scripts/seed-local-db.js
-!scripts/clean-channels.js
 full_app_code.txt
 app tree.txt
