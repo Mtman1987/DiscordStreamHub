@@ -15,6 +15,13 @@ type XtreamStream = {
   added?: string;
 };
 
+type M3uEntry = {
+  title: string;
+  url: string;
+  group?: string;
+  logo?: string;
+};
+
 type XtreamSeriesInfo = {
   episodes?: unknown;
 };
@@ -74,7 +81,11 @@ function isMockEnabled() {
 }
 
 function isSeriesSearchEnabled() {
-  return process.env.XTREAM_ENABLE_SERIES === 'true';
+  return process.env.XTREAM_ENABLE_SERIES !== 'false';
+}
+
+function getPlaylistUrl() {
+  return process.env.XTREAM_PLAYLIST_URL || process.env.M3U_PLAYLIST_URL || process.env.IPTV_PLAYLIST_URL || null;
 }
 
 function getConfig() {
@@ -86,7 +97,7 @@ function getConfig() {
 }
 
 export function isXtreamConfigured() {
-  return isMockEnabled() || Boolean(getConfig());
+  return isMockEnabled() || Boolean(getConfig()) || Boolean(getPlaylistUrl());
 }
 
 export function isXtreamMockEnabled() {
@@ -107,10 +118,16 @@ function normalize(value: unknown) {
   return String(value || '').trim().toLowerCase();
 }
 
+function compact(value: unknown) {
+  return normalize(value).replace(/[^a-z0-9]/g, '');
+}
+
 function scoreItem(item: XtreamCatalogItem, query: string) {
   const needle = normalize(query);
+  const compactNeedle = compact(query);
   const words = needle.split(/\s+/).filter((word) => word.length >= 3 && !['the', 'and'].includes(word));
   const title = normalize(item.title);
+  const compactTitle = compact(item.title);
   const overview = normalize(item.overview);
   const isVod = item.id.startsWith('xtream-vod-');
   const isSeries = item.id.startsWith('xtream-series-');
@@ -118,8 +135,11 @@ function scoreItem(item: XtreamCatalogItem, query: string) {
   let score = 0;
   if (title === needle) score += 100;
   if (title.includes(needle)) score += 50;
+  if (compactNeedle.length >= 3 && compactTitle === compactNeedle) score += 100;
+  if (compactNeedle.length >= 3 && compactTitle.includes(compactNeedle)) score += 50;
   for (const word of words) {
     if (title.includes(word)) score += 8;
+    if (compactTitle.includes(compact(word))) score += 8;
     if (overview.includes(word)) score += 2;
   }
   if (score === 0) return 0;
@@ -157,6 +177,74 @@ function toCatalogItem(stream: XtreamStream, kind: XtreamKind): XtreamCatalogIte
   };
 }
 
+function parseM3uAttributes(value: string) {
+  const attrs: Record<string, string> = {};
+  const regex = /([a-zA-Z0-9_-]+)="([^"]*)"/g;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(value))) attrs[match[1].toLowerCase()] = match[2];
+  return attrs;
+}
+
+function parseM3uPlaylist(text: string): M3uEntry[] {
+  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const entries: M3uEntry[] = [];
+  let pending: Omit<M3uEntry, 'url'> | null = null;
+
+  for (const line of lines) {
+    if (line.startsWith('#EXTINF')) {
+      const attrs = parseM3uAttributes(line);
+      const commaIndex = line.indexOf(',');
+      const title = (commaIndex >= 0 ? line.slice(commaIndex + 1) : attrs['tvg-name'] || '').trim();
+      pending = {
+        title: title || attrs['tvg-name'] || 'Untitled stream',
+        group: attrs['group-title'],
+        logo: attrs['tvg-logo'],
+      };
+      continue;
+    }
+
+    if (line.startsWith('#') || !pending) continue;
+    entries.push({ ...pending, url: line });
+    pending = null;
+  }
+
+  return entries;
+}
+
+function m3uEntryKind(entry: M3uEntry): 'movie' | 'live' | 'series' {
+  const text = normalize(`${entry.group || ''} ${entry.title}`);
+  if (/\bs\d{1,2}\s*e\d{1,2}\b/i.test(entry.title) || /\b(series|show|season|episode|tv series)\b/.test(text)) return 'series';
+  if (/\b(live|channel|sports|news|24\/7)\b/.test(text)) return 'live';
+  return 'movie';
+}
+
+function m3uCatalogItem(entry: M3uEntry, index: number): XtreamCatalogItem | null {
+  if (!/^https?:\/\//i.test(entry.url)) return null;
+  const kind = m3uEntryKind(entry);
+  return {
+    id: `m3u-${kind}-${index}`,
+    type: kind === 'live' ? 'live' : 'movie',
+    title: entry.title,
+    year: new Date().getFullYear(),
+    runtime: kind === 'live' ? 'live' : kind === 'series' ? 'series' : 'unknown',
+    source: entry.group ? `M3U playlist: ${entry.group}` : 'M3U playlist',
+    poster: entry.logo || '',
+    playbackUrl: entry.url,
+    overview: kind === 'series' ? 'M3U playlist series result.' : `M3U playlist ${kind} result.`,
+  };
+}
+
+async function getM3uCatalog() {
+  const playlistUrl = getPlaylistUrl();
+  if (!playlistUrl) return [];
+  const response = await fetch(playlistUrl, { cache: 'no-store' });
+  if (!response.ok) throw new Error(`M3U playlist returned ${response.status}`);
+  const text = await response.text();
+  return parseM3uPlaylist(text)
+    .map(m3uCatalogItem)
+    .filter((item): item is XtreamCatalogItem => Boolean(item));
+}
+
 async function fetchXtreamJson<T>(url: URL): Promise<T> {
   const response = await fetch(url, { cache: 'no-store' });
   if (!response.ok) throw new Error(`Xtream API returned ${response.status}`);
@@ -172,7 +260,8 @@ export async function getXtreamStatus() {
       serverInfo: { url: 'mock://xtream-compatible-test' },
     };
   }
-  if (!isXtreamConfigured()) return { configured: false };
+  const config = getConfig();
+  if (!config) return { configured: Boolean(getPlaylistUrl()), playlist: Boolean(getPlaylistUrl()) };
   const payload = await fetchXtreamJson<Record<string, unknown>>(playerApiUrl());
   const userInfo = payload.user_info && typeof payload.user_info === 'object'
     ? { ...(payload.user_info as Record<string, unknown>) }
@@ -187,18 +276,25 @@ export async function getXtreamStatus() {
 
 async function getXtreamCatalog() {
   if (isMockEnabled()) return MOCK_CATALOG;
-  if (!isXtreamConfigured()) return [];
+  const hasXtreamConfig = Boolean(getConfig());
+  const hasPlaylistConfig = Boolean(getPlaylistUrl());
+  if (!hasXtreamConfig && !hasPlaylistConfig) return [];
   if (cachedStreams && cachedStreams.expiresAt > Date.now()) return cachedStreams.items;
 
-  const [vod, live, series] = await Promise.all([
-    fetchXtreamJson<XtreamStream[]>(playerApiUrl('get_vod_streams')).catch(() => []),
-    fetchXtreamJson<XtreamStream[]>(playerApiUrl('get_live_streams')).catch(() => []),
-    isSeriesSearchEnabled() ? fetchXtreamJson<XtreamStream[]>(playerApiUrl('get_series')).catch(() => []) : Promise.resolve([]),
+  const [vod, live, series, playlist] = await Promise.all([
+    hasXtreamConfig ? fetchXtreamJson<XtreamStream[]>(playerApiUrl('get_vod_streams')).catch(() => []) : Promise.resolve([]),
+    hasXtreamConfig ? fetchXtreamJson<XtreamStream[]>(playerApiUrl('get_live_streams')).catch(() => []) : Promise.resolve([]),
+    hasXtreamConfig && isSeriesSearchEnabled() ? fetchXtreamJson<XtreamStream[]>(playerApiUrl('get_series')).catch(() => []) : Promise.resolve([]),
+    getM3uCatalog().catch((error) => {
+      console.error('[Xtream] M3U playlist search failed:', error);
+      return [];
+    }),
   ]);
 
   const items = [
     ...series.map((stream) => toCatalogItem(stream, 'series')),
     ...vod.map((stream) => toCatalogItem(stream, 'vod')),
+    ...playlist,
     ...live.slice(0, 500).map((stream) => toCatalogItem(stream, 'live')),
   ].filter((item): item is XtreamCatalogItem => Boolean(item));
 
@@ -219,13 +315,13 @@ export async function searchXtreamCatalog(query: string | null | undefined) {
 
   const playable: XtreamCatalogItem[] = [];
   for (const item of matches) {
+    if (item.id.startsWith('m3u-')) {
+      playable.push(item);
+      continue;
+    }
+
     if (item.id.startsWith('xtream-vod-')) {
-      const isPlayable = await isPlayableVodItem(item);
-      if (isPlayable) {
-        playable.push(item);
-      } else {
-        console.warn(`[Xtream] Skipping unplayable VOD result: ${item.title} (${item.id})`);
-      }
+      playable.push(item);
       continue;
     }
 
@@ -244,30 +340,6 @@ export async function searchXtreamCatalog(query: string | null | undefined) {
   }
 
   return playable;
-}
-
-async function isPlayableVodItem(item: XtreamCatalogItem) {
-  const streamId = item.id.replace('xtream-vod-', '');
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8_000);
-  try {
-    const response = await fetch(getXtreamStreamUrl('vod', streamId), {
-      cache: 'no-store',
-      headers: {
-        range: 'bytes=0-0',
-        'user-agent': 'DiscordStreamHub/1.0',
-      },
-      signal: controller.signal,
-    });
-    const contentType = response.headers.get('content-type')?.toLowerCase() || '';
-    if (!response.ok && response.status !== 206) return false;
-    if (contentType.includes('text/html') || contentType.includes('application/json')) return false;
-    return contentType.startsWith('video/') || contentType.includes('octet-stream');
-  } catch {
-    return false;
-  } finally {
-    clearTimeout(timeout);
-  }
 }
 
 export function getXtreamStreamUrl(kind: XtreamKind, streamId: string) {
