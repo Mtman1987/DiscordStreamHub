@@ -374,6 +374,8 @@ export function controlWatchSession(sessionId: string, action: string, position 
 
   if (action === 'clear') {
     session.queue = [];
+    session.current = null;
+    session.playback = { status: 'idle', position: 0, updatedAt: Date.now() };
     addEvent(session, 'Cleared queue');
     return session;
   }

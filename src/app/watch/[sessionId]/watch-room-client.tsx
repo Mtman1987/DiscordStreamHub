@@ -128,7 +128,7 @@ export default function WatchRoomClient({ sessionId }: { sessionId: string }) {
   }
 
   async function openFullscreen() {
-    const target = playerShellRef.current || videoRef.current;
+    const target = videoRef.current || playerShellRef.current;
     const video = videoRef.current as any;
     if (document.fullscreenElement) {
       await document.exitFullscreen().catch(() => undefined);
@@ -146,8 +146,51 @@ export default function WatchRoomClient({ sessionId }: { sessionId: string }) {
       await target.requestFullscreen();
       setControlError(null);
     } catch (error: any) {
+      if (typeof video?.webkitEnterFullscreen === 'function') {
+        video.webkitEnterFullscreen();
+        setControlError(null);
+        return;
+      }
       setControlError(error?.message || 'Fullscreen was blocked. Use Pop Out instead.');
       console.warn('[WatchRoom] Fullscreen failed', error);
+    }
+  }
+
+  async function syncPlayback() {
+    applyPlaybackState();
+    setControlError(null);
+    setMediaStatus('Synced');
+  }
+
+  async function nextItem() {
+    try {
+      const nextState = await sendControl('next', 0);
+      setCurrentRequestId(null);
+      if (!nextState.current) {
+        videoRef.current?.pause();
+        if (videoRef.current) videoRef.current.removeAttribute('src');
+        setMediaStatus('Queue ended');
+        return;
+      }
+      window.setTimeout(() => applyPlaybackState(nextState), 0);
+    } catch {
+      // sendControl already surfaces the error in the UI.
+    }
+  }
+
+  async function clearQueue() {
+    try {
+      const nextState = await sendControl('clear', 0);
+      setCurrentRequestId(null);
+      if (videoRef.current) {
+        videoRef.current.pause();
+        videoRef.current.removeAttribute('src');
+        videoRef.current.load();
+      }
+      setState(nextState);
+      setMediaStatus('Cleared');
+    } catch {
+      // sendControl already surfaces the error in the UI.
     }
   }
 
@@ -387,9 +430,9 @@ export default function WatchRoomClient({ sessionId }: { sessionId: string }) {
           <div className="flex flex-wrap items-center gap-2 border-t border-slate-700 p-4">
             <button type="button" className="rounded-md border border-slate-700 bg-slate-800 px-3 py-2 hover:border-emerald-400" onClick={playLocalAndRemote}>Play</button>
             <button type="button" className="rounded-md border border-slate-700 bg-slate-800 px-3 py-2 hover:border-emerald-400" onClick={pauseLocalAndRemote}>Pause</button>
-            <button type="button" className="rounded-md border border-slate-700 bg-slate-800 px-3 py-2 hover:border-emerald-400" onClick={() => applyPlaybackState()}>Sync</button>
-            <button type="button" className="rounded-md border border-slate-700 bg-slate-800 px-3 py-2 hover:border-emerald-400" onClick={() => sendControl('next', 0).catch(() => {})}>Next</button>
-            <button type="button" className="rounded-md border border-slate-700 bg-slate-800 px-3 py-2 hover:border-emerald-400" onClick={() => sendControl('clear', 0).catch(() => {})}>Clear Queue</button>
+            <button type="button" className="rounded-md border border-slate-700 bg-slate-800 px-3 py-2 hover:border-emerald-400" onClick={syncPlayback}>Sync</button>
+            <button type="button" className="rounded-md border border-slate-700 bg-slate-800 px-3 py-2 hover:border-emerald-400" onClick={nextItem}>Next</button>
+            <button type="button" className="rounded-md border border-slate-700 bg-slate-800 px-3 py-2 hover:border-emerald-400" onClick={clearQueue}>Clear Queue</button>
             <button type="button" className="rounded-md border border-slate-700 bg-slate-800 px-3 py-2 hover:border-emerald-400 disabled:opacity-50" onClick={openPopout} disabled={!state?.current}>Pop Out</button>
             <button type="button" className="rounded-md border border-slate-700 bg-slate-800 px-3 py-2 hover:border-emerald-400 disabled:opacity-50" onClick={openFullscreen} disabled={!state?.current}>Fullscreen</button>
             {state?.current?.item?.playbackUrl && !String(state.current.item.playbackUrl).endsWith('.m3u8') && (
