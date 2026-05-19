@@ -60,6 +60,13 @@ export function useCollection<T = any>(
   const [data, setData] = useState<StateDataType>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<FirestoreError | Error | null>(null);
+  const [refreshNonce, setRefreshNonce] = useState(0);
+
+  useEffect(() => {
+    const refresh = () => setRefreshNonce(value => value + 1);
+    window.addEventListener('dsh-db-updated', refresh);
+    return () => window.removeEventListener('dsh-db-updated', refresh);
+  }, []);
 
   useEffect(() => {
     if (!memoizedTargetRefOrQuery) {
@@ -106,7 +113,7 @@ export function useCollection<T = any>(
     );
 
     return () => unsubscribe();
-  }, [memoizedTargetRefOrQuery]); // Re-run if the target query/reference changes.
+  }, [memoizedTargetRefOrQuery, refreshNonce]); // Re-run if the target query/reference changes.
   if(memoizedTargetRefOrQuery && !memoizedTargetRefOrQuery.__memo) {
     throw new Error(memoizedTargetRefOrQuery + ' was not properly memoized using useMemoFirebase');
   }

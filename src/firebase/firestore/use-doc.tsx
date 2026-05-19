@@ -46,6 +46,13 @@ export function useDoc<T = any>(
   const [data, setData] = useState<StateDataType>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<FirestoreError | Error | null>(null);
+  const [refreshNonce, setRefreshNonce] = useState(0);
+
+  useEffect(() => {
+    const refresh = () => setRefreshNonce(value => value + 1);
+    window.addEventListener('dsh-db-updated', refresh);
+    return () => window.removeEventListener('dsh-db-updated', refresh);
+  }, []);
 
   useEffect(() => {
     if (!memoizedDocRef) {
@@ -87,7 +94,7 @@ export function useDoc<T = any>(
     );
 
     return () => unsubscribe();
-  }, [memoizedDocRef]); // Re-run if the memoizedDocRef changes.
+  }, [memoizedDocRef, refreshNonce]); // Re-run if the memoizedDocRef changes.
 
   return { data, isLoading, error };
 }

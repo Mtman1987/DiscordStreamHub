@@ -9,6 +9,7 @@ import {
   Trophy,
   MessageSquare,
   Settings,
+  FileText,
 } from 'lucide-react';
 import { SidebarMenu, SidebarMenuItem, SidebarMenuButton } from '@/components/ui/sidebar';
 import { NavItem } from '@/lib/types';
@@ -39,6 +40,11 @@ const navItems: NavItem[] = [
     title: 'Messages',
     href: '/forwarding',
     icon: <MessageSquare />,
+  },
+  {
+    title: 'Applications',
+    href: '/applications',
+    icon: <FileText />,
   },
   {
     title: 'Settings',

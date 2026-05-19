@@ -89,6 +89,7 @@ export async function dbSet(path: string, data: any, merge?: boolean): Promise<v
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ path, data, merge }),
   });
+  window.dispatchEvent(new CustomEvent('dsh-db-updated', { detail: { path } }));
 }
 
 // --- dbUpdate: replaces updateDoc ---
@@ -98,11 +99,13 @@ export async function dbUpdate(path: string, data: any): Promise<void> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ path, data }),
   });
+  window.dispatchEvent(new CustomEvent('dsh-db-updated', { detail: { path } }));
 }
 
 // --- dbDelete: replaces deleteDoc ---
 export async function dbDelete(path: string): Promise<void> {
   await fetch(`/api/db?path=${encodeURIComponent(path)}`, { method: 'DELETE' });
+  window.dispatchEvent(new CustomEvent('dsh-db-updated', { detail: { path } }));
 }
 
 // --- dbGet: one-shot doc read (replaces getDoc) ---

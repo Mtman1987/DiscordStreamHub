@@ -279,6 +279,7 @@ export default function CalendarPage() {
         title: 'Success!',
         description: data.message || 'Your event has been added.',
       });
+      window.dispatchEvent(new CustomEvent('dsh-db-updated', { detail: { path: `servers/${serverId}/calendarEvents` } }));
       setIsEventDialogOpen(false);
     } catch (error) {
       console.error('Failed to add event:', error);
@@ -371,6 +372,7 @@ export default function CalendarPage() {
         title: 'Success!',
         description: data.message || 'Your Captain’s Log has been recorded.',
       });
+      window.dispatchEvent(new CustomEvent('dsh-db-updated', { detail: { path: `servers/${serverId}/calendarEvents` } }));
       setIsLogDialogOpen(false);
     } catch (error) {
       console.error('Failed to log day:', error);
@@ -393,6 +395,7 @@ export default function CalendarPage() {
             title: 'Entry Deleted',
             description: 'The calendar entry has been removed.',
         });
+        window.dispatchEvent(new CustomEvent('dsh-db-updated', { detail: { path: `servers/${serverId}/calendarEvents` } }));
 
         await fetch('/api/calendar/refresh', {
           method: 'POST',
