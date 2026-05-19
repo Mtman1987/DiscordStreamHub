@@ -14,6 +14,7 @@ const mediaEl = document.getElementById('media');
 const queueEl = document.getElementById('queue');
 const eventsEl = document.getElementById('events');
 const errorEl = document.getElementById('error');
+const drawerEl = document.getElementById('drawer');
 const fullscreenBtn = document.getElementById('fullscreen');
 const popoutBtn = document.getElementById('popout');
 const downloadLink = document.getElementById('download');
@@ -40,7 +41,9 @@ function applyVolume() {
   const value = Math.max(0, Math.min(100, Number(volumeInput.value || 0)));
   video.volume = value / 100;
   video.muted = muted || value === 0;
-  muteBtn.textContent = video.muted ? 'Muted' : 'Volume';
+  muteBtn.textContent = video.muted ? '🔇' : '🔊';
+  muteBtn.title = video.muted ? 'Unmute' : 'Mute';
+  muteBtn.setAttribute('aria-label', muteBtn.title);
   volumeLabel.textContent = (video.muted ? 0 : value) + '%';
 }
 
@@ -130,7 +133,6 @@ function render(nextState) {
   state = nextState;
   empty.style.display = state.current ? 'none' : 'grid';
   document.querySelectorAll('[data-action="next"]').forEach((button) => { button.disabled = !state.queue.length; });
-  fullscreenBtn.disabled = !state.current;
   popoutBtn.disabled = !state.current;
   if (state.current) {
     titleEl.textContent = state.current.item.title + ' (' + state.current.item.year + ')';
@@ -159,6 +161,19 @@ function render(nextState) {
   eventsEl.innerHTML = state.events.length
     ? state.events.slice(0, 8).map((event) => '<li>' + new Date(event.at).toLocaleTimeString() + ' - ' + event.message + '</li>').join('')
     : '<li>No events yet.</li>';
+}
+
+function setDrawer(panelName) {
+  const active = drawerEl.classList.contains('open') && drawerEl.dataset.panel === panelName;
+  drawerEl.classList.toggle('open', !active);
+  drawerEl.dataset.panel = active ? '' : panelName;
+  document.querySelectorAll('[data-panel-section]').forEach((section) => {
+    section.classList.toggle('active', !active && section.dataset.panelSection === panelName);
+  });
+  document.querySelectorAll('[data-panel]').forEach((button) => {
+    button.classList.toggle('active', !active && button.dataset.panel === panelName);
+  });
+  document.body.classList.remove('focus-mode');
 }
 
 async function refresh() {
@@ -207,10 +222,14 @@ document.querySelectorAll('[data-action]').forEach((button) => {
 });
 
 fullscreenBtn.addEventListener('click', () => {
-  if (!state || !state.current) {
-    errorEl.textContent = 'Load a video before using fullscreen.';
-    return;
-  }
+  const focusMode = !document.body.classList.contains('focus-mode');
+  document.body.classList.toggle('focus-mode', focusMode);
+  fullscreenBtn.classList.toggle('active', focusMode);
+  fullscreenBtn.title = focusMode ? 'Show panels' : 'Focus video';
+  fullscreenBtn.setAttribute('aria-label', fullscreenBtn.title);
+  drawerEl.classList.remove('open');
+  document.querySelectorAll('[data-panel], [data-panel-section]').forEach((element) => element.classList.remove('active'));
+  if (!focusMode || !state || !state.current) return;
   const target = document.querySelector('.video-wrap') || video;
   if (document.fullscreenElement && document.exitFullscreen) {
     document.exitFullscreen().catch(() => {});
@@ -227,8 +246,12 @@ fullscreenBtn.addEventListener('click', () => {
   } else if (video.webkitEnterFullscreen) {
     video.webkitEnterFullscreen();
   } else {
-    errorEl.textContent = 'Fullscreen is not available in this frame. Open the activity in a browser window.';
+    errorEl.textContent = 'The video is focused inside Discord. Browser fullscreen is not available in this frame.';
   }
+});
+
+document.querySelectorAll('[data-panel]').forEach((button) => {
+  button.addEventListener('click', () => setDrawer(button.dataset.panel));
 });
 
 popoutBtn.addEventListener('click', () => {
