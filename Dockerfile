@@ -1,4 +1,4 @@
-FROM node:20-slim
+FROM node:22-slim
 
 # Cache bust: v0.4.0 — chromium for image generation, NO ffmpeg (clip worker handles that)
 RUN apt-get update && apt-get install -y \
