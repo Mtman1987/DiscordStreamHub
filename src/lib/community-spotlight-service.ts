@@ -151,8 +151,9 @@ async function updateSpotlightPinnedEmbed(serverId: string, member: any, stream:
     // Delete old pinned embed if exists
     const spotlightDoc = await db.collection('servers').doc(serverId).collection('spotlight').doc('pinnedEmbed').get();
     if (spotlightDoc.exists && spotlightDoc.data()?.messageId) {
-      console.log('[CommunitySpotlight] Deleting old pinned embed:', spotlightDoc.data()!.messageId);
-      await deleteDiscordMessage(serverId, channelId, spotlightDoc.data()!.messageId).catch(() => {});
+      const pinned = spotlightDoc.data()!;
+      console.log('[CommunitySpotlight] Deleting old pinned embed:', pinned.messageId);
+      await deleteDiscordMessage(serverId, pinned.channelId || channelId, pinned.messageId);
     }
     
     // Create small spotlight embed with GIF in thumbnail
@@ -176,12 +177,12 @@ async function updateSpotlightPinnedEmbed(serverId: string, member: any, stream:
         {
           type: 1,
           components: [
-            {
-              type: 2,
-              style: 1,
-              label: '🔗 Link Your Twitch & Get Shoutouts',
-              custom_id: 'link_twitch_account'
-            }
+              {
+                type: 2,
+                style: 1,
+                label: '🔗 Link Twitch Username',
+                custom_id: 'link_twitch_account'
+              }
           ]
         }
       ]

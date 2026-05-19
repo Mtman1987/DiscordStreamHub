@@ -13,21 +13,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Bot token not configured' }, { status: 500 });
     }
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
-
     const embed = {
-      title: '🔗 Link Your Twitch Account',
-      description: 'Connect your Twitch account to get automatic stream shoutouts when you go live!',
+      title: '⭐ Community Spotlight',
+      description: 'Link your Twitch username here to be included in automatic live shoutouts and the rotating community spotlight.',
       color: 0x9146FF,
       fields: [
         {
-          name: '✨ Benefits',
-          value: '• Automatic shoutouts when you stream\n• Updates every 10 minutes\n• Custom GIFs for VIP members\n• Community spotlight features',
+          name: 'How it works',
+          value: 'When you go live, Discord Stream Hub posts your shoutout, keeps it updated, and can feature you in the community spotlight rotation.',
           inline: false
         }
       ],
       footer: {
-        text: 'Click the button below to get started'
+        text: 'Click the button and type your Twitch username. No website login required.'
       }
     };
 
@@ -45,9 +43,9 @@ export async function POST(req: NextRequest) {
             components: [
               {
                 type: 2,
-                style: 5,
-                label: 'Link Twitch Account',
-                url: `${appUrl}`,
+                style: 1,
+                label: 'Link Twitch Username',
+                custom_id: 'link_twitch_account',
                 emoji: { name: '🎮' }
               }
             ]

@@ -1,0 +1,187 @@
+'use server';
+
+import { db } from '@/lib/db';
+
+type DiscordMessage = {
+  id: string;
+  author?: { id?: string; bot?: boolean };
+  embeds?: Array<{
+    title?: string;
+    description?: string;
+    url?: string;
+    footer?: { text?: string };
+  }>;
+  components?: Array<{
+    components?: Array<{ custom_id?: string }>;
+  }>;
+};
+
+type CleanupResult = {
+  channelsChecked: number;
+  messagesScanned: number;
+  deleted: number;
+  kept: number;
+};
+
+const DISCORD_API_BASE = 'https://discord.com/api/v10';
+const RECENT_MESSAGE_LIMIT = 100;
+
+export async function cleanupOrphanedDiscordEmbeds(serverId: string): Promise<CleanupResult> {
+  const botToken = process.env.DISCORD_BOT_TOKEN;
+  if (!botToken) {
+    console.log('[DiscordCleanup] DISCORD_BOT_TOKEN is not set; skipping orphan cleanup');
+    return { channelsChecked: 0, messagesScanned: 0, deleted: 0, kept: 0 };
+  }
+
+  const botId = await getBotId(botToken);
+  const keepMessageIds = await getTrackedMessageIds(serverId);
+  const channelIds = await getCleanupChannelIds(serverId);
+  const result: CleanupResult = {
+    channelsChecked: channelIds.size,
+    messagesScanned: 0,
+    deleted: 0,
+    kept: 0,
+  };
+
+  for (const channelId of channelIds) {
+    const messages = await fetchRecentMessages(botToken, channelId);
+    for (const message of messages) {
+      result.messagesScanned += 1;
+      if (!isManagedBotMessage(message, botId)) continue;
+      if (keepMessageIds.has(message.id)) {
+        result.kept += 1;
+        continue;
+      }
+      if (!isCleanupTarget(message)) continue;
+
+      await deleteDiscordMessage(botToken, channelId, message.id);
+      result.deleted += 1;
+      await delay(650);
+    }
+  }
+
+  console.log(
+    `[DiscordCleanup] Checked ${result.channelsChecked} channels, scanned ${result.messagesScanned} messages, kept ${result.kept}, deleted ${result.deleted} orphaned embeds`
+  );
+  return result;
+}
+
+async function getBotId(botToken: string): Promise<string | null> {
+  const response = await fetch(`${DISCORD_API_BASE}/users/@me`, {
+    headers: { Authorization: `Bot ${botToken}` },
+  });
+  if (!response.ok) {
+    console.error('[DiscordCleanup] Failed to resolve bot identity:', response.status, await response.text().catch(() => ''));
+    return null;
+  }
+  const body = await response.json();
+  return typeof body?.id === 'string' ? body.id : null;
+}
+
+async function getTrackedMessageIds(serverId: string): Promise<Set<string>> {
+  const keep = new Set<string>();
+  const usersSnap = await db.collection('servers').doc(serverId).collection('users').get();
+  for (const userDoc of usersSnap.docs) {
+    const stateDoc = await userDoc.ref.collection('shoutoutState').doc('current').get();
+    const state = stateDoc.data();
+    if (state?.isLive && typeof state.messageId === 'string') keep.add(state.messageId);
+  }
+
+  const pinnedDoc = await db.collection('servers').doc(serverId).collection('spotlight').doc('pinnedEmbed').get();
+  const pinned = pinnedDoc.data();
+  if (typeof pinned?.messageId === 'string') keep.add(pinned.messageId);
+
+  for (const configDocId of ['linkingEmbed', 'leaderboardMessage']) {
+    const configDoc = await db.collection('servers').doc(serverId).collection('config').doc(configDocId).get();
+    const data = configDoc.data();
+    if (typeof data?.messageId === 'string') keep.add(data.messageId);
+  }
+
+  const chatTagConfig = await db.collection('servers').doc(serverId).collection('config').doc('chatTag').get();
+  const chatTag = chatTagConfig.data();
+  if (typeof chatTag?.embedMessageId === 'string') keep.add(chatTag.embedMessageId);
+
+  return keep;
+}
+
+async function getCleanupChannelIds(serverId: string): Promise<Set<string>> {
+  const channels = new Set<string>();
+  const groupChannelsDoc = await db.collection('servers').doc(serverId).collection('config').doc('groupChannels').get();
+  const groupChannels = groupChannelsDoc.data() || {};
+  for (const value of Object.values(groupChannels)) {
+    if (typeof value === 'string' && isDiscordSnowflake(value)) channels.add(value);
+  }
+
+  for (const [collectionName, docId] of [
+    ['spotlight', 'pinnedEmbed'],
+    ['config', 'linkingEmbed'],
+    ['config', 'leaderboardMessage'],
+    ['config', 'chatTag'],
+  ] as const) {
+    const doc = await db.collection('servers').doc(serverId).collection(collectionName).doc(docId).get();
+    const data = doc.data();
+    const channelId = data?.channelId;
+    if (typeof channelId === 'string' && isDiscordSnowflake(channelId)) channels.add(channelId);
+  }
+
+  return channels;
+}
+
+async function fetchRecentMessages(botToken: string, channelId: string): Promise<DiscordMessage[]> {
+  const response = await fetch(`${DISCORD_API_BASE}/channels/${channelId}/messages?limit=${RECENT_MESSAGE_LIMIT}`, {
+    headers: { Authorization: `Bot ${botToken}` },
+  });
+  if (!response.ok) {
+    console.error('[DiscordCleanup] Failed to fetch messages:', channelId, response.status, await response.text().catch(() => ''));
+    return [];
+  }
+  const body = await response.json();
+  return Array.isArray(body) ? body : [];
+}
+
+function isManagedBotMessage(message: DiscordMessage, botId: string | null): boolean {
+  if (!message.author?.bot) return false;
+  return !botId || message.author.id === botId;
+}
+
+function isCleanupTarget(message: DiscordMessage): boolean {
+  const text = message.embeds?.map((embed) => [
+    embed.title,
+    embed.description,
+    embed.url,
+    embed.footer?.text,
+  ].filter(Boolean).join(' ')).join(' ') || '';
+
+  if (/is now LIVE on Twitch|COMMUNITY SPOTLIGHT|Get Featured Stream Shoutouts|automatic stream shoutouts/i.test(text)) {
+    return true;
+  }
+
+  return Boolean(message.components?.some((row) =>
+    row.components?.some((component) => component.custom_id === 'link_twitch_account')
+  ));
+}
+
+async function deleteDiscordMessage(botToken: string, channelId: string, messageId: string): Promise<void> {
+  const response = await fetch(`${DISCORD_API_BASE}/channels/${channelId}/messages/${messageId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bot ${botToken}` },
+  });
+  if (response.status === 429) {
+    const body = await response.json().catch(() => ({ retry_after: 1 }));
+    const retryAfterMs = Math.max(500, Number(body?.retry_after ?? 1) * 1000);
+    await delay(retryAfterMs);
+    return deleteDiscordMessage(botToken, channelId, messageId);
+  }
+  if (!response.ok && response.status !== 404) {
+    throw new Error(`Failed to delete orphaned Discord message ${messageId} in ${channelId}: ${response.status} ${await response.text().catch(() => '')}`);
+  }
+  console.log(`[DiscordCleanup] Deleted orphaned Discord message ${messageId} in ${channelId}`);
+}
+
+function isDiscordSnowflake(value: string): boolean {
+  return /^\d{17,20}$/.test(value);
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}

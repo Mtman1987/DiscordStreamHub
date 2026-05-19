@@ -73,6 +73,8 @@ class TwitchPollingService {
 
     // Sweep orphaned messages before first poll
     try {
+      const { cleanupOrphanedDiscordEmbeds } = await import('./discord-orphan-cleanup-service');
+      await cleanupOrphanedDiscordEmbeds(serverId);
       await this.sweepOrphanedMessages(serverId);
     } catch (error) {
       console.error('[TwitchPolling] Orphan sweep failed:', error);
@@ -357,6 +359,8 @@ class TwitchPollingService {
 
       // Periodic orphan sweep — catch any embeds that slipped through delete failures
       try {
+        const { cleanupOrphanedDiscordEmbeds } = await import('./discord-orphan-cleanup-service');
+        await cleanupOrphanedDiscordEmbeds(serverId);
         await this.sweepOrphanedMessages(serverId);
       } catch (sweepError) {
         console.error(`[TwitchPolling] Periodic sweep error:`, sweepError);
@@ -943,7 +947,7 @@ class TwitchPollingService {
               {
                 type: 2,
                 style: 1,
-                label: '🔗 Link Your Twitch & Get Shoutouts',
+                label: '🔗 Link Twitch Username',
                 custom_id: 'link_twitch_account'
               }
             ]
@@ -1021,24 +1025,21 @@ class TwitchPollingService {
       }
 
       const embed = {
-        title: '🚀 Get Featured Stream Shoutouts!',
+        title: '⭐ COMMUNITY SPOTLIGHT ⭐',
         description: showcaseUser 
-          ? `**[${(showcaseUser as any).username}](https://twitch.tv/${(showcaseUser as any).twitchLogin})** gets automatic shoutouts when they go live!\n\n✨ **You can too!** Link your Twitch account below.`
-          : 'Link your Twitch account and get automatic shoutouts when you go live!',
-        color: 0x9146FF,
+          ? `**[${(showcaseUser as any).username || (showcaseUser as any).twitchLogin}](https://twitch.tv/${(showcaseUser as any).twitchLogin})** is part of the live shoutout rotation.\n\nLink your Twitch username below to get automatic shoutouts and be eligible for spotlight rotation when you go live.`
+          : 'Link your Twitch username below to get automatic live shoutouts and become eligible for the community spotlight rotation.',
+        color: 0xFFD700,
         thumbnail: showcaseGif ? { url: showcaseGif } : ((showcaseUser as any)?.avatarUrl ? { url: (showcaseUser as any).avatarUrl } : undefined),
         fields: [
-          { name: '⚡ Instant Shoutouts', value: 'When you go live', inline: true },
-          { name: '🔄 Live Updates', value: 'Every 10 minutes', inline: true },
-          { name: '👥 Viewer Count', value: 'Always displayed', inline: true },
-          { name: '🎮 Game Info', value: 'Auto-updated', inline: true },
-          { name: '⭐ Spotlight', value: 'Rotation featured', inline: true },
-          { name: '🎬 Pro Embeds', value: 'With your clips', inline: true }
+          { name: '⚡ Live Shoutouts', value: 'Posted when you go live', inline: true },
+          { name: '🔄 Auto Updates', value: 'Refreshes stream info', inline: true },
+          { name: '⭐ Spotlight', value: 'Rotates live members', inline: true }
         ],
         footer: {
           text: showcaseUser 
-            ? `${(showcaseUser as any).username} is one of our featured streamers • Updates every 10 min`
-            : 'Join our community of featured streamers'
+            ? `${(showcaseUser as any).username || (showcaseUser as any).twitchLogin} is one of the linked community streamers`
+            : 'Type your Twitch username in Discord. No website login required.'
         },
         timestamp: new Date().toISOString()
       };
@@ -1054,7 +1055,7 @@ class TwitchPollingService {
                 {
                   type: 2,
                   style: 1,
-                  label: 'Link Twitch Account',
+                  label: 'Link Twitch Username',
                   custom_id: 'link_twitch_account',
                   emoji: { name: '🔗' }
                 }

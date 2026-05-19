@@ -185,12 +185,14 @@ class DiscordSyncService {
       });
 
       if (!response.ok && response.status !== 404) {
-        throw new Error(`Failed to delete message: ${response.statusText}`);
+        const errorText = await response.text().catch(() => response.statusText);
+        throw new Error(`Failed to delete message ${messageId} in ${channelId}: ${response.status} ${errorText}`);
       }
 
       console.log(`Deleted message ${messageId} from channel ${channelId}`);
     } catch (error) {
       console.error('Failed to delete message:', error);
+      throw error;
     }
   }
 
@@ -207,12 +209,14 @@ class DiscordSyncService {
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to edit message: ${response.statusText}`);
+        const errorText = await response.text().catch(() => response.statusText);
+        throw new Error(`Failed to edit message ${messageId} in ${channelId}: ${response.status} ${errorText}`);
       }
 
       console.log(`Edited message ${messageId} in channel ${channelId}`);
     } catch (error) {
       console.error('Failed to edit message:', error);
+      throw error;
     }
   }
 

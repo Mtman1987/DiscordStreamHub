@@ -75,31 +75,31 @@ class MemberProcessingService {
       const unmatchedUsers = await getUnmatchedUsers(serverId);
 
       const embed = {
-        title: "🔗 Link Your Twitch Account",
-        description: "Connect your Twitch account to get shoutouts when you go live! We'll automatically detect when you start streaming and send notifications to the community.",
+        title: "⭐ Community Spotlight",
+        description: "Connect your Twitch username to get automatic live shoutouts and appear in the rotating community spotlight.",
         color: 0x9146FF, // Twitch purple
         fields: [
           {
             name: "📋 How to Link",
-            value: "Click the button below and enter your Twitch username. We'll verify it and link your accounts.",
+            value: "Click the button below and type your Twitch username directly in Discord. No website login required.",
             inline: false
           },
           {
-            name: "🎯 Benefits",
-            value: "• Get shoutouts when you go live\n• Join the streamer community\n• Enhanced visibility in the server",
+            name: "🎯 Spotlight Benefits",
+            value: "• Get shoutouts when you go live\n• Keep stream info updated automatically\n• Rotate into the community spotlight when live",
             inline: false
           }
         ],
         footer: {
-          text: `${unmatchedUsers.length} members haven't linked yet • Click to get started!`
+          text: `${unmatchedUsers.length} members have not linked yet • Click to get started`
         }
       };
 
       const button = {
         type: 2, // Button
-        style: 5, // Link style
-        label: "Link Twitch Account",
-        url: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/link-twitch?serverId=${serverId}`
+        style: 1,
+        label: "Link Twitch Username",
+        custom_id: 'link_twitch_account'
       };
 
       return {
