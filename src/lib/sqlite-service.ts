@@ -1,5 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'fs';
 import { join } from 'path';
+
+const Database = require('better-sqlite3');
 
 type StoredDoc = {
   path: string;
@@ -13,7 +15,8 @@ type StoredState = {
 };
 
 const STORAGE_PATH = process.env.NODE_ENV === 'production' ? '/data' : join(process.cwd(), 'data');
-const DB_PATH = join(STORAGE_PATH, 'app.db.json');
+const DB_PATH = process.env.DB_FILE || join(STORAGE_PATH, 'app.db');
+const LEGACY_JSON_PATH = join(STORAGE_PATH, 'app.db.json');
 
 function ensureStorage(): void {
   if (!existsSync(STORAGE_PATH)) {
@@ -21,17 +24,12 @@ function ensureStorage(): void {
   }
 }
 
-function readState(): StoredState {
+function readJsonState(path = LEGACY_JSON_PATH): StoredState {
   ensureStorage();
 
-  if (!existsSync(DB_PATH)) {
-    const initial: StoredState = { docs: {} };
-    writeFileSync(DB_PATH, JSON.stringify(initial, null, 2));
-    return initial;
-  }
-
+  if (!existsSync(path)) return { docs: {} };
   try {
-    const raw = readFileSync(DB_PATH, 'utf8');
+    const raw = readFileSync(path, 'utf8');
     const parsed = JSON.parse(raw) as StoredState;
     if (!parsed.docs || typeof parsed.docs !== 'object') {
       return { docs: {} };
@@ -43,11 +41,6 @@ function readState(): StoredState {
   }
 }
 
-function writeState(state: StoredState): void {
-  ensureStorage();
-  writeFileSync(DB_PATH, JSON.stringify(state, null, 2));
-}
-
 function cloneData<T>(value: T): T {
   if (value === undefined) {
     return value;
@@ -56,6 +49,54 @@ function cloneData<T>(value: T): T {
 }
 
 export class SQLiteService {
+  private db: any;
+
+  constructor() {
+    ensureStorage();
+    this.db = new Database(DB_PATH);
+    this.db.pragma('journal_mode = WAL');
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS docs (
+        path TEXT PRIMARY KEY,
+        collection_path TEXT NOT NULL,
+        doc_id TEXT NOT NULL,
+        data TEXT NOT NULL
+      )
+    `);
+    this.migrateLegacyJsonStore();
+  }
+
+  private migrateLegacyJsonStore(): void {
+    if (!existsSync(LEGACY_JSON_PATH)) return;
+
+    const state = readJsonState();
+    const docs = Object.values(state.docs || {});
+    if (docs.length === 0) return;
+
+    const upsert = this.db.prepare(`
+      INSERT INTO docs (path, collection_path, doc_id, data)
+      VALUES (@path, @collection_path, @doc_id, @data)
+      ON CONFLICT(path) DO UPDATE SET
+        collection_path = excluded.collection_path,
+        doc_id = excluded.doc_id,
+        data = excluded.data
+    `);
+
+    const migrate = this.db.transaction((rows: StoredDoc[]) => {
+      for (const row of rows) upsert.run(row);
+    });
+
+    migrate(docs);
+
+    try {
+      renameSync(LEGACY_JSON_PATH, `${LEGACY_JSON_PATH}.migrated-${Date.now()}`);
+    } catch {
+      writeFileSync(LEGACY_JSON_PATH, JSON.stringify({ docs: {} }, null, 2));
+    }
+
+    console.log(`[SQLiteDB] Migrated ${docs.length} JSON docs into ${DB_PATH}`);
+  }
+
   private parsePath(path: string): { collection: string; docId?: string; isCollection: boolean } {
     const segments = path.split('/').filter(Boolean);
     const isCollection = segments.length % 2 === 1;
@@ -82,9 +123,8 @@ export class SQLiteService {
       throw new Error('Cannot get document from collection path');
     }
 
-    const state = readState();
     const fullPath = `${collection}/${docId}`;
-    const row = state.docs[fullPath];
+    const row = this.db.prepare('SELECT doc_id, data FROM docs WHERE path = ?').get(fullPath);
 
     if (!row) {
       return { exists: false };
@@ -114,9 +154,7 @@ export class SQLiteService {
       throw new Error('Cannot get collection from document path');
     }
 
-    const state = readState();
-    let docs = Object.values(state.docs)
-      .filter(row => row.collection_path === collection)
+    let docs = this.db.prepare('SELECT doc_id, data FROM docs WHERE collection_path = ?').all(collection)
       .map(row => ({
         id: row.doc_id,
         ...JSON.parse(row.data)
@@ -165,19 +203,24 @@ export class SQLiteService {
       throw new Error('Cannot set document on collection path');
     }
 
-    const state = readState();
     const fullPath = `${collection}/${docId}`;
-    const existing = state.docs[fullPath];
+    const existing = this.db.prepare('SELECT data FROM docs WHERE path = ?').get(fullPath);
     const finalData = merge && existing ? { ...JSON.parse(existing.data), ...cloneData(data) } : cloneData(data);
-
-    state.docs[fullPath] = {
+    const row = {
       path: fullPath,
       collection_path: collection,
       doc_id: docId,
       data: JSON.stringify(finalData)
     };
 
-    writeState(state);
+    this.db.prepare(`
+      INSERT INTO docs (path, collection_path, doc_id, data)
+      VALUES (@path, @collection_path, @doc_id, @data)
+      ON CONFLICT(path) DO UPDATE SET
+        collection_path = excluded.collection_path,
+        doc_id = excluded.doc_id,
+        data = excluded.data
+    `).run(row);
   }
 
   addDoc(path: string, data: any): { id: string } {
@@ -208,10 +251,8 @@ export class SQLiteService {
       throw new Error('Cannot delete collection path');
     }
 
-    const state = readState();
     const fullPath = `${collection}/${docId}`;
-    delete state.docs[fullPath];
-    writeState(state);
+    this.db.prepare('DELETE FROM docs WHERE path = ?').run(fullPath);
   }
 
   async getDocument(collection: string, docId: string): Promise<any | null> {
@@ -224,7 +265,7 @@ export class SQLiteService {
   }
 
   close(): void {
-    // No persistent connection to close.
+    this.db.close();
   }
 }
 
