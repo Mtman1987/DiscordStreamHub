@@ -12,32 +12,32 @@ import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { ArrowRight, Trophy } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collection, query, orderBy, limit } from 'firebase/firestore';
+import { useDataStore, useCollection, useMemoData } from '@/data';
+import { collection, query, orderBy, limit } from '@/lib/data-shim';
 import type { LeaderboardEntry, UserProfile } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export function LeaderboardSnapshot() {
-  const firestore = useFirestore();
+  const store = useDataStore();
   const [serverId, setServerId] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     setServerId(localStorage.getItem('discordServerId'));
   }, []);
 
-  const leaderboardRef = useMemoFirebase(() => {
-    if (!firestore || !serverId) return null;
+  const leaderboardRef = useMemoData(() => {
+    if (!store || !serverId) return null;
     return query(
-      collection(firestore, 'servers', serverId, 'leaderboard'),
+      collection(store, 'servers', serverId, 'leaderboard'),
       orderBy('points', 'desc'),
       limit(3)
     );
-  }, [firestore, serverId]);
+  }, [store, serverId]);
 
-  const usersRef = useMemoFirebase(() => {
-    if (!firestore || !serverId) return null;
-    return collection(firestore, 'servers', serverId, 'users');
-  }, [firestore, serverId]);
+  const usersRef = useMemoData(() => {
+    if (!store || !serverId) return null;
+    return collection(store, 'servers', serverId, 'users');
+  }, [store, serverId]);
 
   const { data: leaderboard, isLoading: isLoadingLeaderboard } = useCollection<LeaderboardEntry>(leaderboardRef);
   const { data: allUsers } = useCollection<UserProfile>(usersRef);

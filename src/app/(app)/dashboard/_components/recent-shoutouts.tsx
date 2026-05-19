@@ -10,26 +10,26 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { formatDistanceToNow } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collection, query, orderBy, limit } from 'firebase/firestore';
+import { useDataStore, useCollection, useMemoData } from '@/data';
+import { collection, query, orderBy, limit } from '@/lib/data-shim';
 import type { UserProfile } from '@/lib/types';
 
 export function RecentShoutouts() {
-  const firestore = useFirestore();
+  const store = useDataStore();
   const [serverId, setServerId] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     setServerId(localStorage.getItem('discordServerId'));
   }, []);
 
-  const usersRef = useMemoFirebase(() => {
-    if (!firestore || !serverId) return null;
+  const usersRef = useMemoData(() => {
+    if (!store || !serverId) return null;
     return query(
-      collection(firestore, 'servers', serverId, 'users'),
+      collection(store, 'servers', serverId, 'users'),
       orderBy('shoutoutGeneratedAt', 'desc'),
       limit(5)
     );
-  }, [firestore, serverId]);
+  }, [store, serverId]);
 
   const { data: users, isLoading } = useCollection<UserProfile>(usersRef);
   const recentShoutouts = React.useMemo(() => {

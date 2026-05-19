@@ -1,6 +1,6 @@
 'use server';
 
-import { db } from '@/firebase/server-init';
+import { db } from '@/data/server-init';
 import { localStorageService } from './local-storage-service';
 
 class StorageCleanupService {
@@ -23,8 +23,8 @@ class StorageCleanupService {
         const age = Date.now() - cachedAt.getTime();
 
         if (age > this.MAX_AGE_MS) {
-          if (data.firebaseFileName) {
-            expiredFiles.push(data.firebaseFileName);
+          if (data.DataFileName) {
+            expiredFiles.push(data.DataFileName);
           }
           batch.delete(doc.ref);
         }

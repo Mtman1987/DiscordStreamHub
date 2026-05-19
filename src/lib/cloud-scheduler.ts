@@ -4,10 +4,10 @@ import { manualPoll } from './polling-service';
 
 // Cloud-based polling using API calls instead of long-running processes
 export async function schedulePolling(serverId: string): Promise<void> {
-  // In Firebase App Hosting, we use API routes triggered by external schedulers
-  // This function sets up the polling configuration in Firestore
+  // In Fly.io, we use API routes triggered by external schedulers
+  // This function sets up the polling configuration in store
   
-  const { db } = await import('@/firebase/server-init');
+  const { db } = await import('@/data/server-init');
   
   await db.collection('servers').doc(serverId).set({
     pollingEnabled: true,
@@ -19,7 +19,7 @@ export async function schedulePolling(serverId: string): Promise<void> {
 }
 
 export async function stopPolling(serverId: string): Promise<void> {
-  const { db } = await import('@/firebase/server-init');
+  const { db } = await import('@/data/server-init');
   
   await db.collection('servers').doc(serverId).update({
     pollingEnabled: false,
@@ -29,7 +29,7 @@ export async function stopPolling(serverId: string): Promise<void> {
 }
 
 export async function executeScheduledPoll(serverId: string): Promise<void> {
-  const { db } = await import('@/firebase/server-init');
+  const { db } = await import('@/data/server-init');
   
   // Check if polling is enabled
   const serverDoc = await db.collection('servers').doc(serverId).get();

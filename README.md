@@ -46,7 +46,7 @@ Automated Discord bot that monitors Twitch streams and posts live shoutouts for 
    - Enable "Server Members Intent" and "Message Content Intent"
    - Invite bot to your server with permissions: Send Messages, Embed Links, Manage Messages
 2. **Twitch App**: Create an app at [Twitch Developer Console](https://dev.twitch.tv/console)
-3. **Firebase Project**: Set up Firestore and Storage at [Firebase Console](https://console.firebase.google.com)
+3. **Fly volume data**: Set up store and Storage at [Fly dashboard](https://console.Data.google.com)
 
 ### Setup Steps
 
@@ -285,8 +285,8 @@ Every 10 minutes, one live member from "Honored Guests" or "Everyone Else" gets 
 ### Architecture
 - **Platform**: Fly.io (always-on)
 - **Framework**: Next.js 16
-- **Database**: Firebase Firestore
-- **Storage**: Firebase Storage (for GIFs)
+- **Database**: Data store
+- **Storage**: local volume storage (for GIFs)
 - **APIs**: Twitch Helix API, Discord API
 
 ### Health Checks
@@ -299,7 +299,7 @@ Every 10 minutes, one live member from "Honored Guests" or "Everyone Else" gets 
 ### Polling Not Active
 1. Check health: `curl https://your-app-url.com/api/health`
 2. If `"active": false`, restart: `curl -X POST https://your-app-url.com/api/startup`
-3. Verify in Firestore: `servers/{GUILD_ID}/twitchPollingActive` should be `true`
+3. Verify in store: `servers/{GUILD_ID}/twitchPollingActive` should be `true`
 
 ### Shoutouts Not Posting
 - Verify channels are configured in `/settings` Step 5
@@ -310,7 +310,7 @@ Every 10 minutes, one live member from "Honored Guests" or "Everyone Else" gets 
 ### Branding Not Updating
 - Save branding in `/settings` Step 1
 - Restart polling to apply changes
-- Check Firestore: `servers/{GUILD_ID}/config/branding`
+- Check store: `servers/{GUILD_ID}/config/branding`
 
 ### Templates Not Applying
 - Save templates in `/settings` Step 3
@@ -353,7 +353,7 @@ Your bot is working correctly when:
 
 This app supports multiple Discord servers:
 - Each server has its own branding, templates, and settings
-- Data is isolated per server in Firestore
+- Data is isolated per server in store
 - Admin must set `HARDCODED_GUILD_ID` and `HARDCODED_ADMIN_DISCORD_ID` for their server
 - Space Mountain defaults are used until custom branding is configured
 

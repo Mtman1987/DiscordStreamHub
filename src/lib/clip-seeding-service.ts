@@ -1,6 +1,6 @@
 'use server';
 
-import { db } from '@/firebase/server-init';
+import { db } from '@/data/server-init';
 import { getUserByLogin, getClipsForUser } from './twitch-api-service';
 import { getClipVideoUrl } from './clip-url-finder';
 import { writeFile, unlink, mkdir, readFile } from 'fs/promises';
@@ -150,7 +150,7 @@ async function convertSingleMp4ToGif(serverId: string, userId: string, mp4: Clip
   const palettePath = join(tmpdir(), `${mp4.clipId}_palette.png`);
   
   try {
-    // Download MP4 from Firebase
+    // Download MP4 from Data
     const mp4Response = await fetch(mp4.mp4Url);
     const mp4Buffer = Buffer.from(await mp4Response.arrayBuffer());
     await writeFile(tempMp4, mp4Buffer);

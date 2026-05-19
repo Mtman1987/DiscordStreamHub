@@ -3,8 +3,8 @@
 import * as React from 'react';
 import { useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
-import { useDoc, useFirestore } from '@/firebase';
-import { doc } from 'firebase/firestore';
+import { useDoc, useDataStore } from '@/data';
+import { doc } from '@/lib/data-shim';
 import { updateAdminRoles } from '@/lib/actions';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -33,7 +33,7 @@ function SubmitButton() {
 
 export function AdminRoleSettings({ serverId }: { serverId: string }) {
   const pathname = usePathname();
-  const firestore = useFirestore();
+  const store = useDataStore();
 
   const [state, formAction] = useActionState(updateAdminRoles, {
     status: 'idle',
@@ -42,17 +42,17 @@ export function AdminRoleSettings({ serverId }: { serverId: string }) {
 
   // Fetch the list of all roles available for the server
   const rolesConfigRef = React.useMemo(() => {
-    if (!firestore || !serverId) return null;
-    return doc(firestore, 'servers', serverId, 'config', 'roles');
-  }, [firestore, serverId]);
+    if (!store || !serverId) return null;
+    return doc(store, 'servers', serverId, 'config', 'roles');
+  }, [store, serverId]);
   const { data: rolesData, isLoading: isLoadingRoles } = useDoc<{ list: string[] }>(rolesConfigRef);
   const allRoles = rolesData?.list || [];
 
   // Fetch the current server config to know which roles are already admins
   const serverConfigRef = React.useMemo(() => {
-    if (!firestore || !serverId) return null;
-    return doc(firestore, 'servers', serverId);
-  }, [firestore, serverId]);
+    if (!store || !serverId) return null;
+    return doc(store, 'servers', serverId);
+  }, [store, serverId]);
   const { data: serverConfig, isLoading: isLoadingServerConfig } = useDoc<DiscordServer>(serverConfigRef);
   const adminRoles = serverConfig?.adminRoles || [];
 

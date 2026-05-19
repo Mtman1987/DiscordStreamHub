@@ -1,5 +1,5 @@
 import { generateShoutout } from '@/ai/flows/generate-shoutout';
-import { db } from '@/firebase/server-init';
+import { db } from '@/data/server-init';
 
 export interface ShoutoutResult {
   streamerName: string;

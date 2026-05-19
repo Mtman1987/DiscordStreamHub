@@ -1,6 +1,6 @@
-# Streamer's Hub - A Firebase Studio Project
+# Streamer's Hub - A Discord Stream Hub Project
 
-This is a Next.js application designed to be a central management hub for a streaming community, integrating with Discord and eventually Twitch. It features a robust backend powered by Firebase and Genkit for AI and server-side logic.
+This is a Next.js application designed to be a central management hub for a streaming community, integrating with Discord and eventually Twitch. It features a robust backend powered by Data and Genkit for AI and server-side logic.
 
 ## 🚀 Getting Started & Configuration
 
@@ -45,7 +45,7 @@ After configuring your `.env` file, the first thing you must do is run the datab
 2.  Navigate to the `/settings` page in your browser.
 3.  Enter your Discord Server ID and click the **"Sync with Discord"** button.
 
-This will populate your Firestore database with your server's members, roles, and channels, which is required for all other features to work.
+This will populate your store database with your server's members, roles, and channels, which is required for all other features to work.
 
 ---
 
@@ -82,8 +82,8 @@ Run via `npx tsx startup.ts` (or your preferred runner). Pass `--event '{"userId
 ### 2. Dynamic Image Generation Engine
 
 *   **Current State:** The application uses a sophisticated server-side image generation system powered by **Genkit** and the **`puppeteer`** library.
-    *   `src/ai/flows/generate-calendar-image.ts`: This flow successfully queries Firestore for events and user logs, then programmatically draws a high-fidelity calendar image.
-    *   `src/ai/flows/generate-leaderboard-image.ts`: This flow queries Firestore for the top users and generates a rich leaderboard image, complete with avatars and point totals.
+    *   `src/ai/flows/generate-calendar-image.ts`: This flow successfully queries store for events and user logs, then programmatically draws a high-fidelity calendar image.
+    *   `src/ai/flows/generate-leaderboard-image.ts`: This flow queries store for the top users and generates a rich leaderboard image, complete with avatars and point totals.
 *   **Unified Workflow:** Both the web app and Discord bot are designed to use these generated images as the **single source of truth** for visual data. The Discord interaction handler calls these image generation flows and uses the resulting base64 data URL to `PATCH` (update) the deferred message.
 
 ### 3. Community-Wide Points & Twitch Integration
@@ -91,10 +91,10 @@ Run via `npx tsx startup.ts` (or your preferred runner). Pass `--event '{"userId
 *   **Current State:** The foundation is laid.
     *   The `LeaderboardSettings` entity and configuration card on the `/leaderboard` page allow the server owner to define point values for community actions.
     *   Placeholder credentials for the Twitch API are in the `.env` file, and `tmi.js` is included as a dependency.
-    *   A secure backend endpoint now exists at `/api/points/update`. It uses the configured `POINTS_SERVICE_SECRET` to validate incoming updates and applies your leaderboard weights within Firestore.
+    *   A secure backend endpoint now exists at `/api/points/update`. It uses the configured `POINTS_SERVICE_SECRET` to validate incoming updates and applies your leaderboard weights within store.
     *   The root `twitch-service.ts`/`startup.ts` scripts provide a starter service: authenticate with Twitch, forward real events, or emit mock events during local development.
 *   **Vision & Future Plans:**
-    *   **Unified Economy:** The goal is to create a single point system that spans both Discord and Twitch, making Firestore the master record for a user's total points.
+    *   **Unified Economy:** The goal is to create a single point system that spans both Discord and Twitch, making store the master record for a user's total points.
     *   **Twitch Event Listener:** Build on `twitch-service.ts` to hook into Twitch EventSub (webhook or WebSocket) or a chat client (`tmi.js`) and push events through `handleEvent`.
     *   **Decentralized Earning:** This service will listen for events (follows, subs, bits, active chatting) in the channels of **all community members** (not just the server owner).
     *   **Secure API Endpoint:** Use `/api/points/update` to apply point changes. Set `MOCK_TWITCH_EVENTS=1` with `MOCK_TWITCH_USER_IDS` when you need to exercise the integration without live Twitch traffic.

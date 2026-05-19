@@ -1,14 +1,14 @@
 
 'use server';
 
-import { db } from '@/firebase/server-init';
+import { db } from '@/data/server-init';
 import { isVipGroup } from './group-utils';
 
 type DocumentData = any;
 
 /**
  * This service is now in a diagnostic mode.
- * It only posts the mock data it receives and does not have any fallback logic to query Firestore.
+ * It only posts the mock data it receives and does not have any fallback logic to query store.
  * This isolates its function to simply posting a pre-made payload to Discord.
  */
 export async function postAllShoutoutsToDiscord(serverId: string, usersToPost: DocumentData[]): Promise<void> {

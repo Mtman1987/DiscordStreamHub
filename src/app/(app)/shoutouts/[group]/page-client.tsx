@@ -1,9 +1,9 @@
-﻿'use client';
+'use client';
 
 import * as React from 'react';
 import { useParams, usePathname } from 'next/navigation';
-import { collection, doc, updateDoc, query, where, getDoc } from 'firebase/firestore';
-import { useCollection, useFirestore } from '@/firebase';
+import { collection, doc, updateDoc, query, where, getDoc } from '@/lib/data-shim';
+import { useCollection, useDataStore } from '@/data';
 import { PageHeader } from '@/components/page-header';
 import {
   Card,
@@ -623,7 +623,7 @@ export default function GroupDetailPage() {
   const params = useParams();
   const pathname = usePathname();
   const { toast } = useToast();
-  const firestore = useFirestore();
+  const store = useDataStore();
   const [serverId, setServerId] = React.useState<string | null>(null);
 
   const group = Array.isArray(params.group) ? params.group[0] : params.group;
@@ -718,10 +718,10 @@ export default function GroupDetailPage() {
   }, [storageKey]);
 
   React.useEffect(() => {
-    if (!firestore || !serverId) return;
+    if (!store || !serverId) return;
     const fetchChannel = async () => {
       try {
-        const serverRef = doc(firestore, 'servers', serverId);
+        const serverRef = doc(store, 'servers', serverId);
         const snapshot = await getDoc(serverRef);
         if (!snapshot.exists()) return;
         const storedChannels = snapshot.data()?.shoutoutChannels || {};
@@ -732,11 +732,11 @@ export default function GroupDetailPage() {
           localStorage.setItem(storageKey, remoteChannel);
         }
       } catch (error) {
-        console.error('Failed to load shoutout channel from Firestore', error);
+        console.error('Failed to load shoutout channel from store', error);
       }
     };
     fetchChannel();
-  }, [firestore, serverId, channelGroupKey, storageKey]);
+  }, [store, serverId, channelGroupKey, storageKey]);
 
   const handleChannelSave = React.useCallback(() => {
     const trimmed = channelInput.trim();
@@ -795,9 +795,9 @@ export default function GroupDetailPage() {
 
   // Fetch all users for the server once.
   const usersCollectionRef = React.useMemo(() => {
-    if (!firestore || !serverId) return null;
-    return collection(firestore, 'servers', serverId, 'users');
-  }, [firestore, serverId]);
+    if (!store || !serverId) return null;
+    return collection(store, 'servers', serverId, 'users');
+  }, [store, serverId]);
 
   const { data: allUsers, isLoading: isLoadingUsers } = useCollection<UserProfile>(usersCollectionRef);
 
@@ -826,7 +826,7 @@ export default function GroupDetailPage() {
   };
 
   const handleRemoveClick = async (streamer: UserProfile) => {
-    if (!firestore || !serverId) return;
+    if (!store || !serverId) return;
     if (!streamer.id) {
         toast({
             variant: 'destructive',
@@ -837,7 +837,7 @@ export default function GroupDetailPage() {
     }
 
     try {
-      const userDocRef = doc(firestore, 'servers', serverId, 'users', streamer.id);
+      const userDocRef = doc(store, 'servers', serverId, 'users', streamer.id);
       await updateDoc(userDocRef, { group: 'Community' });
       toast({
         title: 'Member Reassigned',
@@ -855,7 +855,7 @@ export default function GroupDetailPage() {
 
   const handleSaveChanges = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!editingStreamer || !firestore || !serverId) return;
+    if (!editingStreamer || !store || !serverId) return;
 
     setIsSaving(true);
     const formData = new FormData(e.currentTarget);
@@ -873,7 +873,7 @@ export default function GroupDetailPage() {
     }
 
     try {
-        const userDocRef = doc(firestore, 'servers', serverId, 'users', editingStreamer.id);
+        const userDocRef = doc(store, 'servers', serverId, 'users', editingStreamer.id);
         await updateDoc(userDocRef, {
             username: updatedUsername,
             topic: updatedTopic,

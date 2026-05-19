@@ -8,8 +8,8 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { RefreshCw, Play, Square, Zap } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { useDoc, useFirestore } from '@/firebase';
-import { doc } from 'firebase/firestore';
+import { useDoc, useDataStore } from '@/data';
+import { doc } from '@/lib/data-shim';
 
 export function TwitchPollingSettings() {
   const [isPolling, setIsPolling] = React.useState(false);
@@ -22,11 +22,11 @@ export function TwitchPollingSettings() {
     setServerId(id);
   }, []);
 
-  const firestore = useFirestore();
+  const store = useDataStore();
   const serverRef = React.useMemo(() => {
-    if (!firestore || !serverId) return null;
-    return doc(firestore, 'servers', serverId);
-  }, [firestore, serverId]);
+    if (!store || !serverId) return null;
+    return doc(store, 'servers', serverId);
+  }, [store, serverId]);
   
   const { data: serverData } = useDoc<{ pollingEnabled?: boolean }>(serverRef);
   

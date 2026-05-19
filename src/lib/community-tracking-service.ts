@@ -1,4 +1,4 @@
-import { db } from '@/firebase/server-init';
+import { db } from '@/data/server-init';
 import { PointsService } from './points-service';
 
 export interface CommunityActivity {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db, storage } from '@/firebase/server-init';
+import { db, storage } from '@/data/server-init';
 import { getUserByLogin, getClipsForUser } from '@/lib/twitch-api-service';
 import { convertClipToGif } from '@/lib/gif-conversion-service';
 

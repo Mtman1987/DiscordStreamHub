@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
     if (action === 'prepare') {
       // Just store the schedule data, don't generate image
       const { fetchTwitchSchedule } = await import('@/lib/partner-schedule-service');
-      const { db } = await import('@/firebase/server-init');
+      const { db } = await import('@/data/server-init');
       
       const userDoc = await db.collection('servers').doc(serverId).collection('users').doc(userId).get();
       const twitchId = userDoc.data()?.twitchId;
@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
 
       const segments = await fetchTwitchSchedule(twitchId, '');
       
-      // Store events in Firestore
+      // Store events in local data
       const eventsRef = db.collection('servers').doc(serverId).collection('users').doc(userId).collection('scheduleEvents');
       const batch = db.batch();
       

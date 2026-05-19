@@ -1,6 +1,6 @@
 'use server';
 
-import { db } from '@/firebase/server-init';
+import { db } from '@/data/server-init';
 import { getUserByLogin } from '@/lib/twitch-api-service';
 
 interface TwitchAccount {

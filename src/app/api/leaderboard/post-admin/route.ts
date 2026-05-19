@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/firebase/server-init';
+import { db } from '@/data/server-init';
 
 export async function POST(request: NextRequest) {
   try {

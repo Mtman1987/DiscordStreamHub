@@ -3,19 +3,19 @@
 import * as React from 'react';
 import { useSearchParams, useParams } from 'next/navigation';
 import { addMonths, startOfMonth, startOfWeek, endOfWeek, endOfMonth, isSameDay, isSameMonth, format } from 'date-fns';
-import { FirebaseComponentsProvider } from '@/firebase';
+import { DataComponentsProvider } from '@/data';
 import {
   MissionCalendarCard,
   MissionLogCard,
 } from '@/components/mission-calendar-ui';
-import { useCollection, useFirestore } from '@/firebase';
-import { collection, where, orderBy, query } from 'firebase/firestore';
+import { useCollection, useDataStore } from '@/data';
+import { collection, where, orderBy, query } from '@/lib/data-shim';
 import { CalendarEvent } from '@/lib/types';
 
 function HeadlessCalendar() {
   const params = useParams();
   const searchParams = useSearchParams();
-  const firestore = useFirestore();
+  const store = useDataStore();
 
   const serverId = params.serverId as string;
   const offset = searchParams.get('monthOffset');
@@ -34,15 +34,15 @@ function HeadlessCalendar() {
 
 
   const eventsQuery = React.useMemo(() => {
-      if (!firestore || !serverId) return null;
-      const eventsRef = collection(firestore, 'servers', serverId, 'calendarEvents');
+      if (!store || !serverId) return null;
+      const eventsRef = collection(store, 'servers', serverId, 'calendarEvents');
       return query(
         eventsRef,
         where('eventDateTime', '>=', viewStart),
         where('eventDateTime', '<=', viewEnd),
         orderBy('eventDateTime', 'asc')
       );
-  }, [firestore, serverId, viewStart, viewEnd]);
+  }, [store, serverId, viewStart, viewEnd]);
 
   const { data: allEvents } = useCollection<CalendarEvent>(eventsQuery);
 
@@ -111,8 +111,8 @@ function HeadlessCalendar() {
 
 export default function HeadlessCalendarClientPage() {
   return (
-    <FirebaseComponentsProvider>
+    <DataComponentsProvider>
       <HeadlessCalendar />
-    </FirebaseComponentsProvider>
+    </DataComponentsProvider>
   );
 }

@@ -1,6 +1,6 @@
 'use server';
 
-import { db } from '@/firebase/server-init';
+import { db } from '@/data/server-init';
 import { getUnmatchedUsers } from '@/lib/twitch-linking-service';
 
 interface ProcessedMemberData {
@@ -22,7 +22,7 @@ interface ProcessedMemberData {
 class MemberProcessingService {
   async processDiscordMembers(serverId: string): Promise<ProcessedMemberData> {
     try {
-      // Get all users from Firestore
+      // Get all users from store
       const usersSnapshot = await db.collection('servers').doc(serverId).collection('users').get();
 
       let totalMembers = 0;

@@ -13,7 +13,7 @@ const mockClip = {
 };
 
 export function CommunitySpotlight() {
-    // In the future, this would involve fetching a random clip from Firestore
+    // In the future, this would involve fetching a random clip from store
     // and ensuring the gifUrl is available.
     const [clip] = React.useState(mockClip);
 

@@ -14,11 +14,11 @@ import Link from 'next/link';
 import { BotMessageSquare, Rocket } from 'lucide-react';
 import { MainNav } from './_components/main-nav';
 import { UserNav } from './_components/user-nav';
-import { FirebaseClientProvider } from '@/firebase';
+import { DataClientProvider } from '@/data';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
-    <FirebaseClientProvider>
+    <DataClientProvider>
       <SidebarProvider collapsible="icon">
         <div className="flex min-h-screen">
           <Sidebar className="border-r group">
@@ -62,6 +62,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </SidebarProvider>
-    </FirebaseClientProvider>
+    </DataClientProvider>
   );
 }

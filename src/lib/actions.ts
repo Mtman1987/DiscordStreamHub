@@ -1,8 +1,8 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { db } from '@/firebase/server-init';
-import { Timestamp } from '@/firebase/server-init';
+import { db } from '@/data/server-init';
+import { Timestamp } from '@/data/server-init';
 import { replyToMessage } from '@/lib/reply-service';
 import { Buffer } from 'node:buffer';
 
@@ -265,7 +265,7 @@ export async function postNewCalendar(guildId: string, channelId: string): Promi
 }
 
 /**
- * Syncs Discord server data with Firebase database.
+ * Syncs Discord server data with local database.
  */
 export async function syncDiscordData(prevState: any, formData: FormData) {
     try {

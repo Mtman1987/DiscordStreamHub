@@ -7,8 +7,8 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { Save, Trash2, Send } from 'lucide-react';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
-import { useFirestore } from '@/firebase';
+import { doc, getDoc, updateDoc } from '@/lib/data-shim';
+import { useDataStore } from '@/data';
 
 interface LeaderboardChannelConfigProps {
   serverId: string;
@@ -16,17 +16,17 @@ interface LeaderboardChannelConfigProps {
 
 export function LeaderboardChannelConfig({ serverId }: LeaderboardChannelConfigProps) {
   const { toast } = useToast();
-  const firestore = useFirestore();
+  const store = useDataStore();
   const [channelId, setChannelId] = React.useState('');
   const [channelInput, setChannelInput] = React.useState('');
   const [isPosting, setIsPosting] = React.useState(false);
 
   React.useEffect(() => {
-    if (!firestore || !serverId) return;
+    if (!store || !serverId) return;
     
     const fetchChannel = async () => {
       try {
-        const serverRef = doc(firestore, 'servers', serverId);
+        const serverRef = doc(store, 'servers', serverId);
         const snapshot = await getDoc(serverRef);
         if (!snapshot.exists()) return;
         
@@ -38,12 +38,12 @@ export function LeaderboardChannelConfig({ serverId }: LeaderboardChannelConfigP
           setChannelInput(leaderboardChannel);
         }
       } catch (error) {
-        console.error('Failed to load leaderboard channel from Firestore', error);
+        console.error('Failed to load leaderboard channel from store', error);
       }
     };
     
     fetchChannel();
-  }, [firestore, serverId]);
+  }, [store, serverId]);
 
   const handleChannelSave = React.useCallback(async () => {
     const trimmed = channelInput.trim();
@@ -56,7 +56,7 @@ export function LeaderboardChannelConfig({ serverId }: LeaderboardChannelConfigP
       return;
     }
     
-    if (!serverId || !firestore) {
+    if (!serverId || !store) {
       toast({
         variant: 'destructive',
         title: 'Server not selected',
@@ -66,7 +66,7 @@ export function LeaderboardChannelConfig({ serverId }: LeaderboardChannelConfigP
     }
 
     try {
-      const serverRef = doc(firestore, 'servers', serverId);
+      const serverRef = doc(store, 'servers', serverId);
       const serverDoc = await getDoc(serverRef);
       const currentChannels = serverDoc.exists() ? serverDoc.data()?.shoutoutChannels || {} : {};
       
@@ -89,13 +89,13 @@ export function LeaderboardChannelConfig({ serverId }: LeaderboardChannelConfigP
         description: 'Could not save the leaderboard channel configuration.',
       });
     }
-  }, [channelInput, serverId, firestore, toast]);
+  }, [channelInput, serverId, store, toast]);
 
   const handleChannelClear = React.useCallback(async () => {
-    if (!serverId || !firestore) return;
+    if (!serverId || !store) return;
 
     try {
-      const serverRef = doc(firestore, 'servers', serverId);
+      const serverRef = doc(store, 'servers', serverId);
       const serverDoc = await getDoc(serverRef);
       const currentChannels = serverDoc.exists() ? serverDoc.data()?.shoutoutChannels || {} : {};
       
@@ -119,7 +119,7 @@ export function LeaderboardChannelConfig({ serverId }: LeaderboardChannelConfigP
         description: 'Could not clear the leaderboard channel configuration.',
       });
     }
-  }, [serverId, firestore, toast]);
+  }, [serverId, store, toast]);
 
   const handlePostLeaderboard = React.useCallback(async () => {
     if (!channelId.trim()) {

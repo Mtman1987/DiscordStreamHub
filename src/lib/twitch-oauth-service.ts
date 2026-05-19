@@ -1,6 +1,6 @@
 'use server';
 
-import { db } from '@/firebase/server-init';
+import { db } from '@/data/server-init';
 
 export async function getUserAccessToken(serverId: string): Promise<string | null> {
   try {

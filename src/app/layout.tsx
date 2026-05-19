@@ -3,7 +3,7 @@ import './globals.css';
 import { cn } from '@/lib/utils';
 import { Toaster } from '@/components/ui/toaster';
 import { ThemeProvider } from '@/components/theme-provider';
-import { FirebaseComponentsProvider } from '@/firebase';
+import { DataComponentsProvider } from '@/data';
 
 export const metadata: Metadata = {
   title: "Discord Streamer's Hub",
@@ -33,9 +33,9 @@ export default function RootLayout({
             enableSystem
             disableTransitionOnChange
           >
-            <FirebaseComponentsProvider>
+            <DataComponentsProvider>
               {children}
-            </FirebaseComponentsProvider>
+            </DataComponentsProvider>
             <Toaster />
         </ThemeProvider>
       </body>

@@ -15,9 +15,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { useDoc, useFirestore, useMemoFirebase } from '@/firebase';
+import { useDoc, useDataStore, useMemoData } from '@/data';
 import type { LeaderboardSettings } from '@/lib/types';
-import { doc } from 'firebase/firestore';
+import { doc } from '@/lib/data-shim';
 import { Skeleton } from '@/components/ui/skeleton';
 import { updateLeaderboardSettings } from '@/lib/actions';
 import { usePathname } from 'next/navigation';
@@ -40,17 +40,17 @@ function SubmitButton() {
 
 export function PointsConfigCard({ serverId }: { serverId: string }) {
   const pathname = usePathname();
-  const firestore = useFirestore();
+  const store = useDataStore();
 
   const [state, formAction] = useActionState(updateLeaderboardSettings, {
     status: 'idle',
     message: '',
   });
 
-  const settingsRef = useMemoFirebase(() => {
-    if (!firestore || !serverId) return null;
-    return doc(firestore, 'servers', serverId, 'config', 'leaderboardSettings');
-  }, [firestore, serverId]);
+  const settingsRef = useMemoData(() => {
+    if (!store || !serverId) return null;
+    return doc(store, 'servers', serverId, 'config', 'leaderboardSettings');
+  }, [store, serverId]);
 
   const { data: settings, isLoading } = useDoc<LeaderboardSettings>(settingsRef);
 

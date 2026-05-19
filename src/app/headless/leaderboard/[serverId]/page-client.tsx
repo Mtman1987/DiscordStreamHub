@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import { useParams } from 'next/navigation';
-import { FirebaseComponentsProvider, useCollection, useFirestore } from '@/firebase';
-import { collection, query, orderBy, limit } from 'firebase/firestore';
+import { DataComponentsProvider, useCollection, useDataStore } from '@/data';
+import { collection, query, orderBy, limit } from '@/lib/data-shim';
 import type { LeaderboardEntry, UserProfile } from '@/lib/types';
 import * as React from 'react';
 
@@ -18,16 +18,16 @@ interface FormattedLeaderboardEntry {
 function LeaderboardComponent() {
   const params = useParams();
   const serverId = params.serverId as string;
-  const firestore = useFirestore();
+  const store = useDataStore();
   const [leaderboard, setLeaderboard] = useState<FormattedLeaderboardEntry[]>([]);
 
   const leaderboardQuery = React.useMemo(() => {
-    if (!firestore || !serverId) return null;
-    return query(collection(firestore, 'servers', serverId, 'leaderboard'), orderBy('points', 'desc'), limit(10));
-  }, [firestore, serverId]);
+    if (!store || !serverId) return null;
+    return query(collection(store, 'servers', serverId, 'leaderboard'), orderBy('points', 'desc'), limit(10));
+  }, [store, serverId]);
 
   const { data: rawLeaderboard } = useCollection<LeaderboardEntry>(leaderboardQuery);
-  const { data: allUsers } = useCollection<UserProfile>(collection(firestore, 'servers', serverId, 'users'));
+  const { data: allUsers } = useCollection<UserProfile>(collection(store, 'servers', serverId, 'users'));
 
   useEffect(() => {
     if (rawLeaderboard && allUsers) {
@@ -187,8 +187,8 @@ function LeaderboardComponent() {
 
 export default function HeadlessLeaderboardClientPage() {
     return (
-        <FirebaseComponentsProvider>
+        <DataComponentsProvider>
             <LeaderboardComponent />
-        </FirebaseComponentsProvider>
+        </DataComponentsProvider>
     )
 }

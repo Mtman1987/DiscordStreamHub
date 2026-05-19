@@ -1,5 +1,5 @@
 import { addMonths, format } from 'date-fns';
-import { db } from '@/firebase/server-init';
+import { db } from '@/data/server-init';
 import { generateCalendarImage } from '@/ai/flows/generate-calendar-image';
 
 type CalendarMessageMeta = {

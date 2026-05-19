@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/firebase/server-init';
+import { db } from '@/data/server-init';
 import { verifyKey } from 'discord-interactions';
 
 export async function POST(request: NextRequest) {

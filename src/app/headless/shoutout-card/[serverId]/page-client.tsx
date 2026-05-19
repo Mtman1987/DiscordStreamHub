@@ -2,7 +2,7 @@
 /* eslint-disable @next/next/no-img-element */
 'use client';
 
-import { FirebaseComponentsProvider } from "@/firebase";
+import { DataComponentsProvider } from "@/data";
 import { useSearchParams, useParams } from "next/navigation";
 
 function ShoutoutCard() {
@@ -159,8 +159,8 @@ function ShoutoutCard() {
 
 export default function ShoutoutCardClientPage() {
     return (
-        <FirebaseComponentsProvider>
+        <DataComponentsProvider>
             <ShoutoutCard />
-        </FirebaseComponentsProvider>
+        </DataComponentsProvider>
     )
 }

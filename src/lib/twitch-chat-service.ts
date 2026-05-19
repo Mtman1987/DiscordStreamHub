@@ -1,6 +1,6 @@
 import tmi from 'tmi.js';
 import { awardPoints } from './points-service';
-import { db } from '@/firebase/server-init';
+import { db } from '@/data/server-init';
 
 class TwitchChatService {
   private client: tmi.Client | null = null;

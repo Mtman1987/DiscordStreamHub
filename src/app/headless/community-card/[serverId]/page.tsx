@@ -1,6 +1,6 @@
 /* eslint-disable react/no-unescaped-entities */
 /* eslint-disable @next/next/no-img-element */
-import { FirebaseComponentsProvider } from "@/firebase";
+import { DataComponentsProvider } from "@/data";
 
 export const dynamic = 'force-dynamic';
 
@@ -25,7 +25,7 @@ export default async function HeadlessCommunityCardPage({
   const isLive = live === 'true';
 
   return (
-    <FirebaseComponentsProvider>
+    <DataComponentsProvider>
       <main className="bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 w-[960px] h-[360px] flex flex-col">
         {/* Header */}
         <div className="w-full h-[60px] bg-black/60 border-b border-white/10 px-6 py-3 flex items-center justify-between">
@@ -105,6 +105,6 @@ export default async function HeadlessCommunityCardPage({
           </div>
         </div>
       </main>
-    </FirebaseComponentsProvider>
+    </DataComponentsProvider>
   );
 }

@@ -1,6 +1,6 @@
 'use server';
 
-import { db } from '@/firebase/server-init';
+import { db } from '@/data/server-init';
 import { getStreamByLogin } from '@/lib/twitch-api-service';
 import { sendShoutout } from '@/lib/discord-sync-service';
 import { getCurrentClipForUser } from '@/lib/clip-rotation-service';

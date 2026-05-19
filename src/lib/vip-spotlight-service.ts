@@ -1,6 +1,6 @@
 'use server';
 
-import { db } from '@/firebase/server-init';
+import { db } from '@/data/server-init';
 import { getUserByLogin, getStreamByUserId } from './twitch-api-service';
 import { generateShoutoutCardGif } from './shoutout-card-service';
 import { getUserTodaysClips, manageUserClips } from './clip-management-service';

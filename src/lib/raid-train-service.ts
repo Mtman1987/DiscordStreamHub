@@ -1,4 +1,4 @@
-import { db } from '@/firebase/server-init';
+import { db } from '@/data/server-init';
 import { addDays, format, startOfDay, addHours } from 'date-fns';
 import { getServerBranding } from './server-branding';
 

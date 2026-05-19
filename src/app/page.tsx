@@ -12,7 +12,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
       params.location_id
   );
 
-  if (isDiscordActivityLaunch || process.env.NODE_ENV === 'development') {
+  if (isDiscordActivityLaunch) {
     return <ActivityClient />;
   }
 

@@ -1,6 +1,6 @@
 'use server';
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/firebase/server-init';
+import { db } from '@/data/server-init';
 
 async function fetchFromDiscord(endpoint: string, botToken: string) {
     const response = await fetch(`https://discord.com/api/v10${endpoint}`, {
@@ -18,7 +18,7 @@ async function getBotToken(): Promise<string> {
         return process.env.DISCORD_BOT_TOKEN;
     }
     
-    // Fall back to Firestore
+    // Fall back to local secrets
     try {
         const secretDoc = await db.collection('secrets').doc('DISCORD_BOT_TOKEN').get();
         if (!secretDoc.exists) {

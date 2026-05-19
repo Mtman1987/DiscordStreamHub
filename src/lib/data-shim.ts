@@ -1,12 +1,26 @@
 'use client';
 
-// Client-side Firestore compatibility shim.
-// Existing pages still import from `firebase/firestore`, but the app now reads
+// Client-side store compatibility shim.
+// Existing pages still import from `@/lib/data-shim`, but the app now reads
 // and writes through the local /api/db layer.
 
 import { dbGet, dbSet, dbUpdate, dbDelete, dbList } from '@/hooks/use-db';
 
-class StubDocRef {
+export type DocumentData = Record<string, any>;
+export type DataError = Error;
+export type DocumentSnapshot<T = DocumentData> = {
+  exists: () => boolean;
+  data: () => T;
+  id: string;
+};
+export type QuerySnapshot<T = DocumentData> = {
+  docs: Array<{ id: string; data: () => T; ref: StubDocRef }>;
+};
+export type DocumentReference<T = DocumentData> = StubDocRef & { __type?: T };
+export type CollectionReference<T = DocumentData> = StubCollRef & { __type?: T; type?: 'collection' };
+export type Query<T = DocumentData> = StubCollRef & { __type?: T; type?: 'query' | 'collection' };
+
+export class StubDocRef {
   _path: string;
 
   constructor(path: string) {
@@ -22,11 +36,15 @@ class StubDocRef {
   }
 }
 
-class StubCollRef {
+export class StubCollRef {
   _path: string;
 
   constructor(path: string) {
     this._path = path;
+  }
+
+  get type() {
+    return 'collection' as const;
   }
 
   get path() {
@@ -34,17 +52,17 @@ class StubCollRef {
   }
 }
 
-export function doc(firestoreOrRef: any, ...pathSegments: string[]): StubDocRef {
-  if (firestoreOrRef instanceof StubDocRef || firestoreOrRef instanceof StubCollRef) {
-    return new StubDocRef(`${firestoreOrRef._path}/${pathSegments.join('/')}`);
+export function doc(storeOrRef: any, ...pathSegments: string[]): StubDocRef {
+  if (storeOrRef instanceof StubDocRef || storeOrRef instanceof StubCollRef) {
+    return new StubDocRef(`${storeOrRef._path}/${pathSegments.join('/')}`);
   }
 
   return new StubDocRef(pathSegments.join('/'));
 }
 
-export function collection(firestoreOrRef: any, ...pathSegments: string[]): StubCollRef {
-  if (firestoreOrRef instanceof StubDocRef || firestoreOrRef instanceof StubCollRef) {
-    return new StubCollRef(`${firestoreOrRef._path}/${pathSegments.join('/')}`);
+export function collection(storeOrRef: any, ...pathSegments: string[]): StubCollRef {
+  if (storeOrRef instanceof StubDocRef || storeOrRef instanceof StubCollRef) {
+    return new StubCollRef(`${storeOrRef._path}/${pathSegments.join('/')}`);
   }
 
   return new StubCollRef(pathSegments.join('/'));
@@ -139,7 +157,7 @@ export async function addDoc(ref: StubCollRef, data: any): Promise<StubDocRef> {
   return new StubDocRef(`${ref._path}/${json.id || 'unknown'}`);
 }
 
-export function onSnapshot(ref: any, callback: (snap: any) => void): () => void {
+export function onSnapshot(ref: any, callback: (snap: any) => void, onError?: (error: DataError) => void): () => void {
   if (ref instanceof StubDocRef) {
     dbGet(ref._path)
       .then(data => {
@@ -149,7 +167,7 @@ export function onSnapshot(ref: any, callback: (snap: any) => void): () => void 
           id: ref.id,
         });
       })
-      .catch(() => {});
+      .catch(error => onError?.(error));
   } else if (ref instanceof StubCollRef) {
     dbList(ref._path)
       .then(results => {
@@ -161,7 +179,7 @@ export function onSnapshot(ref: any, callback: (snap: any) => void): () => void 
           })),
         });
       })
-      .catch(() => {});
+      .catch(error => onError?.(error));
   }
 
   return () => {};

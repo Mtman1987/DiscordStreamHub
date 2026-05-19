@@ -1,8 +1,8 @@
 'use client';
 
 import * as React from 'react';
-import { doc } from 'firebase/firestore';
-import { useFirestore, useMemoFirebase, useUser, useDoc } from '@/firebase';
+import { doc } from '@/lib/data-shim';
+import { useDataStore, useMemoData, useUser, useDoc } from '@/data';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -17,7 +17,7 @@ interface ServerInfo {
 }
 
 export function UserNav() {
-  const firestore = useFirestore();
+  const store = useDataStore();
   const { user, isUserLoading } = useUser();
   const [userId, setUserId] = React.useState<string | null>(null);
   const [serverId, setServerId] = React.useState<string | null>(null);
@@ -33,15 +33,15 @@ export function UserNav() {
     setLocalServerName(localStorage.getItem('serverName') || '');
   }, []);
 
-  const userProfileRef = useMemoFirebase(() => {
-    if (isUserLoading || !firestore || !serverId || !userId || !user) return null;
-    return doc(firestore, 'servers', serverId, 'users', userId);
-  }, [firestore, serverId, userId, user, isUserLoading]);
+  const userProfileRef = useMemoData(() => {
+    if (isUserLoading || !store || !serverId || !userId || !user) return null;
+    return doc(store, 'servers', serverId, 'users', userId);
+  }, [store, serverId, userId, user, isUserLoading]);
 
-  const serverInfoRef = useMemoFirebase(() => {
-    if (!firestore || !serverId) return null;
-    return doc(firestore, 'servers', serverId);
-  }, [firestore, serverId]);
+  const serverInfoRef = useMemoData(() => {
+    if (!store || !serverId) return null;
+    return doc(store, 'servers', serverId);
+  }, [store, serverId]);
 
   const { data: userProfile, isLoading: isUserLoadingProfile } = useDoc<UserProfile>(userProfileRef);
   const { data: serverInfo, isLoading: isServerLoading } = useDoc<ServerInfo>(serverInfoRef);

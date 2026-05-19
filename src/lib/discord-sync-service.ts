@@ -1,6 +1,6 @@
 'use server';
 
-import { db } from '@/firebase/server-init';
+import { db } from '@/data/server-init';
 
 interface DiscordMember {
   id: string;
@@ -155,7 +155,7 @@ class DiscordSyncService {
 
   private async determineGroup(roleIds: string[], serverId: string): Promise<'VIP' | 'Mountaineer' | 'Train' | 'Pile'> {
     try {
-      // Get role mappings from Firestore
+      // Get role mappings from store
       const serverDoc = await db.collection('servers').doc(serverId).get();
       const roleMappings = serverDoc.data()?.roleMappings || {};
 

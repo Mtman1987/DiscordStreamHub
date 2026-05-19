@@ -1,7 +1,7 @@
 'use server';
 
 import { startTwitchPolling } from './twitch-polling-service';
-import { db } from '@/firebase/server-init';
+import { db } from '@/data/server-init';
 
 let initialized = false;
 

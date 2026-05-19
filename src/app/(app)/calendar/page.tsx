@@ -8,8 +8,8 @@ import {
   doc,
   deleteDoc,
   query,
-} from 'firebase/firestore';
-import { useFirestore, useUser, useDoc, useCollection, useMemoFirebase } from '@/firebase';
+} from '@/lib/data-shim';
+import { useDataStore, useUser, useDoc, useCollection, useMemoData } from '@/data';
 import {
   Dialog,
   DialogContent,
@@ -59,13 +59,13 @@ type NewCalendarEvent = Omit<CalendarEvent, 'id' | 'eventDateTime'> & {
 
 // --- Simple Debug Component ---
 function SimpleEventList({ serverId }: { serverId: string | null }) {
-    const firestore = useFirestore();
+    const store = useDataStore();
     const [currentMonthName, setCurrentMonthName] = React.useState(format(new Date(), 'MMMM'));
 
-    const allEventsQuery = useMemoFirebase(() => {
-        if (!firestore || !serverId) return null;
-        return collection(firestore, 'servers', serverId, 'calendarEvents');
-    }, [firestore, serverId]);
+    const allEventsQuery = useMemoData(() => {
+        if (!store || !serverId) return null;
+        return collection(store, 'servers', serverId, 'calendarEvents');
+    }, [store, serverId]);
 
     const { data: allEvents, isLoading } = useCollection<CalendarEvent>(allEventsQuery);
     
@@ -123,7 +123,7 @@ function SimpleEventList({ serverId }: { serverId: string | null }) {
 
 
 export default function CalendarPage() {
-  const firestore = useFirestore();
+  const store = useDataStore();
   const { user } = useUser();
   const { toast } = useToast();
   const [serverId, setServerId] = React.useState<string | null>(null);
@@ -152,17 +152,17 @@ export default function CalendarPage() {
   }, []);
 
   const channelsConfigRef = React.useMemo(() => {
-    if (!firestore || !serverId) return null;
-    return doc(firestore, 'servers', serverId, 'config', 'channels');
-  }, [firestore, serverId]);
+    if (!store || !serverId) return null;
+    return doc(store, 'servers', serverId, 'config', 'channels');
+  }, [store, serverId]);
 
   const { data: channelsData } = useDoc<{ list: Array<{ id: string; name: string }> }>(channelsConfigRef);
   const channels = channelsData?.list ?? [];
 
-  const allEventsQuery = useMemoFirebase(() => {
-    if (!firestore || !serverId) return null;
-    return collection(firestore, 'servers', serverId, 'calendarEvents');
-  }, [firestore, serverId]);
+  const allEventsQuery = useMemoData(() => {
+    if (!store || !serverId) return null;
+    return collection(store, 'servers', serverId, 'calendarEvents');
+  }, [store, serverId]);
 
   const { data: allEvents } = useCollection<CalendarEvent>(allEventsQuery);
 
@@ -175,9 +175,9 @@ export default function CalendarPage() {
 
 
   const currentUserProfileRef = React.useMemo(() => {
-    if (!firestore || !serverId || !currentUserId) return null;
-    return doc(firestore, 'servers', serverId, 'users', currentUserId);
-  }, [firestore, serverId, currentUserId]);
+    if (!store || !serverId || !currentUserId) return null;
+    return doc(store, 'servers', serverId, 'users', currentUserId);
+  }, [store, serverId, currentUserId]);
 
   const { data: currentUserProfile } = useDoc<UserProfile>(currentUserProfileRef);
   const effectiveUserProfile = React.useMemo(() => {
@@ -387,8 +387,8 @@ export default function CalendarPage() {
   };
 
   const handleDeleteEvent = async (eventId: string) => {
-    if (!firestore || !serverId) return;
-    const eventDocRef = doc(firestore, 'servers', serverId, 'calendarEvents', eventId);
+    if (!store || !serverId) return;
+    const eventDocRef = doc(store, 'servers', serverId, 'calendarEvents', eventId);
     try {
         await deleteDoc(eventDocRef);
         toast({

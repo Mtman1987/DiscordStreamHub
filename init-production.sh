@@ -31,5 +31,5 @@ echo ""
 if echo "$HEALTH" | grep -q '"active":true'; then
     echo "✅ SUCCESS! Polling is active and running."
 else
-    echo "⚠️  WARNING: Polling may not be active. Check Firestore 'twitchPollingActive' flag."
+    echo "⚠️  WARNING: Polling may not be active. Check the local data 'twitchPollingActive' flag."
 fi

@@ -3,31 +3,31 @@
 import * as React from 'react';
 import { useParams } from 'next/navigation';
 import { startOfMonth } from 'date-fns';
-import { FirebaseComponentsProvider } from '@/firebase';
+import { DataComponentsProvider } from '@/data';
 import { PartnerCalendar } from '@/components/partner-calendar-ui';
-import { useDoc, useFirestore } from '@/firebase';
-import { doc, collection, onSnapshot } from 'firebase/firestore';
+import { useDoc, useDataStore } from '@/data';
+import { doc, collection, onSnapshot } from '@/lib/data-shim';
 
 function PartnerScheduleCalendar() {
   const params = useParams();
-  const firestore = useFirestore();
+  const store = useDataStore();
 
   const userId = params.userId as string;
   const serverId = params.serverId as string;
   
   const userDocRef = React.useMemo(() => {
-    if (!firestore || !serverId || !userId) return null;
-    return doc(firestore, 'servers', serverId, 'users', userId);
-  }, [firestore, serverId, userId]);
+    if (!store || !serverId || !userId) return null;
+    return doc(store, 'servers', serverId, 'users', userId);
+  }, [store, serverId, userId]);
 
   const { data: userData } = useDoc(userDocRef);
 
   const [scheduleEvents, setScheduleEvents] = React.useState<any[]>([]);
 
   React.useEffect(() => {
-    if (!firestore || !serverId || !userId) return;
+    if (!store || !serverId || !userId) return;
 
-    const eventsRef = collection(firestore, 'servers', serverId, 'users', userId, 'scheduleEvents');
+    const eventsRef = collection(store, 'servers', serverId, 'users', userId, 'scheduleEvents');
     const unsubscribe = onSnapshot(eventsRef, (snapshot) => {
       const events = snapshot.docs.map(doc => ({
         id: doc.id,
@@ -37,7 +37,7 @@ function PartnerScheduleCalendar() {
     });
 
     return () => unsubscribe();
-  }, [firestore, serverId, userId]);
+  }, [store, serverId, userId]);
 
   const today = React.useMemo(() => new Date(), []);
   const month = React.useMemo(() => startOfMonth(today), [today]);
@@ -85,8 +85,8 @@ function PartnerScheduleCalendar() {
 
 export default function PartnerScheduleClientPage() {
   return (
-    <FirebaseComponentsProvider>
+    <DataComponentsProvider>
       <PartnerScheduleCalendar />
-    </FirebaseComponentsProvider>
+    </DataComponentsProvider>
   );
 }

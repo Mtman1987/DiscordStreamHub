@@ -1,4 +1,4 @@
-import { db } from '@/firebase/server-init';
+import { db } from '@/data/server-init';
 
 export interface EmbedTemplates {
   crew: {

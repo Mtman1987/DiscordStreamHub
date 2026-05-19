@@ -1,4 +1,4 @@
-import { Timestamp, db } from '@/firebase/server-init';
+import { Timestamp, db } from '@/data/server-init';
 import type { LeaderboardSettings } from '@/lib/types';
 
 export type PointsEventType =

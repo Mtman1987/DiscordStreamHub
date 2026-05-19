@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 
 type WithId<T> = T & { id: string };
 
-// --- useDbDoc: replaces useDoc + useFirestore + doc() ---
+// --- useDbDoc: replaces useDoc + useDataStore + doc() ---
 export function useDbDoc<T = any>(path: string | null | undefined): {
   data: WithId<T> | null;
   isLoading: boolean;
@@ -34,7 +34,7 @@ export function useDbDoc<T = any>(path: string | null | undefined): {
   return { data, isLoading, error };
 }
 
-// --- useDbCollection: replaces useCollection + useFirestore + collection/query ---
+// --- useDbCollection: replaces useCollection + useDataStore + collection/query ---
 export function useDbCollection<T = any>(
   path: string | null | undefined,
   options?: {

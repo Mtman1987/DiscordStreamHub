@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
       const success = await deleteClipFromPool(serverId, { username }, gifUrl);
       if (success) {
         // Also clear the spotlight if this was the spotlight GIF
-        const { db } = await import('@/firebase/server-init');
+        const { db } = await import('@/data/server-init');
         const spotlightRef = db.collection('servers').doc(serverId).collection('spotlight').doc('current');
         const spotlightDoc = await spotlightRef.get();
         

@@ -1,7 +1,7 @@
 'use client';
 import * as React from 'react';
-import { collection } from 'firebase/firestore';
-import { useCollection, useFirestore } from '@/firebase';
+import { collection } from '@/lib/data-shim';
+import { useCollection, useDataStore } from '@/data';
 import { PageHeader } from '@/components/page-header';
 import {
   Card,
@@ -65,7 +65,7 @@ function GroupCard({ groupName, description, href, users, isLoading }: GroupCard
 }
 
 export default function ShoutoutsPage() {
-    const firestore = useFirestore();
+    const store = useDataStore();
     const [serverId, setServerId] = React.useState<string | null>(null);
 
     React.useEffect(() => {
@@ -73,9 +73,9 @@ export default function ShoutoutsPage() {
     }, []);
 
     const usersCollectionRef = React.useMemo(() => {
-        if (!firestore || !serverId) return null;
-        return collection(firestore, 'servers', serverId, 'users');
-    }, [firestore, serverId]);
+        if (!store || !serverId) return null;
+        return collection(store, 'servers', serverId, 'users');
+    }, [store, serverId]);
 
     const { data: allUsers, isLoading: isLoadingUsers } = useCollection<UserProfile>(usersCollectionRef);
 

@@ -9,8 +9,8 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Save, Eye } from 'lucide-react';
-import { doc } from 'firebase/firestore';
-import { useDoc, useFirestore } from '@/firebase';
+import { doc } from '@/lib/data-shim';
+import { useDoc, useDataStore } from '@/data';
 import { getChannels } from '@/lib/discord-sync-service';
 
 interface EmbedTemplates {
@@ -53,7 +53,7 @@ const DEFAULT_TEMPLATES: EmbedTemplates = {
 
 export function EmbedTemplatesCard({ serverId }: { serverId: string }) {
   const { toast } = useToast();
-  const firestore = useFirestore();
+  const store = useDataStore();
   const [isSaving, setIsSaving] = React.useState(false);
   const [isPreviewing, setIsPreviewing] = React.useState<string | null>(null);
   const [templates, setTemplates] = React.useState<EmbedTemplates>(DEFAULT_TEMPLATES);
@@ -67,9 +67,9 @@ export function EmbedTemplatesCard({ serverId }: { serverId: string }) {
   }, [serverId]);
 
   const templatesRef = React.useMemo(() => {
-    if (!firestore || !serverId) return null;
-    return doc(firestore, 'servers', serverId, 'config', 'embedTemplates');
-  }, [firestore, serverId]);
+    if (!store || !serverId) return null;
+    return doc(store, 'servers', serverId, 'config', 'embedTemplates');
+  }, [store, serverId]);
 
   const { data: savedTemplates } = useDoc<EmbedTemplates>(templatesRef);
 
@@ -83,7 +83,7 @@ export function EmbedTemplatesCard({ serverId }: { serverId: string }) {
     if (!templatesRef) return;
     setIsSaving(true);
     try {
-      const { setDoc } = await import('firebase/firestore');
+      const { setDoc } = await import('@/lib/data-shim');
       await setDoc(templatesRef, templates);
       toast({ title: 'Templates saved!', description: 'Your embed templates have been updated.' });
     } catch (error) {

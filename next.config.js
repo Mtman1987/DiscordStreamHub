@@ -54,16 +54,14 @@ const nextConfig = {
   serverExternalPackages: ['discord-verify', 'puppeteer-screen-recorder', 'better-sqlite3', 'sql.js'],
   turbopack: {
     resolveAlias: {
-      'firebase/firestore': './src/lib/firestore-shim.ts',
-      'firebase/auth': './src/lib/firestore-shim.ts',
+      '@/lib/data-shim': './src/lib/data-shim.ts',
     },
   },
   webpack: (config) => {
     config.resolve = config.resolve || {};
     config.resolve.alias = {
       ...(config.resolve.alias || {}),
-      'firebase/firestore': require('path').resolve(__dirname, 'src/lib/firestore-shim.ts'),
-      'firebase/auth': require('path').resolve(__dirname, 'src/lib/firestore-shim.ts'),
+      '@/lib/data-shim': require('path').resolve(__dirname, 'src/lib/data-shim.ts'),
     };
     return config;
   },

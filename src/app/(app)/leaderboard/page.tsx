@@ -21,8 +21,8 @@ import { useToast } from '@/hooks/use-toast';
 import { Loader2, RefreshCw, Trophy, Send, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PointsConfigCard } from './_components/points-config';
-import { useCollection, useFirestore, useMemoFirebase, useDoc } from '@/firebase';
-import { collection, doc, getDoc, orderBy, query, limit } from 'firebase/firestore';
+import { useCollection, useDataStore, useMemoData, useDoc } from '@/data';
+import { collection, doc, getDoc, orderBy, query, limit } from '@/lib/data-shim';
 import type { UserProfile, LeaderboardEntry } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -38,7 +38,7 @@ type LeaderboardDisplayEntry = LeaderboardEntry & { user?: UserProfile, rank: nu
 
 export default function LeaderboardPage() {
   const { toast } = useToast();
-  const firestore = useFirestore();
+  const store = useDataStore();
   const [serverId, setServerId] = React.useState<string | null>(null);
   const [leaderboardData, setLeaderboardData] = React.useState<LeaderboardDisplayEntry[]>([]);
   const [adminLeaderboardData, setAdminLeaderboardData] = React.useState<LeaderboardDisplayEntry[]>([]);
@@ -69,28 +69,28 @@ export default function LeaderboardPage() {
   }, [toast]);
 
   const channelsConfigRef = React.useMemo(() => {
-    if (!firestore || !serverId) return null;
-    return doc(firestore, 'servers', serverId, 'config', 'channels');
-  }, [firestore, serverId]);
+    if (!store || !serverId) return null;
+    return doc(store, 'servers', serverId, 'config', 'channels');
+  }, [store, serverId]);
 
   const { data: channelsData } = useDoc<{ list: DiscordChannel[] }>(channelsConfigRef);
   const channels = channelsData?.list ?? [];
   
-  const leaderboardQuery = useMemoFirebase(() => {
-    if (!firestore || !serverId) return null;
-    return query(collection(firestore, 'servers', serverId, 'leaderboard'), orderBy('points', 'desc'), limit(50));
-  }, [firestore, serverId]);
+  const leaderboardQuery = useMemoData(() => {
+    if (!store || !serverId) return null;
+    return query(collection(store, 'servers', serverId, 'leaderboard'), orderBy('points', 'desc'), limit(50));
+  }, [store, serverId]);
 
-  const adminLeaderboardQuery = useMemoFirebase(() => {
-    if (!firestore || !serverId) return null;
-    return query(collection(firestore, 'servers', serverId, 'adminLeaderboard'), orderBy('points', 'desc'), limit(50));
-  }, [firestore, serverId]);
+  const adminLeaderboardQuery = useMemoData(() => {
+    if (!store || !serverId) return null;
+    return query(collection(store, 'servers', serverId, 'adminLeaderboard'), orderBy('points', 'desc'), limit(50));
+  }, [store, serverId]);
 
   const { data: rawLeaderboard, isLoading: isLoadingLeaderboard } = useCollection<LeaderboardEntry>(leaderboardQuery);
   const { data: rawAdminLeaderboard, isLoading: isLoadingAdminLeaderboard } = useCollection<LeaderboardEntry>(adminLeaderboardQuery);
 
   const fetchAndCombineLeaderboardData = React.useCallback(async () => {
-    if (!rawLeaderboard || !firestore || !serverId) return;
+    if (!rawLeaderboard || !store || !serverId) return;
     
     setIsLoading(true);
     const combinedData: LeaderboardDisplayEntry[] = [];
@@ -98,7 +98,7 @@ export default function LeaderboardPage() {
     for (const entry of rawLeaderboard) {
         let userProfile: UserProfile | undefined = undefined;
         try {
-            const userDocRef = doc(firestore, 'servers', serverId, 'users', entry.userProfileId);
+            const userDocRef = doc(store, 'servers', serverId, 'users', entry.userProfileId);
             const userDocSnap = await getDoc(userDocRef);
             if (userDocSnap.exists()) {
                 userProfile = userDocSnap.data() as UserProfile;
@@ -111,10 +111,10 @@ export default function LeaderboardPage() {
     }
     setLeaderboardData(combinedData);
     setIsLoading(false);
-  }, [rawLeaderboard, firestore, serverId]);
+  }, [rawLeaderboard, store, serverId]);
 
   const fetchAndCombineAdminLeaderboardData = React.useCallback(async () => {
-    if (!rawAdminLeaderboard || !firestore || !serverId) return;
+    if (!rawAdminLeaderboard || !store || !serverId) return;
     
     setIsLoadingAdmin(true);
     const combinedData: LeaderboardDisplayEntry[] = [];
@@ -122,7 +122,7 @@ export default function LeaderboardPage() {
     for (const entry of rawAdminLeaderboard) {
         let userProfile: UserProfile | undefined = undefined;
         try {
-            const userDocRef = doc(firestore, 'servers', serverId, 'users', entry.userProfileId);
+            const userDocRef = doc(store, 'servers', serverId, 'users', entry.userProfileId);
             const userDocSnap = await getDoc(userDocRef);
             if (userDocSnap.exists()) {
                 userProfile = userDocSnap.data() as UserProfile;
@@ -135,7 +135,7 @@ export default function LeaderboardPage() {
     }
     setAdminLeaderboardData(combinedData);
     setIsLoadingAdmin(false);
-  }, [rawAdminLeaderboard, firestore, serverId]);
+  }, [rawAdminLeaderboard, store, serverId]);
 
 
   React.useEffect(() => {

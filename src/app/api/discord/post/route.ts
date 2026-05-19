@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
     if (content) payload.content = content;
     if (embeds) payload.embeds = embeds;
     if (components) payload.components = components;
-    if (!content && !embeds) payload.content = 'Hello from Firebase Studio! The bot is connected. ✅';
+    if (!content && !embeds) payload.content = 'Hello from Discord Stream Hub! The bot is connected. ✅';
 
     const response = await fetch(discordApiEndpoint, {
       method: 'POST',

@@ -1,8 +1,8 @@
 'use client';
 
 import * as React from 'react';
-import { useFirestore } from '@/firebase';
-import { collection, query, getDocs, doc, deleteDoc } from 'firebase/firestore';
+import { useDataStore } from '@/data';
+import { collection, query, getDocs, doc, deleteDoc } from '@/lib/data-shim';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/page-header';
@@ -21,7 +21,7 @@ interface ActiveShoutout {
 }
 
 export default function ShoutoutsPage() {
-  const firestore = useFirestore();
+  const store = useDataStore();
   const { toast } = useToast();
   const [serverId, setServerId] = React.useState<string | null>(null);
   const [shoutouts, setShoutouts] = React.useState<ActiveShoutout[]>([]);
@@ -34,19 +34,19 @@ export default function ShoutoutsPage() {
   }, []);
 
   const loadShoutouts = React.useCallback(async () => {
-    if (!firestore || !serverId) return;
+    if (!store || !serverId) return;
     
     setIsLoading(true);
     try {
-      const usersRef = collection(firestore, 'servers', serverId, 'users');
+      const usersRef = collection(store, 'servers', serverId, 'users');
       const usersSnapshot = await getDocs(usersRef);
       
       const activeShoutouts: ActiveShoutout[] = [];
       
       for (const userDoc of usersSnapshot.docs) {
         const userData = userDoc.data();
-        const shoutoutStateRef = doc(firestore, 'servers', serverId, 'users', userDoc.id, 'shoutoutState', 'current');
-        const shoutoutStateSnap = await getDocs(query(collection(firestore, 'servers', serverId, 'users', userDoc.id, 'shoutoutState')));
+        const shoutoutStateRef = doc(store, 'servers', serverId, 'users', userDoc.id, 'shoutoutState', 'current');
+        const shoutoutStateSnap = await getDocs(query(collection(store, 'servers', serverId, 'users', userDoc.id, 'shoutoutState')));
         
         if (!shoutoutStateSnap.empty) {
           const shoutoutData = shoutoutStateSnap.docs[0].data();
@@ -72,7 +72,7 @@ export default function ShoutoutsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [firestore, serverId, toast]);
+  }, [store, serverId, toast]);
 
   React.useEffect(() => {
     if (serverId) {
@@ -81,11 +81,11 @@ export default function ShoutoutsPage() {
   }, [serverId, loadShoutouts]);
 
   const handleDeleteShoutout = async (discordUserId: string, twitchLogin: string) => {
-    if (!firestore || !serverId) return;
+    if (!store || !serverId) return;
     
     setDeletingIds(prev => new Set(prev).add(discordUserId));
     try {
-      const shoutoutStateRef = doc(firestore, 'servers', serverId, 'users', discordUserId, 'shoutoutState', 'current');
+      const shoutoutStateRef = doc(store, 'servers', serverId, 'users', discordUserId, 'shoutoutState', 'current');
       await deleteDoc(shoutoutStateRef);
       
       toast({
@@ -111,13 +111,13 @@ export default function ShoutoutsPage() {
   };
 
   const handleClearAll = async () => {
-    if (!firestore || !serverId) return;
+    if (!store || !serverId) return;
     if (!confirm('Clear ALL active shoutouts? This will remove all shoutout states.')) return;
     
     setIsLoading(true);
     try {
       for (const shoutout of shoutouts) {
-        const shoutoutStateRef = doc(firestore, 'servers', serverId, 'users', shoutout.discordUserId, 'shoutoutState', 'current');
+        const shoutoutStateRef = doc(store, 'servers', serverId, 'users', shoutout.discordUserId, 'shoutoutState', 'current');
         await deleteDoc(shoutoutStateRef);
       }
       

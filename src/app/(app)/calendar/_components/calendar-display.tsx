@@ -6,8 +6,8 @@ import {
   query,
   where,
   orderBy,
-} from 'firebase/firestore';
-import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+} from '@/lib/data-shim';
+import { useDataStore, useCollection, useMemoData } from '@/data';
 import {
   Card,
   CardContent,
@@ -77,22 +77,22 @@ function CustomDay(props: DayProps) {
 
 
 export function CalendarDisplay({ serverId, forScreenshot = false }: { serverId: string | null, forScreenshot?: boolean }) {
-  const firestore = useFirestore();
+  const store = useDataStore();
   const [month, setMonth] = React.useState(startOfMonth(new Date()));
 
   const viewStart = startOfWeek(startOfMonth(month));
   const viewEnd = endOfWeek(endOfMonth(month));
 
-  const eventsQuery = useMemoFirebase(() => {
-      if (!firestore || !serverId) return null;
-      const eventsRef = collection(firestore, 'servers', serverId, 'calendarEvents');
+  const eventsQuery = useMemoData(() => {
+      if (!store || !serverId) return null;
+      const eventsRef = collection(store, 'servers', serverId, 'calendarEvents');
       return query(
         eventsRef,
         where('eventDateTime', '>=', viewStart),
         where('eventDateTime', '<=', viewEnd),
         orderBy('eventDateTime', 'asc')
       );
-  }, [firestore, serverId, viewStart, viewEnd]);
+  }, [store, serverId, viewStart, viewEnd]);
 
   const { data: allEvents } = useCollection<CalendarEvent>(eventsQuery);
 

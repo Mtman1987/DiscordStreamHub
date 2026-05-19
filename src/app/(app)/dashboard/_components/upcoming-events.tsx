@@ -13,8 +13,8 @@ import Link from 'next/link';
 import { ArrowRight, Calendar, Users, Megaphone, BookOpen } from 'lucide-react';
 import { format } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collection, query, orderBy, limit, where } from 'firebase/firestore';
+import { useDataStore, useCollection, useMemoData } from '@/data';
+import { collection, query, orderBy, limit, where } from '@/lib/data-shim';
 import type { CalendarEvent } from '@/lib/types';
 
 const iconMap: Record<string, React.ReactNode> = {
@@ -25,22 +25,22 @@ const iconMap: Record<string, React.ReactNode> = {
 };
 
 export function UpcomingEvents() {
-    const firestore = useFirestore();
+    const store = useDataStore();
     const [serverId, setServerId] = React.useState<string | null>(null);
 
     React.useEffect(() => {
         setServerId(localStorage.getItem('discordServerId'));
     }, []);
 
-    const eventsRef = useMemoFirebase(() => {
-        if (!firestore || !serverId) return null;
+    const eventsRef = useMemoData(() => {
+        if (!store || !serverId) return null;
         return query(
-            collection(firestore, 'servers', serverId, 'calendarEvents'),
+            collection(store, 'servers', serverId, 'calendarEvents'),
             where('eventDateTime', '>=', new Date()),
             orderBy('eventDateTime', 'asc'),
             limit(10)
         );
-    }, [firestore, serverId]);
+    }, [store, serverId]);
 
     const { data: allEvents, isLoading } = useCollection<CalendarEvent>(eventsRef);
 

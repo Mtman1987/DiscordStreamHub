@@ -1,6 +1,6 @@
 'use server';
 
-import { db } from '@/firebase/server-init';
+import { db } from '@/data/server-init';
 import { checkMultipleStreamsStatus } from './twitch-api-service';
 
 export async function manualPoll(serverId: string): Promise<void> {

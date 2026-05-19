@@ -2,8 +2,8 @@
 
 import * as React from 'react';
 import { useParams, usePathname } from 'next/navigation';
-import { collection, doc, updateDoc, query, where } from 'firebase/firestore';
-import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
+import { collection, doc, updateDoc, query, where } from '@/lib/data-shim';
+import { useCollection, useDataStore, useMemoData } from '@/data';
 import { PageHeader } from '@/components/page-header';
 import {
   Card,
@@ -222,7 +222,7 @@ function OfflineStreamerTile({ streamer }: { streamer: UserProfile }) {
 
 function VipMemberCard({ streamer }: { streamer: UserProfile }) {
     const { toast } = useToast();
-    const firestore = useFirestore();
+    const store = useDataStore();
     const [serverId, setServerId] = React.useState<string | null>(null);
     const [discordLink, setDiscordLink] = React.useState(streamer.partnerDiscordLink || 'https://discord.gg/spacemountain');
     const [isSavingLink, setIsSavingLink] = React.useState(false);
@@ -233,11 +233,11 @@ function VipMemberCard({ streamer }: { streamer: UserProfile }) {
     }, []);
 
     const handleSaveDiscordLink = async () => {
-        if (!firestore || !serverId || !streamer.id) return;
+        if (!store || !serverId || !streamer.id) return;
         
         setIsSavingLink(true);
         try {
-            const userDocRef = doc(firestore, 'servers', serverId, 'users', streamer.id);
+            const userDocRef = doc(store, 'servers', serverId, 'users', streamer.id);
             await updateDoc(userDocRef, { partnerDiscordLink: discordLink });
             toast({ title: 'Success', description: 'Discord link saved!' });
         } catch (error) {
@@ -483,7 +483,7 @@ export default function GroupDetailPage() {
   const params = useParams();
   const pathname = usePathname();
   const { toast } = useToast();
-  const firestore = useFirestore();
+  const store = useDataStore();
   const [serverId, setServerId] = React.useState<string | null>(null);
   const [selectedChannelId, setSelectedChannelId] = React.useState<string>('');
   const [isSavingChannel, setIsSavingChannel] = React.useState(false);
@@ -518,9 +518,9 @@ export default function GroupDetailPage() {
       setServerId(storedServerId);
       
       // Load channels
-      if (firestore) {
-        const channelsRef = doc(firestore, 'servers', storedServerId, 'config', 'channels');
-        import('firebase/firestore').then(async ({ getDoc }) => {
+      if (store) {
+        const channelsRef = doc(store, 'servers', storedServerId, 'config', 'channels');
+        import('@/lib/data-shim').then(async ({ getDoc }) => {
           const docSnap = await getDoc(channelsRef);
           if (docSnap.exists()) {
             const channelList = docSnap.data().list || [];
@@ -532,8 +532,8 @@ export default function GroupDetailPage() {
         });
         
         // Load saved channel for this group
-        const groupConfigRef = doc(firestore, 'servers', storedServerId, 'config', 'groupChannels');
-        import('firebase/firestore').then(async ({ getDoc }) => {
+        const groupConfigRef = doc(store, 'servers', storedServerId, 'config', 'groupChannels');
+        import('@/lib/data-shim').then(async ({ getDoc }) => {
           const docSnap = await getDoc(groupConfigRef);
           if (docSnap.exists()) {
             const savedChannel = docSnap.data()[groupName];
@@ -542,13 +542,13 @@ export default function GroupDetailPage() {
         });
       }
     }
-  }, [firestore, groupName]);
+  }, [store, groupName]);
 
   // Fetch all users for the server once.
-  const usersCollectionRef = useMemoFirebase(() => {
-    if (!firestore || !serverId) return null;
-    return collection(firestore, 'servers', serverId, 'users');
-  }, [firestore, serverId]);
+  const usersCollectionRef = useMemoData(() => {
+    if (!store || !serverId) return null;
+    return collection(store, 'servers', serverId, 'users');
+  }, [store, serverId]);
 
   const { data: allUsers, isLoading: isLoadingUsers } = useCollection<UserProfile>(usersCollectionRef);
 
@@ -575,12 +575,12 @@ export default function GroupDetailPage() {
 
 
   const handleSaveChannel = async () => {
-    if (!firestore || !serverId || !selectedChannelId) return;
+    if (!store || !serverId || !selectedChannelId) return;
     
     setIsSavingChannel(true);
     try {
-      const groupConfigRef = doc(firestore, 'servers', serverId, 'config', 'groupChannels');
-      await import('firebase/firestore').then(({ setDoc }) => 
+      const groupConfigRef = doc(store, 'servers', serverId, 'config', 'groupChannels');
+      await import('@/lib/data-shim').then(({ setDoc }) => 
         setDoc(groupConfigRef, { [groupName]: selectedChannelId }, { merge: true })
       );
       toast({ title: 'Success', description: `Channel saved for ${groupName} group.` });
@@ -597,7 +597,7 @@ export default function GroupDetailPage() {
   };
 
   const handleRemoveClick = async (streamer: UserProfile) => {
-    if (!firestore || !serverId) return;
+    if (!store || !serverId) return;
     if (!streamer.id) {
         toast({
             variant: 'destructive',
@@ -608,7 +608,7 @@ export default function GroupDetailPage() {
     }
 
     try {
-      const userDocRef = doc(firestore, 'servers', serverId, 'users', streamer.id);
+      const userDocRef = doc(store, 'servers', serverId, 'users', streamer.id);
       await updateDoc(userDocRef, { group: 'Community' });
       toast({
         title: 'Member Reassigned',
@@ -626,7 +626,7 @@ export default function GroupDetailPage() {
 
   const handleSaveChanges = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!editingStreamer || !firestore || !serverId) return;
+    if (!editingStreamer || !store || !serverId) return;
 
     setIsSaving(true);
     const formData = new FormData(e.currentTarget);
@@ -644,7 +644,7 @@ export default function GroupDetailPage() {
     }
 
     try {
-        const userDocRef = doc(firestore, 'servers', serverId, 'users', editingStreamer.id);
+        const userDocRef = doc(store, 'servers', serverId, 'users', editingStreamer.id);
         await updateDoc(userDocRef, {
             username: updatedUsername,
             topic: updatedTopic,

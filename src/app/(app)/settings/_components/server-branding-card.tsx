@@ -7,8 +7,8 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Save, Sparkles } from 'lucide-react';
-import { doc } from 'firebase/firestore';
-import { useDoc, useFirestore } from '@/firebase';
+import { doc } from '@/lib/data-shim';
+import { useDoc, useDataStore } from '@/data';
 
 interface ServerBranding {
   serverName: string;
@@ -24,14 +24,14 @@ const DEFAULT_BRANDING: ServerBranding = {
 
 export function ServerBrandingCard({ serverId }: { serverId: string }) {
   const { toast } = useToast();
-  const firestore = useFirestore();
+  const store = useDataStore();
   const [isSaving, setIsSaving] = React.useState(false);
   const [branding, setBranding] = React.useState<ServerBranding>(DEFAULT_BRANDING);
 
   const brandingRef = React.useMemo(() => {
-    if (!firestore || !serverId) return null;
-    return doc(firestore, 'servers', serverId, 'config', 'branding');
-  }, [firestore, serverId]);
+    if (!store || !serverId) return null;
+    return doc(store, 'servers', serverId, 'config', 'branding');
+  }, [store, serverId]);
 
   const { data: savedBranding } = useDoc<ServerBranding>(brandingRef);
 
@@ -45,7 +45,7 @@ export function ServerBrandingCard({ serverId }: { serverId: string }) {
     if (!brandingRef) return;
     setIsSaving(true);
     try {
-      const { setDoc } = await import('firebase/firestore');
+      const { setDoc } = await import('@/lib/data-shim');
       await setDoc(brandingRef, branding);
       toast({ title: 'Branding saved!', description: 'Your server branding has been updated.' });
     } catch (error) {
