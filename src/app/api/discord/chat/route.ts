@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { awardPoints } from '@/lib/points-service';
 import { handleSpmtCommand } from '@/lib/chat-tag-service';
-import { handleWatchRequestCommand, parseWatchAcceptCommand, parseWatchCommand } from '@/lib/watch-request-service';
+// watch-request-service moved to hearmeout
+const handleWatchRequestCommand = async (...args: any[]) => null;
+const parseWatchAcceptCommand = (s: string) => null;
+const parseWatchCommand = (s: string) => null;
 
 const COOLDOWN_MS = 5 * 60 * 1000; // 1 point per 5 min per user
 const discordChatCooldowns = new Map<string, number>();
