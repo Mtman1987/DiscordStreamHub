@@ -1015,25 +1015,41 @@ class TwitchPollingService {
           : null;
       }
 
-      const embed = {
-        title: '⭐ COMMUNITY SPOTLIGHT ⭐',
-        description: showcaseUser 
-          ? `**[${(showcaseUser as any).username || (showcaseUser as any).twitchLogin}](https://twitch.tv/${(showcaseUser as any).twitchLogin})** is part of the live shoutout rotation.\n\nLink your Twitch username below to get automatic shoutouts and be eligible for spotlight rotation when you go live.`
-          : 'Link your Twitch username below to get automatic live shoutouts and become eligible for the community spotlight rotation.',
+      // Get branding
+      const brandingDoc = await db.collection('servers').doc(serverId).collection('config').doc('branding').get();
+      const branding = brandingDoc.data() || {};
+      const serverName = branding.serverName || 'Space Mountain';
+      const showcaseUsername = (showcaseUser as any)?.username || (showcaseUser as any)?.twitchLogin || '';
+      const showcaseTwitchLogin = (showcaseUser as any)?.twitchLogin || '';
+      const showcaseAvatar = (showcaseUser as any)?.avatarUrl || null;
+
+      const embed: any = {
+        author: showcaseAvatar ? {
+          name: `${showcaseUsername} gets shoutouts from ${serverName}!`,
+          icon_url: showcaseAvatar,
+          url: `https://twitch.tv/${showcaseTwitchLogin}`,
+        } : undefined,
+        title: showcaseUser
+          ? `@${showcaseUsername} gets their shoutouts by ${serverName} — you can too!`
+          : `Get automatic shoutouts from ${serverName}!`,
+        description: showcaseUser
+          ? `Every time **[${showcaseUsername}](https://twitch.tv/${showcaseTwitchLogin})** goes live, ${serverName} automatically posts a shoutout with their stream info, viewer count, and clips.\n\n✨ **Link your Twitch below and you'll get the same treatment!**`
+          : `Link your Twitch account and get automatic shoutouts every time you go live!\n\n⚡ Instant shoutouts • 🔄 Updates every 10 min • ⭐ Community spotlight rotation`,
+        url: showcaseTwitchLogin ? `https://twitch.tv/${showcaseTwitchLogin}` : undefined,
         color: 0xFFD700,
-        thumbnail: showcaseGif ? { url: showcaseGif } : ((showcaseUser as any)?.avatarUrl ? { url: (showcaseUser as any).avatarUrl } : undefined),
-        fields: [
-          { name: '⚡ Live Shoutouts', value: 'Posted when you go live', inline: true },
-          { name: '🔄 Auto Updates', value: 'Refreshes stream info', inline: true },
-          { name: '⭐ Spotlight', value: 'Rotates live members', inline: true }
-        ],
+        thumbnail: showcaseAvatar ? { url: showcaseAvatar } : undefined,
+        image: showcaseGif ? { url: showcaseGif } : undefined,
         footer: {
-          text: showcaseUser 
-            ? `${(showcaseUser as any).username || (showcaseUser as any).twitchLogin} is one of the linked community streamers`
-            : 'Type your Twitch username in Discord. No website login required.'
+          text: showcaseUser
+            ? `⭐ Community Spotlight • ${showcaseUsername} • Rotates every 10 min`
+            : `Link your Twitch to join ${serverName}'s featured streamers`
         },
         timestamp: new Date().toISOString()
       };
+      if (!embed.author) delete embed.author;
+      if (!embed.url) delete embed.url;
+      if (!embed.thumbnail) delete embed.thumbnail;
+      if (!embed.image) delete embed.image;
       
       try {
         const { editDiscordMessage } = await import('./discord-sync-service');
