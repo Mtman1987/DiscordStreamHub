@@ -79,7 +79,7 @@ export function TwitchOAuthCard({ serverId }: TwitchOAuthCardProps) {
   const handleTwitchOAuth = () => {
     setIsLoading(true);
     const clientId = process.env.NEXT_PUBLIC_TWITCH_CLIENT_ID;
-    const redirectUri = encodeURIComponent(`${window.location.origin}/api/twitch/oauth/callback`);
+    const redirectUri = encodeURIComponent(`${window.location.origin}/api/twitch/bot-oauth/callback`);
     const scope = encodeURIComponent('chat:read chat:edit');
 
     if (!clientId) {
