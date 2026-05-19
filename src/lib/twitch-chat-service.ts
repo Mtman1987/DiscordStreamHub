@@ -18,12 +18,17 @@ class TwitchChatService {
     await this.loadAllowedUsers();
 
     const botConfig = await db.collection('servers').doc(serverId).collection('config').doc('twitchBotOAuth').get();
-    if (!botConfig.exists) {
-      throw new Error('Bot OAuth not configured');
+    if (!botConfig.exists || !botConfig.data()?.accessToken) {
+      console.warn('[TwitchChat] Bot OAuth not configured — chat monitoring disabled. Re-authorize bot in settings.');
+      return;
     }
 
     const { botUsername, accessToken } = botConfig.data()!;
     const liveUsers = await this.getLiveChannels();
+    if (liveUsers.length === 0) {
+      console.log('[TwitchChat] No live channels to monitor');
+      return;
+    }
 
     this.client = new tmi.Client({
       options: { debug: false },
@@ -40,8 +45,14 @@ class TwitchChatService {
     this.client.on('cheer', this.handleCheer.bind(this));
     this.client.on('raided', this.handleRaid.bind(this));
 
-    await this.client.connect();
-    console.log(`[TwitchChat] Monitoring ${liveUsers.length} channels`);
+    try {
+      await this.client.connect();
+      console.log(`[TwitchChat] Monitoring ${liveUsers.length} channels`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[TwitchChat] Connection failed: ${msg} — token may be expired. Re-authorize bot in settings.`);
+      this.client = null;
+    }
   }
 
   private async loadAllowedUsers() {

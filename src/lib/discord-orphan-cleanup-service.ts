@@ -131,17 +131,25 @@ async function getCleanupChannelIds(serverId: string): Promise<Set<string>> {
     const doc = await db.collection('servers').doc(serverId).collection(collectionName).doc(docId).get();
     const data = doc.data();
     const channelId = data?.channelId;
-    if (typeof channelId === 'string' && isDiscordSnowflake(channelId)) channels.add(channelId);
+    if (typeof channelId === 'string' && channelId !== serverId && isDiscordSnowflake(channelId)) channels.add(channelId);
   }
+
+  // Remove the server ID itself if it somehow got in (it's not a channel)
+  channels.delete(serverId);
 
   return channels;
 }
 
 async function fetchRecentMessages(botToken: string, channelId: string): Promise<DiscordMessage[]> {
+  if (!isDiscordSnowflake(channelId)) {
+    console.warn(`[DiscordCleanup] Skipping invalid channel ID: ${channelId}`);
+    return [];
+  }
   const response = await fetch(`${DISCORD_API_BASE}/channels/${channelId}/messages?limit=${RECENT_MESSAGE_LIMIT}`, {
     headers: { Authorization: `Bot ${botToken}` },
   });
   if (!response.ok) {
+    if (response.status === 404) return []; // Channel deleted, skip silently
     console.error('[DiscordCleanup] Failed to fetch messages:', channelId, response.status, await response.text().catch(() => ''));
     return [];
   }
@@ -179,11 +187,21 @@ async function deleteDiscordMessage(botToken: string, channelId: string, message
   if (response.status === 429) {
     const body = await response.json().catch(() => ({ retry_after: 1 }));
     const retryAfterMs = Math.max(500, Number(body?.retry_after ?? 1) * 1000);
+    console.warn(`[DiscordCleanup] Rate limited deleting ${messageId}, waiting ${retryAfterMs}ms`);
     await delay(retryAfterMs);
-    return deleteDiscordMessage(botToken, channelId, messageId);
+    // Retry once, then give up
+    const retry = await fetch(`${DISCORD_API_BASE}/channels/${channelId}/messages/${messageId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bot ${botToken}` },
+    });
+    if (retry.ok || retry.status === 404) {
+      console.log(`[DiscordCleanup] Deleted orphaned Discord message ${messageId} in ${channelId} (after retry)`);
+    }
+    return;
   }
   if (!response.ok && response.status !== 404) {
-    throw new Error(`Failed to delete orphaned Discord message ${messageId} in ${channelId}: ${response.status} ${await response.text().catch(() => '')}`);
+    console.error(`[DiscordCleanup] Failed to delete ${messageId} in ${channelId}: ${response.status}`);
+    return; // Don't throw — don't crash startup
   }
   console.log(`[DiscordCleanup] Deleted orphaned Discord message ${messageId} in ${channelId}`);
 }
