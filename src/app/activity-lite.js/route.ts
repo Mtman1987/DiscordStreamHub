@@ -15,6 +15,7 @@ const queueEl = document.getElementById('queue');
 const eventsEl = document.getElementById('events');
 const errorEl = document.getElementById('error');
 const fullscreenBtn = document.getElementById('fullscreen');
+const popoutBtn = document.getElementById('popout');
 const downloadLink = document.getElementById('download');
 const muteBtn = document.getElementById('mute');
 const volumeInput = document.getElementById('volume');
@@ -128,6 +129,9 @@ function loadMedia(item) {
 function render(nextState) {
   state = nextState;
   empty.style.display = state.current ? 'none' : 'grid';
+  document.querySelectorAll('[data-action="next"]').forEach((button) => { button.disabled = !state.queue.length; });
+  fullscreenBtn.disabled = !state.current;
+  popoutBtn.disabled = !state.current;
   if (state.current) {
     titleEl.textContent = state.current.item.title + ' (' + state.current.item.year + ')';
     const url = state.current.item.playbackUrl || '';
@@ -172,6 +176,9 @@ async function control(action) {
   const body = { action, position: video.currentTime || 0 };
   try {
     render(await api('/api/watch/sessions/' + sessionId + '/control', { method: 'POST', body: JSON.stringify(body) }));
+    if (action === 'seek') mediaEl.textContent = 'Media: synced at ' + Math.round(body.position) + 's';
+    if (action === 'next') mediaEl.textContent = state && state.current ? 'Media: loaded next' : 'Media: queue ended';
+    if (action === 'clear') mediaEl.textContent = 'Media: queue cleared';
     errorEl.textContent = '';
   } catch (err) {
     errorEl.textContent = err && err.message ? err.message : String(err);
@@ -200,6 +207,10 @@ document.querySelectorAll('[data-action]').forEach((button) => {
 });
 
 fullscreenBtn.addEventListener('click', () => {
+  if (!state || !state.current) {
+    errorEl.textContent = 'Load a video before using fullscreen.';
+    return;
+  }
   const target = document.querySelector('.video-wrap') || video;
   if (document.fullscreenElement && document.exitFullscreen) {
     document.exitFullscreen().catch(() => {});
@@ -208,6 +219,9 @@ fullscreenBtn.addEventListener('click', () => {
   if (target.requestFullscreen) {
     target.requestFullscreen().catch((err) => {
       errorEl.textContent = err && err.message ? err.message : 'Fullscreen was blocked';
+      if (String(errorEl.textContent || '').toLowerCase().includes('permission')) {
+        errorEl.textContent = 'Discord blocked fullscreen for this iframe. Try the native video fullscreen control or Pop Out.';
+      }
       console.warn(err);
     });
   } else if (video.webkitEnterFullscreen) {
@@ -215,6 +229,24 @@ fullscreenBtn.addEventListener('click', () => {
   } else {
     errorEl.textContent = 'Fullscreen is not available in this frame. Open the activity in a browser window.';
   }
+});
+
+popoutBtn.addEventListener('click', () => {
+  if (!state || !state.current || !state.current.item.playbackUrl) {
+    errorEl.textContent = 'No media is available to pop out yet.';
+    return;
+  }
+  const item = state.current.item;
+  const popup = window.open('', 'watch-popout-' + sessionId, 'popup=yes,width=1100,height=680');
+  if (!popup) {
+    errorEl.textContent = 'Discord blocked the popout window.';
+    return;
+  }
+  const title = String(item.title || 'Watch video').replace(/[<>&"]/g, (char) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[char] || char));
+  const src = JSON.stringify(item.playbackUrl);
+  popup.document.write('<!doctype html><html><head><title>' + title + '</title><style>html,body{height:100%;margin:0;background:#000;color:#e5edf5;font-family:Arial,sans-serif}body{display:grid;grid-template-rows:auto 1fr}header{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:10px 12px;background:#111827}button{border:1px solid #475569;background:#1e293b;color:#e5edf5;border-radius:6px;padding:7px 10px}video{width:100%;height:100%;background:#000;display:block}</style></head><body><header><strong>' + title + '</strong><button onclick="document.querySelector(\\'video\\').requestFullscreen()">Fullscreen</button></header><video id="video" controls autoplay playsinline></video><script>const src=' + src + ';const video=document.getElementById("video");if(src.endsWith(".m3u8")){const s=document.createElement("script");s.src="https://cdn.jsdelivr.net/npm/hls.js@latest";s.onload=()=>{if(window.Hls&&window.Hls.isSupported()){const hls=new window.Hls();hls.loadSource(src);hls.attachMedia(video)}else{video.src=src}};document.head.appendChild(s)}else{video.src=src}<\\/script></body></html>');
+  popup.document.close();
+  errorEl.textContent = '';
 });
 
 downloadLink.addEventListener('click', () => {
@@ -230,16 +262,19 @@ downloadLink.addEventListener('click', () => {
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
+  errorEl.textContent = 'If Discord blocks the download, use Pop Out and the native video menu.';
 });
 
 muteBtn.addEventListener('click', () => {
   muted = !muted;
   applyVolume();
+  mediaEl.textContent = video.muted ? 'Media: muted' : 'Media: volume on';
 });
 
 volumeInput.addEventListener('input', () => {
   if (Number(volumeInput.value || 0) > 0) muted = false;
   applyVolume();
+  mediaEl.textContent = 'Media: volume ' + volumeLabel.textContent;
 });
 
 document.getElementById('request-form').addEventListener('submit', async (event) => {

@@ -62,6 +62,7 @@ function html(clientId: string) {
         <button data-action="seek">Sync</button>
         <button data-action="next">Next</button>
         <button data-action="clear">Clear</button>
+        <button id="popout" type="button" disabled>Pop Out</button>
         <button id="fullscreen" type="button">Fullscreen</button>
         <button id="download" type="button" disabled>Download</button>
         <div class="volume">
