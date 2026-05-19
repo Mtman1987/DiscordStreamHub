@@ -157,8 +157,8 @@ export async function addDoc(ref: StubCollRef, data: any): Promise<StubDocRef> {
   return new StubDocRef(`${ref._path}/${json.id || 'unknown'}`);
 }
 
-export function onSnapshot(ref: any, callback: (snap: any) => void, onError?: (error: DataError) => void): () => void {
-  if (ref instanceof StubDocRef) {
+export function onSnapshot(ref: any, callback: (snap: any) => void, onError?: (error: DataError) => void): () => void { let cancelled = false; const POLL_MS = 10 * 60 * 1000;
+  const doFetch = () => { if (cancelled) return; if (ref instanceof StubDocRef) {
     dbGet(ref._path)
       .then(data => {
         callback({
@@ -182,7 +182,7 @@ export function onSnapshot(ref: any, callback: (snap: any) => void, onError?: (e
       .catch(error => onError?.(error));
   }
 
-  return () => {};
+  }; doFetch(); const iv = setInterval(doFetch, POLL_MS); return () => { cancelled = true; clearInterval(iv); };
 }
 
 export class Timestamp {

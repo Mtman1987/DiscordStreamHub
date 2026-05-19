@@ -1,6 +1,6 @@
 'use server';
 
-import { db } from '@/data/server-init';
+import { db } from '@/lib/db';
 
 export async function getUserAccessToken(serverId: string): Promise<string | null> {
   try {

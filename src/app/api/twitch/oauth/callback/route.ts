@@ -196,6 +196,16 @@ export async function GET(request: NextRequest) {
       serverId,
     });
 
+    // Also save to the path where twitch-oauth-service reads tokens
+    await db.collection('servers').doc(serverId).collection('config').doc('twitchOAuth').set({
+      accessToken: tokenData.access_token,
+      refreshToken: tokenData.refresh_token,
+      expiresAt: Date.now() + (tokenData.expires_in * 1000),
+      userId: twitchUser?.id || '',
+      username: twitchUser?.login || '',
+      updatedAt: new Date().toISOString(),
+    });
+
     if (isHearMeOut) {
       let userId = 'unknown';
       let username = 'unknown';
