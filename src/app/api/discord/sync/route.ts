@@ -35,6 +35,20 @@ async function getBotToken(): Promise<string> {
     }
 }
 
+function avatarUrl(user: any) {
+    if (!user?.avatar || !user?.id) return '';
+    const ext = String(user.avatar).startsWith('a_') ? 'gif' : 'png';
+    return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.${ext}`;
+}
+
+function determineGroup(roleMappings: Record<string, string> = {}, roles: string[] = []) {
+    const priority = ['Crew', 'Partners', 'Honored Guests', 'Raid Pile', 'Everyone Else'];
+    for (const group of priority) {
+        if (roles.some(roleId => roleMappings[roleId] === group)) return group;
+    }
+    return 'Community';
+}
+
 export async function POST(request: NextRequest) {
     let botToken: string;
     try {
@@ -65,6 +79,56 @@ export async function POST(request: NextRequest) {
             allMembers.push(...membersChunk);
             after = membersChunk[membersChunk.length - 1].user.id;
         }
+
+        const serverRef = db.collection('servers').doc(guildId);
+        const existingServerDoc = await serverRef.get();
+        const existingServer = existingServerDoc.exists ? existingServerDoc.data() : {};
+        const roleMappings = existingServer?.roleMappings || {};
+
+        await serverRef.set({
+            ...(existingServer || {}),
+            serverId: serverData.id,
+            serverName: serverData.name,
+            iconUrl: serverData.icon ? `https://cdn.discordapp.com/icons/${serverData.id}/${serverData.icon}.png` : (existingServer?.iconUrl || ''),
+            updatedAt: new Date().toISOString(),
+        }, { merge: true });
+
+        await db.collection('servers').doc(guildId).collection('config').doc('roles').set({
+            list: rolesData.map((role: any) => role.name),
+            detailed: rolesData.map((role: any) => ({ id: role.id, name: role.name })),
+            updatedAt: new Date().toISOString(),
+        }, { merge: true });
+
+        await db.collection('servers').doc(guildId).collection('config').doc('channels').set({
+            list: channelsData.map((channel: any) => ({ id: channel.id, name: channel.name, type: channel.type })),
+            updatedAt: new Date().toISOString(),
+        }, { merge: true });
+
+        const batch = db.batch();
+        for (const member of allMembers) {
+            if (!member?.user?.id || member.user.bot) continue;
+            const userRoles: string[] = Array.isArray(member.roles) ? member.roles : [];
+            const roleNames = userRoles
+                .map(roleId => rolesData.find((role: any) => role.id === roleId)?.name)
+                .filter(Boolean);
+
+            batch.set(
+                db.collection('servers').doc(guildId).collection('users').doc(member.user.id),
+                {
+                    discordUserId: member.user.id,
+                    username: member.user.username,
+                    displayName: member.nick || member.user.global_name || member.user.username,
+                    avatarUrl: avatarUrl(member.user),
+                    roles: userRoles,
+                    roleNames,
+                    group: determineGroup(roleMappings, userRoles),
+                    isOnline: false,
+                    updatedAt: new Date().toISOString(),
+                },
+                { merge: true }
+            );
+        }
+        await batch.commit();
         
         return NextResponse.json({
             server: {

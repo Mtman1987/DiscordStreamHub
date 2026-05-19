@@ -13,68 +13,87 @@ interface CurrentUser {
   twitchLogin?: string;
 }
 
-let _cache: { user: CurrentUser | null; fetched: boolean } = { user: null, fetched: false };
+let _cache: { key: string | null; user: CurrentUser | null; fetched: boolean } = { key: null, user: null, fetched: false };
 
 export function useCurrentUser() {
   const [user, setUser] = useState<CurrentUser | null>(_cache.user);
   const [isLoading, setIsLoading] = useState(!_cache.fetched);
 
   useEffect(() => {
-    if (_cache.fetched) { setUser(_cache.user); setIsLoading(false); return; }
-
     const userId = localStorage.getItem('discordUserId');
     const serverId = localStorage.getItem('discordServerId') || process.env.NEXT_PUBLIC_HARDCODED_GUILD_ID || '1240832965865635881';
     const hardcodedAdminId = process.env.NEXT_PUBLIC_HARDCODED_ADMIN_DISCORD_ID || '767875979561009173';
-    if (!userId) { setIsLoading(false); _cache.fetched = true; return; }
+    const cacheKey = userId && serverId ? `${serverId}:${userId}` : null;
+    if (_cache.fetched && _cache.key === cacheKey) { setUser(_cache.user); setIsLoading(false); return; }
+    if (!userId) { setIsLoading(false); _cache = { key: null, user: null, fetched: true }; return; }
 
     // Hardcoded admin always gets in, even if DB is down
+    const localDisplayName = localStorage.getItem('discordDisplayName') || localStorage.getItem('discordUsername') || userId;
+    const localAvatar = localStorage.getItem('discordAvatar') || undefined;
     const fallbackAdmin: CurrentUser = {
       id: userId,
-      username: 'Admin',
-      displayName: 'Admin',
+      username: localDisplayName,
+      displayName: localDisplayName,
+      avatarUrl: localAvatar,
       isAdmin: true,
       group: 'Crew',
     };
 
-    fetch(`/api/db?path=servers/${serverId}/users/${userId}`)
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
+    Promise.all([
+      fetch(`/api/db?path=servers/${serverId}/users/${userId}`).then(r => r.ok ? r.json() : null),
+      fetch(`/api/db?path=servers/${serverId}`).then(r => r.ok ? r.json() : null),
+    ])
+      .then(([data, serverData]) => {
         if (data?.exists && data.data) {
           const ownerRoleId = '1283213615939194955'; // 『👑』Owner
           const userRoles: string[] = data.data.roles || [];
+          const adminRoles: string[] = Array.isArray(serverData?.data?.adminRoles) ? serverData.data.adminRoles : [];
+          const roleNames: string[] = data.data.roleNames || [];
+          const adminRoleSet = new Set(adminRoles.map(role => String(role).toLowerCase()));
 
           const isAdmin = 
             data.data.isAdmin === true ||
             data.data.group === 'Crew' ||
             userId === hardcodedAdminId ||
-            userRoles.includes(ownerRoleId);
+            userRoles.includes(ownerRoleId) ||
+            userRoles.some(role => adminRoleSet.has(String(role).toLowerCase())) ||
+            roleNames.some(role => adminRoleSet.has(String(role).toLowerCase()));
 
           const u: CurrentUser = {
             id: userId,
-            username: data.data.username || userId,
-            displayName: data.data.displayName || data.data.username || userId,
-            avatarUrl: data.data.avatarUrl,
+            username: data.data.username || localDisplayName,
+            displayName: data.data.displayName || data.data.username || localDisplayName,
+            avatarUrl: data.data.avatarUrl || localAvatar,
             isAdmin,
             group: data.data.group,
             roles: userRoles,
             twitchLogin: data.data.twitchLogin,
           };
-          _cache = { user: u, fetched: true };
+          _cache = { key: cacheKey, user: u, fetched: true };
           setUser(u);
         } else if (userId === hardcodedAdminId) {
-          _cache = { user: fallbackAdmin, fetched: true };
+          _cache = { key: cacheKey, user: fallbackAdmin, fetched: true };
           setUser(fallbackAdmin);
         } else {
-          _cache = { user: null, fetched: true };
+          const localUser: CurrentUser = {
+            id: userId,
+            username: localDisplayName,
+            displayName: localDisplayName,
+            avatarUrl: localAvatar,
+            isAdmin: localStorage.getItem('isAdmin') === 'true',
+            group: localStorage.getItem('isAdmin') === 'true' ? 'Crew' : undefined,
+          };
+          _cache = { key: cacheKey, user: localUser, fetched: true };
+          setUser(localUser);
         }
       })
       .catch(() => {
         // DB unreachable — still let hardcoded admin in
         if (userId === hardcodedAdminId) {
-          _cache = { user: fallbackAdmin, fetched: true };
+          _cache = { key: cacheKey, user: fallbackAdmin, fetched: true };
           setUser(fallbackAdmin);
         } else {
-          _cache = { user: null, fetched: true };
+          _cache = { key: cacheKey, user: null, fetched: true };
         }
       })
       .finally(() => setIsLoading(false));

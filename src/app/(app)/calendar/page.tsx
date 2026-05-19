@@ -180,6 +180,20 @@ export default function CalendarPage() {
   }, [firestore, serverId, currentUserId]);
 
   const { data: currentUserProfile } = useDoc<UserProfile>(currentUserProfileRef);
+  const effectiveUserProfile = React.useMemo(() => {
+    if (currentUserProfile) return currentUserProfile;
+    if (!currentUserId) return null;
+
+    return {
+      id: currentUserId,
+      discordUserId: currentUserId,
+      username: localStorage.getItem('discordDisplayName') || localStorage.getItem('discordUsername') || currentUserId,
+      avatarUrl: localStorage.getItem('discordAvatar') || '',
+      isOnline: false,
+      group: 'Community' as const,
+      roles: [],
+    };
+  }, [currentUserProfile, currentUserId]);
 
   const { calendarEvents, monthCaptains, todaysCaptain, missionEvents } = React.useMemo(() => {
     if (!allEvents) {
@@ -283,7 +297,7 @@ export default function CalendarPage() {
 
   const handleAddEvent = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!serverId || !currentUserProfile?.discordUserId || !allEvents) {
+    if (!serverId || !effectiveUserProfile?.discordUserId || !allEvents) {
         toast({
             variant: 'destructive',
             title: 'Error',
@@ -302,9 +316,9 @@ export default function CalendarPage() {
         eventDateTime: Timestamp.fromDate(eventDate),
         type: formData.get('type') as 'event' | 'meeting' | 'qotd',
         description: formData.get('description') as string,
-        userId: currentUserProfile.discordUserId,
-        userAvatar: currentUserProfile.avatarUrl,
-        username: currentUserProfile.username,
+        userId: effectiveUserProfile.discordUserId,
+        userAvatar: effectiveUserProfile.avatarUrl,
+        username: effectiveUserProfile.username,
     };
 
     // Check for conflicts before saving
@@ -324,7 +338,7 @@ export default function CalendarPage() {
   const handleLogDay = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (!serverId || !currentUserProfile?.discordUserId) {
+    if (!serverId || !effectiveUserProfile?.discordUserId) {
       toast({
         variant: 'destructive',
         title: 'Error',
@@ -343,7 +357,7 @@ export default function CalendarPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           serverId,
-          userId: currentUserProfile.discordUserId,
+          userId: effectiveUserProfile.discordUserId,
           selectedDate: dateStr,
         }),
       });

@@ -8,6 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 interface UserProfile {
   username: string;
+  displayName?: string;
   avatarUrl: string;
 }
 
@@ -20,10 +21,16 @@ export function UserNav() {
   const { user, isUserLoading } = useUser();
   const [userId, setUserId] = React.useState<string | null>(null);
   const [serverId, setServerId] = React.useState<string | null>(null);
+  const [localDisplayName, setLocalDisplayName] = React.useState('');
+  const [localAvatar, setLocalAvatar] = React.useState('');
+  const [localServerName, setLocalServerName] = React.useState('');
 
   React.useEffect(() => {
     setUserId(localStorage.getItem('discordUserId'));
     setServerId(localStorage.getItem('discordServerId'));
+    setLocalDisplayName(localStorage.getItem('discordDisplayName') || localStorage.getItem('discordUsername') || '');
+    setLocalAvatar(localStorage.getItem('discordAvatar') || '');
+    setLocalServerName(localStorage.getItem('serverName') || '');
   }, []);
 
   const userProfileRef = useMemoFirebase(() => {
@@ -53,14 +60,15 @@ export function UserNav() {
     );
   }
 
-  const displayName = userProfile?.username || userId || 'Not logged in';
-  const displayServer = serverInfo?.serverName || `Server ID: ${serverId}` || 'No server selected';
+  const displayName = userProfile?.displayName || userProfile?.username || localDisplayName || userId || 'Not logged in';
+  const avatarUrl = userProfile?.avatarUrl || localAvatar;
+  const displayServer = serverInfo?.serverName || localServerName || (serverId ? `Server ID: ${serverId}` : 'No server selected');
 
   return (
     <div className="flex items-center gap-3">
       <Avatar className="h-9 w-9">
-        {userProfile?.avatarUrl && (
-          <AvatarImage src={userProfile.avatarUrl} alt={displayName} />
+        {avatarUrl && (
+          <AvatarImage src={avatarUrl} alt={displayName} />
         )}
         <AvatarFallback>{displayName.charAt(0).toUpperCase()}</AvatarFallback>
       </Avatar>

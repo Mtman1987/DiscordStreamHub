@@ -4,6 +4,17 @@ import { sqliteService } from './sqlite-service';
 // This allows all existing code to work without changes
 
 class DatabaseCompatibilityLayer {
+  doc(path: string): any {
+    const segments = path.split('/').filter(Boolean);
+    if (segments.length % 2 !== 0) {
+      throw new Error(`Document path must have an even number of segments: ${path}`);
+    }
+
+    const docId = segments.pop()!;
+    const collectionPath = segments.join('/');
+    return this.collection(collectionPath).doc(docId);
+  }
+
   // Map old db.get() calls to new sqlite-service
   get(collectionPath: string, docId: string): any {
     try {

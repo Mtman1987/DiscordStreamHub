@@ -58,6 +58,15 @@ const nextConfig = {
       'firebase/auth': './src/lib/firestore-shim.ts',
     },
   },
+  webpack: (config) => {
+    config.resolve = config.resolve || {};
+    config.resolve.alias = {
+      ...(config.resolve.alias || {}),
+      'firebase/firestore': require('path').resolve(__dirname, 'src/lib/firestore-shim.ts'),
+      'firebase/auth': require('path').resolve(__dirname, 'src/lib/firestore-shim.ts'),
+    };
+    return config;
+  },
 };
 
 module.exports = nextConfig;

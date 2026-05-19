@@ -18,21 +18,47 @@ import { Separator } from '@/components/ui/separator';
 
 export default function LoginPage() {
   const router = useRouter();
+  const [isLoading, setIsLoading] = React.useState(false);
+  const [error, setError] = React.useState('');
 
-  const handleLogin = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    setError('');
+    setIsLoading(true);
+
     const formData = new FormData(e.currentTarget);
     const discordServerId = formData.get('discord-server-id') as string;
     const discordUserId = formData.get('discord-user-id') as string;
     const twitchUsername = formData.get('twitch-username') as string;
 
-    // Store the IDs in localStorage to simulate a session
-    localStorage.setItem('discordServerId', discordServerId);
-    localStorage.setItem('discordUserId', discordUserId);
-    localStorage.setItem('twitchUsername', twitchUsername);
-    localStorage.setItem('isLoggedIn', 'true');
-    
-    router.push('/dashboard');
+    try {
+      const response = await fetch('/api/auth/save-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ discordServerId, discordUserId, twitchUsername }),
+      });
+      const session = await response.json();
+
+      if (!response.ok || !session.success) {
+        throw new Error(session.error || 'Could not resolve that Discord session.');
+      }
+
+      localStorage.setItem('discordServerId', session.serverId || discordServerId);
+      localStorage.setItem('discordUserId', session.userId || discordUserId);
+      localStorage.setItem('twitchUsername', session.twitchUsername || twitchUsername);
+      localStorage.setItem('discordUsername', session.discordUsername || '');
+      localStorage.setItem('discordDisplayName', session.discordDisplayName || session.discordUsername || '');
+      localStorage.setItem('discordAvatar', session.discordAvatar || '');
+      localStorage.setItem('serverName', session.serverName || '');
+      localStorage.setItem('isAdmin', session.isAdmin ? 'true' : 'false');
+      localStorage.setItem('isLoggedIn', 'true');
+
+      router.push('/dashboard');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Login failed.');
+    } finally {
+      setIsLoading(false);
+    }
   };
   
   const handleReset = () => {
@@ -83,11 +109,16 @@ export default function LoginPage() {
                 required
               />
             </div>
+            {error && (
+              <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {error}
+              </p>
+            )}
           </CardContent>
           <CardFooter className="flex-col items-stretch gap-4">
-            <Button type="submit" className="w-full">
+            <Button type="submit" className="w-full" disabled={isLoading}>
               <LogIn className="mr-2 h-4 w-4" />
-              Continue
+              {isLoading ? 'Checking Discord...' : 'Continue'}
             </Button>
             <div className="relative flex items-center justify-center">
                 <Separator className="shrink" />

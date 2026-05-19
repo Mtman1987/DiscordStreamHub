@@ -49,10 +49,12 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
   auth,
 }) => {
   const [userAuthState, setUserAuthState] = useState<Omit<FirebaseContextState, 'areServicesAvailable' | 'firebaseApp' | 'firestore' | 'auth'>>({
-    user: null,
-    isUserLoading: true,
+    user: { uid: 'local-session' },
+    isUserLoading: false,
     userError: null,
   });
+
+  void setUserAuthState;
 
   // Firebase is intentionally stubbed out in this build.
   // Keep the context stable so downstream components can render without the SDK.
@@ -81,10 +83,10 @@ export const useFirebase = (): FirebaseServicesAndUser => {
 
   if (context === undefined) {
     return {
-      firebaseApp: null as any,
-      firestore: null as any,
-      auth: null as any,
-      user: null,
+      firebaseApp: {} as any,
+      firestore: {} as any,
+      auth: {} as any,
+      user: { uid: 'local-session' },
       isUserLoading: false,
       userError: null,
     };
@@ -92,11 +94,11 @@ export const useFirebase = (): FirebaseServicesAndUser => {
 
   if (!context.areServicesAvailable || !context.firebaseApp || !context.firestore || !context.auth) {
     return {
-      firebaseApp: null as any,
-      firestore: null as any,
-      auth: null as any,
-      user: context.user,
-      isUserLoading: context.isUserLoading,
+      firebaseApp: {} as any,
+      firestore: {} as any,
+      auth: {} as any,
+      user: context.user || { uid: 'local-session' },
+      isUserLoading: false,
       userError: context.userError,
     };
   }
@@ -131,15 +133,15 @@ export const useUser = (): UserHookResult => {
 
   if (context === undefined) {
     return {
-      user: null,
+      user: { uid: 'local-session' },
       isUserLoading: false,
       userError: null,
     };
   }
 
   return {
-    user: context.user,
-    isUserLoading: context.isUserLoading,
+    user: context.user || { uid: 'local-session' },
+    isUserLoading: false,
     userError: context.userError,
   };
 };
