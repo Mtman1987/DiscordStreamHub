@@ -310,7 +310,7 @@ async function pushGifToDSH(gifBuffer, streamerName) {
 // ── Stale folder cleanup (30 days no live = delete folder) ──
 async function cleanStaleFolders() {
   try {
-    if (process.env.ENABLE_STALE_CLIP_CLEANUP !== 'true') {
+    if (process.env.DISABLE_STALE_CLIP_CLEANUP === 'true') {
       console.log('[ClipWorker] Stale folder cleanup disabled');
       return;
     }
@@ -330,9 +330,9 @@ async function cleanStaleFolders() {
         await fetch(`${DSH_URL}/api/clips/upload`, {
           method: 'DELETE',
           headers: { Authorization: `Bearer ${WORKER_SECRET}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ streamer: streamer.twitchLogin }),
+          body: JSON.stringify({ streamer: streamer.twitchLogin, reason: 'orphan-folder-cleanup' }),
         });
-        console.log(`[ClipWorker] Cleaned stale folder: ${streamer.twitchLogin} (last live: ${streamer.lastLive || 'never'})`);
+        console.log(`[ClipWorker] Cleaned stale folder: ${streamer.twitchLogin} (${streamer.reason || 'stale'}, newest file: ${streamer.newestFile || 'unknown'})`);
       } catch (e) {
         console.error(`[ClipWorker] Failed to clean ${streamer.twitchLogin}:`, e.message);
       }
