@@ -3,8 +3,13 @@
 # 1. Seed database from export (skips if data exists)
 node scripts/seed-local-db.js
 
-# 2. Clean shoutout channels (fresh slate on every deploy)
-node scripts/clean-channels.js
+# 2. Do not clean Discord channels on normal deploys. This deletes live bot
+# messages and shoutout state, so keep it as an explicit emergency action only.
+if [ "$RUN_DEPLOY_CLEANUP" = "true" ]; then
+  node scripts/clean-channels.js
+else
+  echo "[Startup] Skipping deploy channel cleanup"
+fi
 
 # 3. Start DSH (port 3000) in background
 npx next start -H 0.0.0.0 &
@@ -28,5 +33,17 @@ DSH_PID=$!
   echo "[Startup] WARNING: Could not start polling after 80s"
 ) &
 
-# 5. Keep container alive with the DSH process
+# 5. Start the Discord watch command bot after the web API is available.
+# It controls Activity sessions and invites only; video/audio plays in the Activity.
+if [ -n "$DISCORD_BOT_TOKEN" ]; then
+  (
+    echo "[Startup] Waiting to start watch command bot..."
+    sleep 25
+    WATCHROOM_DSH_BASE_URL="${WATCHROOM_DSH_BASE_URL:-http://localhost:3000}" npm run watch-voice-bot
+  ) &
+else
+  echo "[Startup] DISCORD_BOT_TOKEN not set; watch command bot disabled"
+fi
+
+# 6. Keep container alive with the DSH process
 wait $DSH_PID

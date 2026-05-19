@@ -2,6 +2,10 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 export function middleware(request: NextRequest) {
+  if (request.nextUrl.pathname === '/') {
+    return NextResponse.rewrite(new URL('/activity-lite', request.url));
+  }
+
   const response = NextResponse.next();
 
   response.headers.set('Access-Control-Allow-Origin', '*');
@@ -18,6 +22,7 @@ export function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
+    '/',
     // Match all API routes EXCEPT clips/upload (large body)
     '/api/((?!clips/upload).*)',
   ],

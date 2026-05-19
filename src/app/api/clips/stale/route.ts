@@ -43,8 +43,9 @@ export async function GET(request: NextRequest) {
         .get();
 
       if (userSnap.empty) {
-        // No user record at all — stale
-        stale.push({ twitchLogin: login, lastLive: null });
+        // Do not delete folders just because the current DB cannot match
+        // case or an older import shape. Missing metadata is not proof that
+        // the media is stale.
         continue;
       }
 
@@ -55,7 +56,13 @@ export async function GET(request: NextRequest) {
         .collection('users').doc(userSnap.docs[0].id)
         .collection('shoutoutState').doc('current').get();
 
-      if (stateDoc.exists && stateDoc.data()?.isLive) {
+      if (
+        userData.isLive === true ||
+        userData.isOnline === true ||
+        userData.online === true ||
+        userData.live === true ||
+        (stateDoc.exists && stateDoc.data()?.isLive)
+      ) {
         continue; // Currently live, skip
       }
 

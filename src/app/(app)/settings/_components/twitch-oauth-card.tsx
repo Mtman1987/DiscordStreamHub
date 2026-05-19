@@ -23,7 +23,7 @@ export function TwitchOAuthCard({ serverId }: TwitchOAuthCardProps) {
 
   const checkOAuthStatus = React.useCallback(async () => {
     try {
-      const response = await fetch('/api/twitch/oauth/status');
+      const response = await fetch(`/api/twitch/oauth/status?serverId=${encodeURIComponent(serverId)}`);
       if (response.ok) {
         const data = await response.json();
         setIsConnected(data.connected);
@@ -37,38 +37,15 @@ export function TwitchOAuthCard({ serverId }: TwitchOAuthCardProps) {
       setIsConnected(false);
       setUserInfo(null);
     }
-  }, []);
+  }, [serverId]);
 
   React.useEffect(() => {
     checkOAuthStatus();
   }, [checkOAuthStatus]);
 
   React.useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return;
-      if (!event.data || event.data.source !== 'twitch-oauth') return;
-
-      setIsLoading(false);
-
-      if (event.data.oauth === 'success') {
-        toast({
-          title: 'Connected',
-          description: 'Twitch bot OAuth connected successfully.',
-        });
-        setTimeout(checkOAuthStatus, 250);
-        return;
-      }
-
-      toast({
-        title: 'Twitch OAuth failed',
-        description: event.data.error_description || event.data.error || 'Authorization failed.',
-        variant: 'destructive',
-      });
-    };
-
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, [checkOAuthStatus, toast]);
+    setIsLoading(false);
+  }, [searchParams]);
 
   React.useEffect(() => {
     const oauth = searchParams.get('oauth');
@@ -102,8 +79,7 @@ export function TwitchOAuthCard({ serverId }: TwitchOAuthCardProps) {
   const handleTwitchOAuth = () => {
     setIsLoading(true);
     const clientId = process.env.NEXT_PUBLIC_TWITCH_CLIENT_ID;
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
-    const redirectUri = encodeURIComponent(`${appUrl}/api/twitch/oauth/callback`);
+    const redirectUri = encodeURIComponent(`${window.location.origin}/api/twitch/oauth/callback`);
     const scope = encodeURIComponent('chat:read chat:edit');
 
     if (!clientId) {
@@ -115,32 +91,19 @@ export function TwitchOAuthCard({ serverId }: TwitchOAuthCardProps) {
       });
       return;
     }
-
+    
     const authUrl = `https://id.twitch.tv/oauth2/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}&state=${serverId}&force_verify=true`;
-
-    const popup = window.open(authUrl, 'twitch-oauth', 'width=500,height=700');
-    if (!popup) {
-      setIsLoading(false);
-      toast({
-        title: 'Popup blocked',
-        description: 'Allow popups for this site and try again.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    const checkClosed = setInterval(() => {
-      if (popup?.closed) {
-        clearInterval(checkClosed);
-        setIsLoading(false);
-        setTimeout(checkOAuthStatus, 1000);
-      }
-    }, 1000);
+    window.location.href = authUrl;
   };
 
   const handleDisconnect = async () => {
     try {
-      await fetch('/api/twitch/oauth/disconnect', { method: 'POST' });
+      const response = await fetch('/api/twitch/oauth/disconnect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ serverId }),
+      });
+      if (!response.ok) throw new Error('Disconnect request failed');
       setIsConnected(false);
       setUserInfo(null);
       toast({

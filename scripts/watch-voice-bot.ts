@@ -1,0 +1,677 @@
+import 'dotenv/config';
+import {
+  AudioPlayer,
+  AudioPlayerStatus,
+  createAudioPlayer,
+  createAudioResource,
+  entersState,
+  getVoiceConnection,
+  joinVoiceChannel,
+  StreamType,
+  VoiceConnection,
+  VoiceConnectionStatus,
+} from '@discordjs/voice';
+import {
+  ChannelType,
+  Client,
+  GatewayIntentBits,
+  GuildMember,
+  Message,
+  Partials,
+  PermissionsBitField,
+  TextBasedChannel,
+} from 'discord.js';
+import { spawn, ChildProcessWithoutNullStreams } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+
+type WatchSession = {
+  id: string;
+  roomUrl: string;
+  queue: Array<{ requestId: string; item: WatchItem }>;
+  current: null | {
+    requestId: string;
+    item: WatchItem;
+    requestedBy: {
+      username: string;
+    };
+  };
+  playback: {
+    status: 'idle' | 'paused' | 'playing';
+    position: number;
+    updatedAt: number;
+  };
+};
+
+type WatchRequest = {
+  requestId: string;
+  item: WatchItem;
+};
+
+type WatchItem = {
+  id: string;
+  title: string;
+  playbackUrl: string;
+  source: string;
+};
+
+type WatchRequestResult =
+  | { request: WatchRequest; session: WatchSession; recommendation?: null }
+  | { error: string; recommendation?: WatchItem; discovery?: WatchItem };
+
+type GuildPlayback = {
+  player: AudioPlayer;
+  connection: VoiceConnection;
+  ffmpeg?: ChildProcessWithoutNullStreams;
+  currentRequestId?: string;
+  textChannel?: TextBasedChannel;
+  advancing?: boolean;
+};
+
+const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
+const DSH_BASE_URL = (process.env.WATCHROOM_DSH_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
+const FFMPEG_PATH = process.env.FFMPEG_PATH || 'ffmpeg';
+const CLEANUP_AFTER_MS = Number(process.env.WATCHROOM_COMMAND_CLEANUP_MS || 120_000);
+const IGNORE_FILE = process.env.WATCHROOM_IGNORE_FILE || join(process.cwd(), 'logs', 'watch-ignore-list.json');
+const DISCORD_ACTIVITY_APPLICATION_ID =
+  process.env.DISCORD_ACTIVITY_APPLICATION_ID ||
+  process.env.DISCORD_APP_ID ||
+  process.env.DISCORD_CLIENT_ID ||
+  process.env.NEXT_PUBLIC_DISCORD_CLIENT_ID;
+
+const playbackByGuild = new Map<string, GuildPlayback>();
+const skipVotes = new Map<string, Set<string>>();
+const ignoredByGuild = loadIgnoreList();
+
+function loadIgnoreList() {
+  try {
+    if (!existsSync(IGNORE_FILE)) return new Map<string, Map<string, string>>();
+    const raw = JSON.parse(readFileSync(IGNORE_FILE, 'utf8')) as Record<string, Record<string, string>>;
+    return new Map(Object.entries(raw).map(([guildId, users]) => [guildId, new Map(Object.entries(users))]));
+  } catch (error) {
+    console.warn('[WatchVoice] Failed to read ignore list:', error);
+    return new Map<string, Map<string, string>>();
+  }
+}
+
+function saveIgnoreList() {
+  const raw: Record<string, Record<string, string>> = {};
+  for (const [guildId, users] of ignoredByGuild.entries()) raw[guildId] = Object.fromEntries(users.entries());
+  mkdirSync(dirname(IGNORE_FILE), { recursive: true });
+  writeFileSync(IGNORE_FILE, JSON.stringify(raw, null, 2));
+}
+
+function scheduleDelete(message: Message | null | undefined, delay = CLEANUP_AFTER_MS) {
+  if (!message || delay <= 0) return;
+  const timer = setTimeout(() => {
+    message.delete().catch(() => {});
+  }, delay);
+  timer.unref?.();
+}
+
+async function replyAndMaybeDelete(message: Message, content: string, keep = false) {
+  const reply = await message.reply(content);
+  if (!keep) scheduleDelete(reply);
+  return reply;
+}
+
+async function sendToTextChannel(channel: TextBasedChannel | undefined, content: string) {
+  if (!channel || !('send' in channel) || typeof channel.send !== 'function') return;
+  await channel.send(content);
+}
+
+function sessionIdFor(guildId: string, channelId: string) {
+  return `${guildId || 'local'}-${channelId || 'watch'}`.replace(/[^a-zA-Z0-9_-]/g, '-');
+}
+
+async function createActivityInvite(voiceChannelId: string) {
+  if (!DISCORD_ACTIVITY_APPLICATION_ID) return null;
+
+  const response = await fetch(`https://discord.com/api/v10/channels/${voiceChannelId}/invites`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bot ${DISCORD_BOT_TOKEN}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      max_age: 3600,
+      max_uses: 0,
+      target_type: 2,
+      target_application_id: DISCORD_ACTIVITY_APPLICATION_ID,
+    }),
+  });
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    console.warn('[WatchVoice] Activity invite failed:', response.status, JSON.stringify(payload, null, 2));
+    return null;
+  }
+
+  if (!payload?.code) return null;
+  return `https://discord.gg/${payload.code}`;
+}
+
+function parseWatchCommand(content: string) {
+  const match = content.trim().match(/^!(wr|watch)(?:\s+(.+))?$/i);
+  if (!match) return null;
+  return {
+    command: `!${match[1].toLowerCase()}`,
+    query: (match[2] || '').trim(),
+  };
+}
+
+function parseAcceptCommand(content: string) {
+  return /^!(add|accept)$/i.test(content.trim());
+}
+
+function parseSkipCommand(content: string) {
+  return /^!(skip|voteskip)$/i.test(content.trim());
+}
+
+function parseIgnoreCommand(content: string) {
+  const match = content.trim().match(/^!(ignore|unignore|ignored)(?:\s+(.+))?$/i);
+  if (!match) return null;
+  return { action: match[1].toLowerCase(), query: (match[2] || '').trim() };
+}
+
+function canModerate(message: Message) {
+  return Boolean(message.member?.permissions.has(PermissionsBitField.Flags.ManageMessages) || message.member?.permissions.has(PermissionsBitField.Flags.Administrator));
+}
+
+function calculateSimilarity(str1: string, str2: string) {
+  const longer = str1.length > str2.length ? str1 : str2;
+  const shorter = str1.length > str2.length ? str2 : str1;
+  if (longer.length === 0) return 1;
+  let i = 0;
+  for (let j = 0; j < longer.length && i < shorter.length; j++) {
+    if (shorter[i] === longer[j]) i++;
+  }
+  return i / shorter.length;
+}
+
+function memberSearchText(member: GuildMember) {
+  return [
+    member.user.id,
+    member.user.username,
+    member.user.globalName || '',
+    member.displayName,
+  ].map((value) => value.toLowerCase());
+}
+
+async function findBestMemberMatch(message: Message, query: string) {
+  const mentionId = query.match(/^<@!?(\d+)>$/)?.[1] || query.match(/^\d{15,25}$/)?.[0];
+  if (mentionId) return message.guild?.members.fetch(mentionId).catch(() => null);
+  if (!message.guild || !query) return null;
+
+  const search = query.toLowerCase();
+  await message.guild.members.fetch({ query, limit: 20 }).catch(() => null);
+  const members = [...message.guild.members.cache.values()];
+  const exact = members.find((member) => memberSearchText(member).some((value) => value === search));
+  if (exact) return exact;
+  const starts = members.find((member) => memberSearchText(member).some((value) => value.startsWith(search)));
+  if (starts) return starts;
+  const contains = members.find((member) => memberSearchText(member).some((value) => value.includes(search)));
+  if (contains) return contains;
+
+  let best: GuildMember | null = null;
+  let bestScore = 0;
+  for (const member of members) {
+    const score = Math.max(...memberSearchText(member).map((value) => calculateSimilarity(search, value)));
+    if (score > bestScore && score >= 0.6) {
+      best = member;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
+function isIgnored(message: Message) {
+  return Boolean(message.guild && ignoredByGuild.get(message.guild.id)?.has(message.author.id));
+}
+
+async function dshApi<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${DSH_BASE_URL}${path}`, {
+    ...init,
+    headers: {
+      'content-type': 'application/json',
+      ...(init?.headers || {}),
+    },
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`DSH API ${response.status}: ${text}`);
+  }
+
+  return response.json() as Promise<T>;
+}
+
+async function requestWatchItem(params: {
+  sessionId: string;
+  query: string;
+  userId: string;
+  username: string;
+}) {
+  const response = await fetch(`${DSH_BASE_URL}/api/watch/sessions/${params.sessionId}/request`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      query: params.query,
+      userId: params.userId,
+      username: params.username,
+    }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) return payload as WatchRequestResult;
+  return payload as WatchRequestResult;
+}
+
+async function acceptRecommendation(params: {
+  sessionId: string;
+  userId: string;
+  username: string;
+}) {
+  return dshApi<{ request: WatchRequest; session: WatchSession }>(`/api/watch/sessions/${params.sessionId}/accept`, {
+    method: 'POST',
+    body: JSON.stringify({
+      userId: params.userId,
+      username: params.username,
+    }),
+  });
+}
+
+async function controlSession(sessionId: string, action: string, position = 0) {
+  return dshApi<WatchSession>(`/api/watch/sessions/${sessionId}/control`, {
+    method: 'POST',
+    body: JSON.stringify({ action, position }),
+  });
+}
+
+async function getSession(sessionId: string) {
+  return dshApi<WatchSession>(`/api/watch/sessions/${sessionId}/state`);
+}
+
+function stopFfmpeg(playback: GuildPlayback) {
+  if (playback.ffmpeg && !playback.ffmpeg.killed) {
+    playback.ffmpeg.kill('SIGKILL');
+  }
+  playback.ffmpeg = undefined;
+}
+
+function createFfmpegAudioStream(item: WatchItem) {
+  const playbackUrl = new URL(item.playbackUrl, `${DSH_BASE_URL}/`).toString();
+  const args = [
+    '-hide_banner',
+    '-loglevel',
+    'warning',
+    '-reconnect',
+    '1',
+    '-reconnect_streamed',
+    '1',
+    '-reconnect_delay_max',
+    '5',
+    '-i',
+    playbackUrl,
+    '-vn',
+    '-acodec',
+    'pcm_s16le',
+    '-ar',
+    '48000',
+    '-ac',
+    '2',
+    '-f',
+    's16le',
+    'pipe:1',
+  ];
+
+  console.log(`[WatchVoice] Starting ffmpeg for ${item.title}: ${playbackUrl}`);
+  const ffmpeg = spawn(FFMPEG_PATH, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+  ffmpeg.stderr.on('data', (chunk) => {
+    const line = chunk.toString().trim();
+    if (line) console.warn(`[WatchVoice:ffmpeg] ${line}`);
+  });
+  ffmpeg.on('exit', (code, signal) => {
+    console.log(`[WatchVoice] ffmpeg exited code=${code ?? 'null'} signal=${signal ?? 'null'}`);
+  });
+  return ffmpeg;
+}
+
+async function playCurrent(guildId: string, sessionId: string) {
+  const playback = playbackByGuild.get(guildId);
+  if (!playback) return;
+
+  const session = await getSession(sessionId);
+  if (!session.current) {
+    await sendToTextChannel(playback.textChannel, 'Watch queue ended.');
+    stopFfmpeg(playback);
+    playback.currentRequestId = undefined;
+    return;
+  }
+
+  if (playback.currentRequestId === session.current.requestId) return;
+
+  stopFfmpeg(playback);
+  playback.currentRequestId = session.current.requestId;
+
+  const ffmpeg = createFfmpegAudioStream(session.current.item);
+  playback.ffmpeg = ffmpeg;
+
+  const resource = createAudioResource(ffmpeg.stdout, {
+    inputType: StreamType.Raw,
+    inlineVolume: true,
+  });
+  resource.volume?.setVolume(0.85);
+
+  playback.player.play(resource);
+  await controlSession(sessionId, 'play', 0).catch(() => {});
+  console.log(`[WatchVoice] Voice audio playing: ${session.current.item.title}`);
+}
+
+async function advanceToNext(guildId: string, sessionId: string) {
+  const playback = playbackByGuild.get(guildId);
+  if (!playback || playback.advancing) return;
+
+  playback.advancing = true;
+  try {
+    await controlSession(sessionId, 'next', 0);
+    playback.currentRequestId = undefined;
+    await playCurrent(guildId, sessionId);
+  } catch (error) {
+    console.error('[WatchVoice] Failed to advance queue:', error);
+  } finally {
+    playback.advancing = false;
+  }
+}
+
+async function getOrJoinPlayback(message: Message, sessionId: string) {
+  if (!message.guild || !message.member) {
+    throw new Error('This command must be used in a guild.');
+  }
+
+  const voiceChannel = message.member.voice.channel;
+  if (!voiceChannel) {
+    throw new Error('Join a voice channel first, then run the watch command again.');
+  }
+
+  if (voiceChannel.type !== ChannelType.GuildVoice && voiceChannel.type !== ChannelType.GuildStageVoice) {
+    throw new Error('Unsupported voice channel type.');
+  }
+
+  const existing = playbackByGuild.get(message.guild.id);
+  if (existing && existing.connection.joinConfig.channelId === voiceChannel.id) {
+    existing.textChannel = message.channel;
+    return existing;
+  }
+
+  const oldConnection = getVoiceConnection(message.guild.id);
+  oldConnection?.destroy();
+
+  const connection = joinVoiceChannel({
+    channelId: voiceChannel.id,
+    guildId: message.guild.id,
+    adapterCreator: message.guild.voiceAdapterCreator,
+    selfDeaf: true,
+  });
+
+  await entersState(connection, VoiceConnectionStatus.Ready, 20_000);
+
+  const player = createAudioPlayer();
+  connection.subscribe(player);
+
+  const playback: GuildPlayback = {
+    player,
+    connection,
+    textChannel: message.channel,
+  };
+
+  player.on(AudioPlayerStatus.Idle, () => {
+    stopFfmpeg(playback);
+    skipVotes.delete(sessionId);
+    console.log('[WatchVoice] Voice audio became idle; leaving watch session current item unchanged.');
+  });
+
+  player.on('error', (error) => {
+    console.error('[WatchVoice] Audio player error:', error);
+    sendToTextChannel(playback.textChannel, `Voice playback error: ${error.message}`).catch(() => {});
+  });
+
+  connection.on(VoiceConnectionStatus.Disconnected, () => {
+    stopFfmpeg(playback);
+    playbackByGuild.delete(message.guild!.id);
+  });
+
+  playbackByGuild.set(message.guild.id, playback);
+  return playback;
+}
+
+async function handleMessage(message: Message) {
+  if (message.author.bot || !message.guild) return;
+
+  const ignoreCommand = parseIgnoreCommand(message.content);
+  if (ignoreCommand) {
+    scheduleDelete(message);
+    if (!canModerate(message)) {
+      await replyAndMaybeDelete(message, 'Only moderators can manage the watch ignore list.');
+      return;
+    }
+
+    const guildIgnored = ignoredByGuild.get(message.guild.id) || new Map<string, string>();
+    ignoredByGuild.set(message.guild.id, guildIgnored);
+
+    if (ignoreCommand.action === 'ignored') {
+      const names = [...guildIgnored.values()];
+      await replyAndMaybeDelete(message, names.length ? `Ignored watch users: ${names.join(', ')}` : 'No users are ignored for watch requests.');
+      return;
+    }
+
+    if (!ignoreCommand.query) {
+      await replyAndMaybeDelete(message, `Usage: !${ignoreCommand.action} <username or mention>`);
+      return;
+    }
+
+    const target = await findBestMemberMatch(message, ignoreCommand.query);
+    if (!target) {
+      await replyAndMaybeDelete(message, `No Discord user matched "${ignoreCommand.query}".`);
+      return;
+    }
+
+    if (ignoreCommand.action === 'ignore') {
+      guildIgnored.set(target.id, target.displayName || target.user.username);
+      saveIgnoreList();
+      await replyAndMaybeDelete(message, `Ignored ${target.displayName || target.user.username} for watch requests.`);
+      return;
+    }
+
+    guildIgnored.delete(target.id);
+    saveIgnoreList();
+    await replyAndMaybeDelete(message, `Removed ${target.displayName || target.user.username} from the watch ignore list.`);
+    return;
+  }
+
+  if (isIgnored(message) && (parseWatchCommand(message.content) || parseAcceptCommand(message.content) || parseSkipCommand(message.content))) {
+    scheduleDelete(message);
+    return;
+  }
+
+  if (parseSkipCommand(message.content)) {
+    scheduleDelete(message);
+    try {
+      const voiceChannel = message.member?.voice.channel;
+      if (!voiceChannel) {
+        await replyAndMaybeDelete(message, 'Join the voice channel first, then run !skip.');
+        return;
+      }
+
+      const sessionId = sessionIdFor(message.guild.id, voiceChannel.id);
+      const session = await getSession(sessionId);
+      if (!session.current) {
+        await replyAndMaybeDelete(message, 'Nothing is currently playing.');
+        return;
+      }
+
+      if (canModerate(message)) {
+        await replyAndMaybeDelete(message, 'Moderator skipped the current watch item.');
+        skipVotes.delete(sessionId);
+        await advanceToNext(message.guild.id, sessionId);
+        return;
+      }
+
+      const voters = skipVotes.get(sessionId) || new Set<string>();
+      skipVotes.set(sessionId, voters);
+      voters.add(message.author.id);
+      const listenerCount = voiceChannel.members.filter((member) => !member.user.bot).size;
+      const needed = Math.max(1, Math.ceil(listenerCount / 2));
+
+      if (voters.size >= needed) {
+        await replyAndMaybeDelete(message, `Vote skip passed (${voters.size}/${needed}).`);
+        skipVotes.delete(sessionId);
+        await advanceToNext(message.guild.id, sessionId);
+      } else {
+        await replyAndMaybeDelete(message, `Vote skip: ${voters.size}/${needed}.`);
+      }
+    } catch (error: any) {
+      console.error('[WatchVoice] Skip failed:', error);
+      await replyAndMaybeDelete(message, error.message || 'Vote skip failed.');
+    }
+    return;
+  }
+
+  if (parseAcceptCommand(message.content)) {
+    scheduleDelete(message);
+    try {
+      const voiceChannel = message.member?.voice.channel;
+      if (!voiceChannel) {
+        throw new Error('Join a voice channel first, then run !add again.');
+      }
+
+      const sessionId = sessionIdFor(message.guild.id, voiceChannel.id);
+      const result = await acceptRecommendation({
+        sessionId,
+        userId: message.author.id,
+        username: message.member?.displayName || message.author.username,
+      });
+
+      const currentRequestId = result.session.current?.requestId;
+      const addedAsCurrent = Boolean(currentRequestId && currentRequestId === result.request.requestId);
+      const queuePosition = result.session.queue.length;
+      const activityInvite = await createActivityInvite(voiceChannel.id);
+      const activityLine = activityInvite ? `\nActivity: ${activityInvite}` : '';
+      const title = result.request.item.title;
+
+      await message.reply(
+        addedAsCurrent
+          ? `Added **${title}** from Internet Archive.${activityLine}`
+          : `Queued **${title}** from Internet Archive at position ${queuePosition}.${activityLine}`
+      ).then((reply) => { if (!activityInvite) scheduleDelete(reply); });
+    } catch (error: any) {
+      console.error('[WatchVoice] Accept failed:', error);
+      await replyAndMaybeDelete(message, error.message || 'No pending Internet Archive recommendation.');
+    }
+    return;
+  }
+
+  const parsed = parseWatchCommand(message.content);
+  if (!parsed) return;
+  scheduleDelete(message);
+
+  if (!parsed.query) {
+    await replyAndMaybeDelete(message, `Usage: ${parsed.command} <movie, show, or test stream>`);
+    return;
+  }
+
+  try {
+    const voiceChannel = message.member?.voice.channel;
+    if (!voiceChannel) {
+      throw new Error('Join a voice channel first, then run the watch command again.');
+    }
+
+    const sessionId = sessionIdFor(message.guild.id, voiceChannel.id);
+    const result = await requestWatchItem({
+      sessionId,
+      query: parsed.query,
+      userId: message.author.id,
+      username: message.member?.displayName || message.author.username,
+    });
+
+    if ('error' in result) {
+      if (result.discovery) {
+        await replyAndMaybeDelete(message,
+          `No playable Xtream/VOD match found. Watchmode found **${result.discovery.title}** as a likely title, but Watchmode is discovery only and does not provide a playable stream.`
+        );
+        return;
+      }
+      if (result.recommendation) {
+        await replyAndMaybeDelete(message,
+          `No playable Xtream VOD/live match found. Internet Archive returned best title comparison: **${result.recommendation.title}**. Type \`!add\` to accept this recommendation.`
+        );
+        return;
+      }
+      throw new Error(result.error || 'No matching watch item found.');
+    }
+
+    const currentRequestId = result.session.current?.requestId;
+    const addedAsCurrent = Boolean(currentRequestId && currentRequestId === result.request.requestId);
+    const queuePosition = result.session.queue.length;
+    const activityInvite = await createActivityInvite(voiceChannel.id);
+    const activityLine = activityInvite ? `\nActivity: ${activityInvite}` : '';
+    const title = result.request.item.title;
+
+    await message.reply(
+      addedAsCurrent
+        ? `Added **${title}**.${activityLine}`
+        : `Queued **${title}** at position ${queuePosition}.${activityLine}`
+    ).then((reply) => { if (!activityInvite) scheduleDelete(reply); });
+  } catch (error: any) {
+    console.error('[WatchVoice] Command failed:', error);
+    await replyAndMaybeDelete(message, error.message || 'Watch voice command failed.');
+  }
+}
+
+async function main() {
+  if (!DISCORD_BOT_TOKEN) {
+    throw new Error('DISCORD_BOT_TOKEN is required in .env');
+  }
+
+  console.log(`[WatchVoice] Starting. DSH API: ${DSH_BASE_URL}`);
+
+  const client = new Client({
+    intents: [
+      GatewayIntentBits.Guilds,
+      GatewayIntentBits.GuildMessages,
+      GatewayIntentBits.GuildVoiceStates,
+      GatewayIntentBits.MessageContent,
+    ],
+    partials: [Partials.Channel],
+  });
+
+  client.once('clientReady', () => {
+    console.log(`[WatchVoice] Logged in as ${client.user?.tag}`);
+    console.log(`[WatchVoice] Using DSH API at ${DSH_BASE_URL}`);
+  });
+
+  client.on('error', (error) => {
+    console.error('[WatchVoice] Discord client error:', error);
+  });
+
+  client.on('warn', (warning) => {
+    console.warn('[WatchVoice] Discord client warning:', warning);
+  });
+
+  client.on('messageCreate', (message) => {
+    handleMessage(message).catch((error) => {
+      console.error('[WatchVoice] Unhandled message error:', error);
+    });
+  });
+
+  const loginTimer = setTimeout(() => {
+    console.warn('[WatchVoice] Still waiting for Discord ready event after 20 seconds. Check token, gateway access, and network.');
+  }, 20_000);
+
+  await client.login(DISCORD_BOT_TOKEN);
+  client.once('clientReady', () => clearTimeout(loginTimer));
+}
+
+main().catch((error) => {
+  console.error('[WatchVoice] Fatal:', error);
+  process.exit(1);
+});

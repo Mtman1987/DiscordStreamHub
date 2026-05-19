@@ -20,7 +20,9 @@ export function DiscordOAuthCard({ serverId }: DiscordOAuthCardProps) {
 
   const checkOAuthStatus = React.useCallback(async () => {
     try {
-      const response = await fetch('/api/discord/oauth/status');
+      const userId = window.localStorage.getItem('discordUserId');
+      const query = userId ? `?userId=${encodeURIComponent(userId)}` : '';
+      const response = await fetch(`/api/discord/oauth/status${query}`);
       if (response.ok) {
         const data = await response.json();
         setIsConnected(data.connected);
@@ -56,8 +58,11 @@ export function DiscordOAuthCard({ serverId }: DiscordOAuthCardProps) {
 
   const handleDisconnect = async () => {
     try {
+      const userId = window.localStorage.getItem('discordUserId');
       const response = await fetch('/api/discord/oauth/disconnect', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
       });
       
       if (response.ok) {
@@ -67,6 +72,8 @@ export function DiscordOAuthCard({ serverId }: DiscordOAuthCardProps) {
           title: 'Disconnected',
           description: 'Discord OAuth has been disconnected.',
         });
+      } else {
+        throw new Error('Disconnect request failed');
       }
     } catch (error) {
       toast({

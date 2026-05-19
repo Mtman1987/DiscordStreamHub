@@ -19,8 +19,14 @@ docs
 scripts
 twitch-video-url-finder-master
 public/downloaded-logs-*.json
+volume-backup/
+clip-worker/
+10GB
+DSH-ISSUES-LIST.txt
 *.bat
 *.sh
 !scripts/start.sh
+!scripts/seed-local-db.js
+!scripts/clean-channels.js
 full_app_code.txt
 app tree.txt

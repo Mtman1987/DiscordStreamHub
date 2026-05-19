@@ -82,22 +82,33 @@ class TwitchApiService {
   }
 
   private async makeApiCall(endpoint: string): Promise<any> {
-    const token = await this.getAccessToken();
-    
-    const response = await fetch(`https://api.twitch.tv/helix/${endpoint}`, {
-      headers: {
-        'Client-ID': this.clientId,
-        'Authorization': `Bearer ${token}`,
-      },
-    });
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const token = await this.getAccessToken();
 
-    if (!response.ok) {
+      const response = await fetch(`https://api.twitch.tv/helix/${endpoint}`, {
+        headers: {
+          'Client-ID': this.clientId,
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (response.ok) {
+        return response.json();
+      }
+
       const errorText = await response.text();
+      if (response.status === 401 && attempt === 0) {
+        console.warn(`[TwitchAPI] App token was rejected for ${endpoint}; refreshing once.`);
+        this.accessToken = null;
+        this.tokenExpiry = 0;
+        continue;
+      }
+
       console.error(`Twitch API error for ${endpoint}: ${response.status} ${response.statusText} - ${errorText}`);
       throw new Error(`Twitch API error: ${response.statusText}`);
     }
 
-    return response.json();
+    throw new Error('Twitch API request did not complete');
   }
 
   async getUserByLogin(login: string): Promise<TwitchUser | null> {

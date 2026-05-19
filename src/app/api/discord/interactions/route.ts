@@ -22,6 +22,8 @@ function ephemeral(content: string, extra: any = {}) {
   });
 }
 
+const CHAT_TAG_SERVICE_SECRET = process.env.CHAT_TAG_BOT_SECRET || process.env.BOT_SECRET_KEY || '1234';
+
 export async function POST(request: NextRequest) {
   try {
     const signature = request.headers.get('x-signature-ed25519');
@@ -83,7 +85,7 @@ export async function POST(request: NextRequest) {
           const data = await fetchTagData();
           const existing = data?.players?.find((p: any) => (p.twitchUsername || '').toLowerCase() === joinName);
           if (existing) return ephemeral(`✅ You're already in the game as ${joinName}!`);
-          const { default: postTagApi } = await import('@/lib/chat-tag-service').then(m => ({ default: (e: string, b: any) => fetch(`${process.env.CHAT_TAG_API_BASE || 'https://chat-tag-new.fly.dev'}${e}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) }).then(r => r.json()).catch(() => null) }));
+          const { default: postTagApi } = await import('@/lib/chat-tag-service').then(m => ({ default: (e: string, b: any) => fetch(`${process.env.CHAT_TAG_API_BASE || 'https://chat-tag-new.fly.dev'}${e}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-bot-secret': CHAT_TAG_SERVICE_SECRET }, body: JSON.stringify(b) }).then(r => r.json()).catch(() => null) }));
           const res = await postTagApi('/api/tag', { action: 'join', userId: `discord_${clickerId}`, twitchUsername: joinName, avatar: '' });
           return ephemeral(res?.error ? `❌ ${res.error}` : `🎯 You joined the tag game as ${joinName}!`);
         }
@@ -94,6 +96,19 @@ export async function POST(request: NextRequest) {
           const itPlayer = data?.players?.find((p: any) => p.isIt);
           const itName = itPlayer ? (itPlayer.twitchUsername || 'Someone') : null;
           return ephemeral(itName ? `🎯 **${itName}** is it!` : `🔥 **FREE FOR ALL!** Anyone can tag for DOUBLE POINTS!`);
+        }
+
+        if (customId.startsWith('chattag_leaderboard_')) {
+          const { fetchTagData } = await import('@/lib/chat-tag-service');
+          const data = await fetchTagData();
+          const players = [...(data?.players || [])]
+            .filter((p: any) => (p.twitchUsername || p.username))
+            .sort((a: any, b: any) => (b.score || 0) - (a.score || 0));
+          const lines = players.slice(0, 25).map((p: any, index: number) => {
+            const name = p.twitchUsername || p.username || p.id || 'Unknown';
+            return `**#${index + 1}** ${name} — ${p.score || 0} pts (${p.tags || 0} tags, ${p.tagged || 0} tagged)`;
+          });
+          return ephemeral(lines.length ? `🏆 **Full Chat Tag Leaderboard**\n${lines.join('\n')}` : 'No leaderboard data yet.');
         }
 
         if (customId.startsWith('chattag_togglesleep_')) {
@@ -111,7 +126,7 @@ export async function POST(request: NextRequest) {
           const isSleeping = player.sleepingImmunity || player.offlineImmunity;
           const action = isSleeping ? 'wake' : 'sleep';
           await fetch(`${process.env.CHAT_TAG_API_BASE || 'https://chat-tag-new.fly.dev'}/api/tag`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'x-bot-secret': CHAT_TAG_SERVICE_SECRET },
             body: JSON.stringify({ action, userId: player.id }),
           });
           return ephemeral(isSleeping ? `☀️ You're awake! You can be tagged again.` : `😴 You're now sleeping (immune from tags).`);
@@ -161,7 +176,7 @@ export async function POST(request: NextRequest) {
         }
 
         if (customId.startsWith('chattag_makemeit_')) {
-          const { setMeAsIt, fetchTagData } = await import('@/lib/chat-tag-service');
+          const { setMeAsIt, fetchTagData, postOrUpdateGameEmbed } = await import('@/lib/chat-tag-service');
           const twitchLogin = await (async () => {
             try {
               const doc = await db.collection('servers').doc(serverId).collection('users').doc(clickerId).get();
@@ -173,13 +188,28 @@ export async function POST(request: NextRequest) {
           const player = data?.players?.find((p: any) => (p.twitchUsername || '').toLowerCase() === twitchLogin);
           if (!player) return ephemeral('❌ You\'re not in the tag game.');
           await setMeAsIt(player.id);
+          await postOrUpdateGameEmbed(serverId).catch((error) => {
+            console.error('[ChatTag] Failed to refresh embed after Make Me IT:', error);
+          });
           return ephemeral(`✅ ${clickerName} is now IT!`);
         }
 
         if (customId.startsWith('chattag_clearimmunity_')) {
-          const { clearAllImmunity } = await import('@/lib/chat-tag-service');
+          const { clearAllImmunity, postOrUpdateGameEmbed } = await import('@/lib/chat-tag-service');
           await clearAllImmunity();
+          await postOrUpdateGameEmbed(serverId).catch((error) => {
+            console.error('[ChatTag] Failed to refresh embed after clearing immunity:', error);
+          });
           return ephemeral('✅ All immunity cleared!');
+        }
+
+        if (customId.startsWith('chattag_triggerffa_')) {
+          const { triggerFreeForAll, postOrUpdateGameEmbed } = await import('@/lib/chat-tag-service');
+          await triggerFreeForAll();
+          await postOrUpdateGameEmbed(serverId).catch((error) => {
+            console.error('[ChatTag] Failed to refresh embed after FFA:', error);
+          });
+          return ephemeral('🔥 Free-for-all triggered. Anyone can tag for double points.');
         }
 
         if (customId.startsWith('chattag_newcard_')) {

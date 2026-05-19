@@ -36,11 +36,18 @@ export async function GET(request: NextRequest) {
       const data = doc.data();
       if (!data.twitchLogin) continue;
 
-      // Check if live (has active shoutout state)
+      // Check if live. Polling stores live state on the user doc; older
+      // builds also wrote a nested shoutoutState/current doc.
       const stateDoc = await db.collection('servers').doc(serverId)
         .collection('users').doc(doc.id)
         .collection('shoutoutState').doc('current').get();
-      const isLive = stateDoc.exists && stateDoc.data()?.isLive;
+      const isLive = Boolean(
+        data.isLive === true ||
+        data.isOnline === true ||
+        data.online === true ||
+        data.live === true ||
+        (stateDoc.exists && stateDoc.data()?.isLive === true)
+      );
 
       // Count existing GIFs
       const streamerDir = join(STORAGE_PATH, data.twitchLogin);
@@ -76,7 +83,7 @@ export async function GET(request: NextRequest) {
       return a.existingGifs - b.existingGifs;
     });
 
-    return NextResponse.json({ needed, serverId });
+    return NextResponse.json({ needed, serverId, checkedUsers: usersSnap.docs.length });
   } catch (error) {
     console.error('[ClipsNeeded] Error:', error);
     return NextResponse.json({ error: 'Failed to check' }, { status: 500 });
