@@ -23,10 +23,15 @@ type CleanupResult = {
   kept: number;
 };
 
+type CleanupOptions = {
+  maxDeletesPerRun?: number;
+};
+
 const DISCORD_API_BASE = 'https://discord.com/api/v10';
 const RECENT_MESSAGE_LIMIT = 100;
+const DEFAULT_MAX_DELETES_PER_RUN = 20;
 
-export async function cleanupOrphanedDiscordEmbeds(serverId: string): Promise<CleanupResult> {
+export async function cleanupOrphanedDiscordEmbeds(serverId: string, options: CleanupOptions = {}): Promise<CleanupResult> {
   const botToken = process.env.DISCORD_BOT_TOKEN;
   if (!botToken) {
     console.log('[DiscordCleanup] DISCORD_BOT_TOKEN is not set; skipping orphan cleanup');
@@ -36,6 +41,7 @@ export async function cleanupOrphanedDiscordEmbeds(serverId: string): Promise<Cl
   const botId = await getBotId(botToken);
   const keepMessageIds = await getTrackedMessageIds(serverId);
   const channelIds = await getCleanupChannelIds(serverId);
+  const maxDeletes = Math.max(0, options.maxDeletesPerRun ?? DEFAULT_MAX_DELETES_PER_RUN);
   const result: CleanupResult = {
     channelsChecked: channelIds.size,
     messagesScanned: 0,
@@ -56,6 +62,10 @@ export async function cleanupOrphanedDiscordEmbeds(serverId: string): Promise<Cl
 
       await deleteDiscordMessage(botToken, channelId, message.id);
       result.deleted += 1;
+      if (result.deleted >= maxDeletes) {
+        console.log(`[DiscordCleanup] Delete limit ${maxDeletes} reached; remaining orphan cleanup will continue next run`);
+        return result;
+      }
       await delay(650);
     }
   }
@@ -109,7 +119,7 @@ async function getCleanupChannelIds(serverId: string): Promise<Set<string>> {
   const groupChannelsDoc = await db.collection('servers').doc(serverId).collection('config').doc('groupChannels').get();
   const groupChannels = groupChannelsDoc.data() || {};
   for (const value of Object.values(groupChannels)) {
-    if (typeof value === 'string' && isDiscordSnowflake(value)) channels.add(value);
+    if (typeof value === 'string' && value !== serverId && isDiscordSnowflake(value)) channels.add(value);
   }
 
   for (const [collectionName, docId] of [

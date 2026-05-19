@@ -71,15 +71,6 @@ class TwitchPollingService {
     this.pollingStates.set(serverId, state);
     await this.savePollingState(serverId, true);
 
-    // Sweep orphaned messages before first poll
-    try {
-      const { cleanupOrphanedDiscordEmbeds } = await import('./discord-orphan-cleanup-service');
-      await cleanupOrphanedDiscordEmbeds(serverId);
-      await this.sweepOrphanedMessages(serverId);
-    } catch (error) {
-      console.error('[TwitchPolling] Orphan sweep failed:', error);
-    }
-
     // Run initial poll synchronously
     try {
       await this.pollTwitchStreams(serverId);
@@ -360,7 +351,7 @@ class TwitchPollingService {
       // Periodic orphan sweep — catch any embeds that slipped through delete failures
       try {
         const { cleanupOrphanedDiscordEmbeds } = await import('./discord-orphan-cleanup-service');
-        await cleanupOrphanedDiscordEmbeds(serverId);
+        await cleanupOrphanedDiscordEmbeds(serverId, { maxDeletesPerRun: 20 });
         await this.sweepOrphanedMessages(serverId);
       } catch (sweepError) {
         console.error(`[TwitchPolling] Periodic sweep error:`, sweepError);

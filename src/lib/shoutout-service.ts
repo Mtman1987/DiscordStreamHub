@@ -12,6 +12,7 @@ interface ShoutoutData {
   channelId: string;
   twitchLogin: string;
   group: 'Crew' | 'Partners' | 'Honored Guests' | 'Everyone Else' | 'Raid Pile';
+  stream?: any;
 }
 
 export async function sendShoutoutToDiscord(data: ShoutoutData): Promise<string | null> {
@@ -19,7 +20,7 @@ export async function sendShoutoutToDiscord(data: ShoutoutData): Promise<string 
 
   try {
     // Get stream info
-    const stream = await getStreamByLogin(twitchLogin);
+    const stream = data.stream || await getStreamByLogin(twitchLogin);
     if (!stream) {
       console.error(`No active stream found for ${twitchLogin}`);
       return null;
