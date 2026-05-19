@@ -10,8 +10,8 @@ import { existsSync } from 'fs';
 
 const STORAGE_PATH = process.env.STORAGE_PATH || '/data/clips';
 
-// In-memory cooldown guard survives within process lifetime.
-// The local data store is the source of truth, this prevents race conditions within a poll cycle.
+// In-memory cooldown guard — survives within process lifetime
+// Firestore is the source of truth, this prevents race conditions within a poll cycle
 const clipCooldowns = new Map<string, number>();
 const COOLDOWN_MS = 12 * 60 * 60 * 1000;
 
@@ -87,11 +87,11 @@ export async function fetchNewClipOnLive(serverId: string, userId: string, twitc
       return;
     }
     
-    // Local data check (persists across restarts)
+    // Firestore check (persists across restarts)
     const lastFetch = await getLastClipFetch(serverId, userId);
     if (lastFetch && now - lastFetch < COOLDOWN_MS) {
       clipCooldowns.set(cacheKey, lastFetch);
-      console.log(`[ClipFetching] ${twitchLogin} cooldown (local data): ${Math.round((COOLDOWN_MS - (now - lastFetch)) / 60000)}min remaining`);
+      console.log(`[ClipFetching] ${twitchLogin} cooldown (firestore): ${Math.round((COOLDOWN_MS - (now - lastFetch)) / 60000)}min remaining`);
       return;
     }
     

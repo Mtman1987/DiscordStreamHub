@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/data/server-init';
-import { deleteGif } from '@/lib/local-storage-service';
+import { deleteGif } from '@/lib/firebase-storage-service';
 
 export async function POST(request: NextRequest) {
   try {
@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
     const gifUrl = spotlightData?.cardGifUrl;
     
     if (gifUrl) {
-      // Delete from local volume storage
+      // Delete from Firebase Storage
       try {
         const gifFileName = gifUrl.split('/').pop()?.split('?')[0];
         if (gifFileName) {

@@ -3,7 +3,6 @@ import { db } from '@/lib/db';
 const CHAT_TAG_API = process.env.CHAT_TAG_API_BASE || 'https://chat-tag-new.fly.dev';
 const CHAT_TAG_BOT_URL = process.env.CHAT_TAG_BOT_URL || 'https://chat-tag-bot-new.fly.dev';
 const CHAT_TAG_CHANNEL_ID = process.env.CHAT_TAG_CHANNEL_ID || '1463633163673927732';
-const CHAT_TAG_SERVICE_SECRET = process.env.CHAT_TAG_BOT_SECRET || process.env.BOT_SECRET_KEY || '1234';
 
 // ── API helpers ──
 
@@ -11,11 +10,7 @@ async function tagApi(endpoint: string, options: RequestInit = {}): Promise<any>
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
-    const headers = {
-      ...((options.headers as Record<string, string>) || {}),
-      'x-bot-secret': CHAT_TAG_SERVICE_SECRET,
-    };
-    const res = await fetch(`${CHAT_TAG_API}${endpoint}`, { ...options, headers, signal: controller.signal });
+    const res = await fetch(`${CHAT_TAG_API}${endpoint}`, { ...options, signal: controller.signal });
     clearTimeout(timeout);
     if (!res.ok) {
       console.error(`[ChatTag] API ${endpoint} returned ${res.status}`);
@@ -577,12 +572,6 @@ export function buildGameStateEmbed(gameState: any, serverId: string): any {
           { type: 2, style: 2, label: 'Admin', custom_id: `chattag_admin_${serverId}` },
         ],
       },
-      {
-        type: 1,
-        components: [
-          { type: 2, style: 2, label: 'Full Leaderboard', custom_id: `chattag_leaderboard_${serverId}` },
-        ],
-      },
     ],
   };
 }
@@ -659,7 +648,6 @@ export function buildAdminEmbed(gameState: any, serverId: string): any {
         type: 1,
         components: [
           { type: 2, style: 4, label: 'Make Me IT', custom_id: `chattag_makemeit_${serverId}` },
-          { type: 2, style: 4, label: 'Trigger FFA', custom_id: `chattag_triggerffa_${serverId}` },
           { type: 2, style: 4, label: 'Clear All Immunity', custom_id: `chattag_clearimmunity_${serverId}` },
 
           { type: 2, style: 2, label: 'View Logs', custom_id: `chattag_logs_${serverId}` },
@@ -738,19 +726,13 @@ export async function clearAllImmunity(): Promise<any> {
   return postTagApi('/api/tag', { action: 'clear-all-away', performedBy: 'discord-admin' });
 }
 
-export async function triggerFreeForAll(): Promise<any> {
-  return postTagApi('/api/tag', { action: 'trigger-ffa', performedBy: 'discord-admin' });
-}
-
 export async function generateNewBingoCard(): Promise<any> {
   return tagApi('/api/bingo/generate', { method: 'POST' });
 }
 
 export async function fetchLogs(): Promise<string> {
   try {
-    const res = await fetch(`${CHAT_TAG_API}/api/logs`, {
-      headers: { 'x-bot-secret': CHAT_TAG_SERVICE_SECRET },
-    });
+    const res = await fetch(`${CHAT_TAG_API}/api/logs`);
     if (!res.ok) return 'Failed to fetch logs.';
     const text = await res.text();
     // Truncate to fit Discord's 2000 char limit for code blocks

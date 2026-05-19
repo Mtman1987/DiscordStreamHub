@@ -265,7 +265,7 @@ export async function postNewCalendar(guildId: string, channelId: string): Promi
 }
 
 /**
- * Syncs Discord server data with local database.
+ * Syncs Discord server data with Firebase database.
  */
 export async function syncDiscordData(prevState: any, formData: FormData) {
     try {

@@ -91,7 +91,7 @@ export function DiscordSyncSettings({ serverId: propServerId }: { serverId?: str
     if (!serverId) { toast({ title: 'Error', description: 'No server ID found', variant: 'destructive' }); return; }
     setIsLoading(true);
     try {
-      const response = await fetch('/api/discord/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ serverId }) });
+      const response = await fetch('/api/discord/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ guildId: serverId }) });
       if (!response.ok) throw new Error('Sync failed');
       const data = await response.json();
       setChannels(data.channels || []);

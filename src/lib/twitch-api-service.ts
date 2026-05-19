@@ -188,13 +188,21 @@ class TwitchApiService {
     const statusMap = new Map<string, boolean>();
     
     try {
-      console.log(`[TwitchAPI] Checking ${userLogins.length} users for live status`);
-      console.log(`[TwitchAPI] Sample usernames:`, userLogins.slice(0, 5));
+      // Filter out invalid Twitch usernames (only alphanumeric and underscores allowed)
+      const validLogins = userLogins.filter(login => /^[a-zA-Z0-9_]{1,25}$/.test(login));
+      const invalidLogins = userLogins.filter(login => !/^[a-zA-Z0-9_]{1,25}$/.test(login));
+      if (invalidLogins.length > 0) {
+        console.warn(`[TwitchAPI] Skipping ${invalidLogins.length} invalid usernames:`, invalidLogins.slice(0, 10));
+        invalidLogins.forEach(login => statusMap.set(login, false));
+      }
+
+      console.log(`[TwitchAPI] Checking ${validLogins.length} users for live status`);
+      console.log(`[TwitchAPI] Sample usernames:`, validLogins.slice(0, 5));
       
       // Twitch API allows up to 100 user_login parameters
       const chunks = [];
-      for (let i = 0; i < userLogins.length; i += 100) {
-        chunks.push(userLogins.slice(i, i + 100));
+      for (let i = 0; i < validLogins.length; i += 100) {
+        chunks.push(validLogins.slice(i, i + 100));
       }
 
       let totalOnline = 0;

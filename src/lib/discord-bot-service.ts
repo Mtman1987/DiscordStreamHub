@@ -8,7 +8,7 @@ type DocumentData = any;
 
 /**
  * This service is now in a diagnostic mode.
- * It only posts the mock data it receives and does not have any fallback logic to query store.
+ * It only posts the mock data it receives and does not have any fallback logic to query Firestore.
  * This isolates its function to simply posting a pre-made payload to Discord.
  */
 export async function postAllShoutoutsToDiscord(serverId: string, usersToPost: DocumentData[]): Promise<void> {

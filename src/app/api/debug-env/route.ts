@@ -9,7 +9,7 @@ export async function GET() {
     nodeEnv: process.env.NODE_ENV,
     totalEnvVars: allEnvKeys.length,
     discordKeys,
-    hasDataConfig: !!process.env.Data_CONFIG,
+    hasFirebaseConfig: !!process.env.FIREBASE_CONFIG,
     projectId: process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT
   });
 }

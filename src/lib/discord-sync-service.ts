@@ -155,7 +155,7 @@ class DiscordSyncService {
 
   private async determineGroup(roleIds: string[], serverId: string): Promise<'VIP' | 'Mountaineer' | 'Train' | 'Pile'> {
     try {
-      // Get role mappings from store
+      // Get role mappings from Firestore
       const serverDoc = await db.collection('servers').doc(serverId).get();
       const roleMappings = serverDoc.data()?.roleMappings || {};
 
@@ -323,5 +323,38 @@ export async function editDiscordMessage(serverId: string, channelId: string, me
 
 export async function postDiscordMessage(serverId: string, channelId: string, messageData: any): Promise<string | null> {
   return discordSyncService.sendShoutout(serverId, channelId, messageData);
+}
+
+export async function syncChannelsAndRoles(serverId: string): Promise<void> {
+  try {
+    const botToken = process.env.DISCORD_BOT_TOKEN;
+    if (!botToken) return;
+
+    const [channelsData, guildData] = await Promise.all([
+      fetch(`https://discord.com/api/v10/guilds/${serverId}/channels`, {
+        headers: { 'Authorization': `Bot ${botToken}` },
+      }).then(r => r.ok ? r.json() : []),
+      fetch(`https://discord.com/api/v10/guilds/${serverId}`, {
+        headers: { 'Authorization': `Bot ${botToken}` },
+      }).then(r => r.ok ? r.json() : null),
+    ]);
+
+    if (channelsData.length > 0) {
+      await db.collection('servers').doc(serverId).collection('config').doc('channels').set({
+        list: channelsData.map((ch: any) => ({ id: ch.id, name: ch.name, type: ch.type })),
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+    }
+
+    if (guildData?.roles) {
+      await db.collection('servers').doc(serverId).collection('config').doc('roles').set({
+        list: guildData.roles.map((r: any) => r.name),
+        detailed: guildData.roles.map((r: any) => ({ id: r.id, name: r.name })),
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+    }
+  } catch (error) {
+    console.error('[DiscordSync] syncChannelsAndRoles failed:', error);
+  }
 }
 

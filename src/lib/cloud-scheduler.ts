@@ -4,8 +4,8 @@ import { manualPoll } from './polling-service';
 
 // Cloud-based polling using API calls instead of long-running processes
 export async function schedulePolling(serverId: string): Promise<void> {
-  // In Fly.io, we use API routes triggered by external schedulers
-  // This function sets up the polling configuration in store
+  // In Firebase App Hosting, we use API routes triggered by external schedulers
+  // This function sets up the polling configuration in Firestore
   
   const { db } = await import('@/data/server-init');
   

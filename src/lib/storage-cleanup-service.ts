@@ -23,8 +23,8 @@ class StorageCleanupService {
         const age = Date.now() - cachedAt.getTime();
 
         if (age > this.MAX_AGE_MS) {
-          if (data.DataFileName) {
-            expiredFiles.push(data.DataFileName);
+          if (data.firebaseFileName) {
+            expiredFiles.push(data.firebaseFileName);
           }
           batch.delete(doc.ref);
         }

@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
 
       const segments = await fetchTwitchSchedule(twitchId, '');
       
-      // Store events in local data
+      // Store events in Firestore
       const eventsRef = db.collection('servers').doc(serverId).collection('users').doc(userId).collection('scheduleEvents');
       const batch = db.batch();
       

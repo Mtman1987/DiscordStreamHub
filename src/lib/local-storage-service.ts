@@ -144,11 +144,9 @@ export async function generateFileName(clipId: string, streamerName: string): Pr
   return localStorageService.generateFileName(clipId, streamerName);
 }
 
-export async function uploadFileToLocalStorage(buffer: Buffer, fileName: string, contentType: string): Promise<string> {
+export async function uploadFileToFirebase(buffer: Buffer, fileName: string, contentType: string): Promise<string> {
   return localStorageService.uploadGifFromUrl(`data:${contentType};base64,${buffer.toString('base64')}`, fileName);
 }
-
-export const uploadFileToData = uploadFileToLocalStorage;
 
 export async function uploadToStorage(buffer: Buffer, fileName: string, contentType: string): Promise<string> {
   return localStorageService.uploadGifFromUrl(`data:${contentType};base64,${buffer.toString('base64')}`, fileName);
