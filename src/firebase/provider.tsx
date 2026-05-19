@@ -8,6 +8,11 @@ type Firestore = any;
 type Auth = any;
 type User = any;
 
+const LOCAL_FIREBASE_APP = { name: 'local-session' };
+const LOCAL_FIRESTORE = { name: 'local-db' };
+const LOCAL_AUTH = { name: 'local-auth' };
+const LOCAL_USER = { uid: 'local-session' };
+
 interface FirebaseProviderProps {
   children: ReactNode;
   firebaseApp: FirebaseApp;
@@ -49,7 +54,7 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
   auth,
 }) => {
   const [userAuthState, setUserAuthState] = useState<Omit<FirebaseContextState, 'areServicesAvailable' | 'firebaseApp' | 'firestore' | 'auth'>>({
-    user: { uid: 'local-session' },
+    user: LOCAL_USER,
     isUserLoading: false,
     userError: null,
   });
@@ -83,10 +88,10 @@ export const useFirebase = (): FirebaseServicesAndUser => {
 
   if (context === undefined) {
     return {
-      firebaseApp: {} as any,
-      firestore: {} as any,
-      auth: {} as any,
-      user: { uid: 'local-session' },
+      firebaseApp: LOCAL_FIREBASE_APP as any,
+      firestore: LOCAL_FIRESTORE as any,
+      auth: LOCAL_AUTH as any,
+      user: LOCAL_USER,
       isUserLoading: false,
       userError: null,
     };
@@ -94,10 +99,10 @@ export const useFirebase = (): FirebaseServicesAndUser => {
 
   if (!context.areServicesAvailable || !context.firebaseApp || !context.firestore || !context.auth) {
     return {
-      firebaseApp: {} as any,
-      firestore: {} as any,
-      auth: {} as any,
-      user: context.user || { uid: 'local-session' },
+      firebaseApp: LOCAL_FIREBASE_APP as any,
+      firestore: LOCAL_FIRESTORE as any,
+      auth: LOCAL_AUTH as any,
+      user: context.user || LOCAL_USER,
       isUserLoading: false,
       userError: context.userError,
     };
@@ -133,14 +138,14 @@ export const useUser = (): UserHookResult => {
 
   if (context === undefined) {
     return {
-      user: { uid: 'local-session' },
+      user: LOCAL_USER,
       isUserLoading: false,
       userError: null,
     };
   }
 
   return {
-    user: context.user || { uid: 'local-session' },
+    user: context.user || LOCAL_USER,
     isUserLoading: false,
     userError: context.userError,
   };
