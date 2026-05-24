@@ -35,6 +35,59 @@ async function postTagApi(endpoint: string, body: any): Promise<any> {
 
 const CLEANUP_DELAY_MS = 5 * 60 * 1000; // 5 minutes
 
+function timeoutSignal(milliseconds: number) {
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), milliseconds);
+  return controller.signal;
+}
+
+async function getOrCreateDiscordWebhook(channelId: string, botToken: string) {
+  const webhookDoc = await db.collection('webhooks').doc(channelId).get();
+  const savedWebhook = webhookDoc.exists ? webhookDoc.data() : null;
+  if (savedWebhook?.id && savedWebhook?.token) return savedWebhook;
+
+  const webhooksRes = await fetch(`https://discord.com/api/v10/channels/${channelId}/webhooks`, {
+    headers: { Authorization: `Bot ${botToken}` },
+    signal: timeoutSignal(7_000),
+  });
+
+  if (webhooksRes.ok) {
+    const webhooks = await webhooksRes.json();
+    const existing = Array.isArray(webhooks)
+      ? webhooks.find((entry: any) => entry.name === 'Chat Tag') || webhooks.find((entry: any) => entry.name === 'Stream Hub')
+      : null;
+    if (existing?.id && existing?.token) {
+      await db.collection('webhooks').doc(channelId).set({
+        id: existing.id,
+        token: existing.token,
+        channelId,
+        name: existing.name || 'Chat Tag',
+      });
+      return existing;
+    }
+  }
+
+  const createRes = await fetch(`https://discord.com/api/v10/channels/${channelId}/webhooks`, {
+    method: 'POST',
+    headers: { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'Chat Tag' }),
+    signal: timeoutSignal(7_000),
+  });
+
+  if (!createRes.ok) {
+    throw new Error(`Failed to create webhook: ${createRes.status} ${await createRes.text()}`);
+  }
+
+  const webhook = await createRes.json();
+  await db.collection('webhooks').doc(channelId).set({
+    id: webhook.id,
+    token: webhook.token,
+    channelId,
+    name: webhook.name || 'Chat Tag',
+  });
+  return webhook;
+}
+
 async function sendDiscordReply(channelId: string, content: string, userMessageId?: string): Promise<void> {
   const botToken = process.env.DISCORD_BOT_TOKEN;
   if (!botToken) {
@@ -46,25 +99,27 @@ async function sendDiscordReply(channelId: string, content: string, userMessageI
     return;
   }
   try {
-    const res = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+    const webhook = await getOrCreateDiscordWebhook(channelId, botToken);
+    const res = await fetch(`https://discord.com/api/v10/webhooks/${webhook.id}/${webhook.token}?wait=true`, {
       method: 'POST',
-      headers: { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content }),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content, username: 'Chat Tag' }),
+      signal: timeoutSignal(7_000),
     });
     if (!res.ok) {
       const errText = await res.text();
-      console.error(`[ChatTag] sendDiscordReply failed (${res.status}): ${errText}`);
+      console.error(`[ChatTag] webhook reply failed (${res.status}): ${errText}`);
       return;
     }
-    const botMsg = await res.json();
-    console.log(`[ChatTag] Reply sent to ${channelId}: ${content.slice(0, 80)}...`);
+    const webhookMsg = await res.json();
+    console.log(`[ChatTag] Webhook reply sent to ${channelId}: ${content.slice(0, 80)}...`);
 
     // Auto-cleanup after 5 minutes: delete bot reply + user's original message
     setTimeout(() => {
-      // Delete bot's reply
-      if (botMsg?.id) {
-        fetch(`https://discord.com/api/v10/channels/${channelId}/messages/${botMsg.id}`, {
-          method: 'DELETE', headers: { Authorization: `Bot ${botToken}` },
+      // Delete webhook reply
+      if (webhookMsg?.id) {
+        fetch(`https://discord.com/api/v10/webhooks/${webhook.id}/${webhook.token}/messages/${webhookMsg.id}`, {
+          method: 'DELETE',
         }).catch(() => {});
       }
       // Delete user's original command message
