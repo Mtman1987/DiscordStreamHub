@@ -21,16 +21,8 @@ function parseOAuthState(state: string | null) {
   const fallbackServerId = process.env.HARDCODED_GUILD_ID || '1240832965865635881';
   if (!state) return { serverId: fallbackServerId, isHearMeOut: false, isChatTag: false };
 
-  let normalizedState = state.trim();
-  try {
-    normalizedState = decodeURIComponent(normalizedState);
-  } catch {
-    // Use the raw state if Twitch already decoded it.
-  }
-
-  const parts = normalizedState.split('|');
-  const appState = String(parts[0] || '').toLowerCase();
-  if (appState === 'hearmeout') {
+  const parts = state.split('|');
+  if (parts[0] === 'hearmeout') {
     return {
       serverId: parts[1] || fallbackServerId,
       isHearMeOut: true,
@@ -38,7 +30,7 @@ function parseOAuthState(state: string | null) {
     };
   }
 
-  if (appState === 'chat-tag' || appState === 'chattag') {
+  if (parts[0] === 'chat-tag') {
     return {
       serverId: parts[1] || fallbackServerId,
       isHearMeOut: false,
@@ -46,12 +38,7 @@ function parseOAuthState(state: string | null) {
     };
   }
 
-  const lowerState = normalizedState.toLowerCase();
-  return {
-    serverId: normalizedState,
-    isHearMeOut: lowerState.includes('hearmeout'),
-    isChatTag: lowerState.includes('chat-tag') || lowerState.includes('chattag'),
-  };
+  return { serverId: state, isHearMeOut: state.includes('hearmeout'), isChatTag: state.includes('chat-tag') };
 }
 
 function popupCallbackResponse(publicUrl: string, payload: Record<string, string>) {
@@ -91,9 +78,7 @@ function popupCallbackResponse(publicUrl: string, payload: Record<string, string
 function chatTagCallbackResponse(payload: Record<string, string>) {
   const chatTagUrl = process.env.CHAT_TAG_URL || process.env.CHAT_TAG_APP_URL || 'https://chat-tag-new.fly.dev';
   const params = new URLSearchParams(payload);
-  const response = NextResponse.redirect(`${chatTagUrl}/api/auth/twitch/callback?${params}`);
-  response.headers.set('Cache-Control', 'no-store');
-  return response;
+  return NextResponse.redirect(`${chatTagUrl}/api/auth/twitch/callback?${params}`);
 }
 
 export async function GET(request: NextRequest) {
