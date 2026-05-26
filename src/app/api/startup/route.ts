@@ -7,17 +7,12 @@ const HARDCODED_SERVER_ID = process.env.HARDCODED_GUILD_ID || '12408329658656358
 export async function POST(request: NextRequest) {
   try {
     console.log('[Startup] Initializing automated services...');
-    
-    // Start the configured guild directly. The DB flag can be false after manual
-    // stops or stale state, but this app should always resume shoutouts on boot.
-    await startTwitchPolling(HARDCODED_SERVER_ID);
-    console.log('[Startup] Twitch polling service initialized');
 
-    runStartupCleanup();
-    
-    return NextResponse.json({ 
+    queueStartupWork();
+
+    return NextResponse.json({
       success: true, 
-      message: 'All automated services started successfully',
+      message: 'Automated services queued',
       serverId: HARDCODED_SERVER_ID
     });
     
@@ -39,5 +34,17 @@ function runStartupCleanup(): void {
     cleanupOrphanedDiscordEmbeds(HARDCODED_SERVER_ID, { maxDeletesPerRun: 20 })
       .then((cleanupResult) => console.log('[Startup] Discord orphan cleanup completed:', cleanupResult))
       .catch((cleanupError) => console.error('[Startup] Discord orphan cleanup failed:', cleanupError));
+  }, 0);
+}
+
+function queueStartupWork(): void {
+  setTimeout(() => {
+    // Start the configured guild directly. The DB flag can be false after manual
+    // stops or stale state, but this app should always resume shoutouts on boot.
+    startTwitchPolling(HARDCODED_SERVER_ID)
+      .then(() => console.log('[Startup] Twitch polling service initialized'))
+      .catch((pollingError) => console.error('[Startup] Twitch polling startup failed:', pollingError));
+
+    runStartupCleanup();
   }, 0);
 }
