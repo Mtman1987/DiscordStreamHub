@@ -28,7 +28,7 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci --legacy-peer-deps --omit=optional
+RUN npm ci --legacy-peer-deps
 
 COPY . .
 
