@@ -11,15 +11,89 @@ const COOLDOWN_MS = 5 * 60 * 1000; // 1 point per 5 min per user
 const discordChatCooldowns = new Map<string, number>();
 const CHAT_TAG_SERVICE_SECRET = process.env.CHAT_TAG_BOT_SECRET || process.env.BOT_SECRET_KEY || '1234';
 
+type FanoutTarget = {
+  name: string;
+  url: string;
+};
+
+function timeoutSignal(milliseconds: number) {
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), milliseconds);
+  return controller.signal;
+}
+
+function discordChatUrl(baseUrl: string, override?: string) {
+  if (override) return override;
+  return `${baseUrl.replace(/\/$/, '')}/api/discord/chat`;
+}
+
+function getFanoutTargets(): FanoutTarget[] {
+  const targets = [
+    {
+      name: 'hearmeout',
+      url: discordChatUrl(
+        process.env.HEARMEOUT_URL || 'https://hearmeout-main.fly.dev',
+        process.env.HEARMEOUT_DISCORD_CHAT_URL
+      ),
+    },
+    {
+      name: 'streamweaver',
+      url: discordChatUrl(
+        process.env.STREAMWEAVER_URL || process.env.STREAMWEAVE_URL || 'https://streamweaver-new.fly.dev',
+        process.env.STREAMWEAVER_DISCORD_CHAT_URL
+      ),
+    },
+  ];
+
+  const seen = new Set<string>();
+  return targets.filter((target) => {
+    if (!target.url || seen.has(target.url)) return false;
+    seen.add(target.url);
+    return true;
+  });
+}
+
+async function postDiscordChat(target: FanoutTarget, body: any) {
+  try {
+    const response = await fetch(target.url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-chat-origin': 'dsh-fanout',
+      },
+      body: JSON.stringify(body),
+      signal: timeoutSignal(15_000),
+    });
+    const payload = await response.json().catch(() => null);
+    return {
+      name: target.name,
+      ok: response.ok,
+      status: response.status,
+      payload,
+    };
+  } catch (error: any) {
+    return {
+      name: target.name,
+      ok: false,
+      status: 0,
+      payload: { success: false, error: error?.message || 'fanout failed' },
+    };
+  }
+}
+
+async function fanoutDiscordChat(body: any) {
+  return Promise.all(getFanoutTargets().map((target) => postDiscordChat(target, body)));
+}
+
 export async function POST(request: NextRequest) {
   try {
-    let body;
+    let body: any;
     try {
-      body = await request.json();
-    } catch {
-      // Handle messages with control characters that break JSON
       const raw = await request.text();
       body = JSON.parse(raw.replace(/[\x00-\x1F\x7F]/g, ''));
+    } catch (error) {
+      console.error('[DiscordChat] Invalid JSON payload:', error);
+      return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 });
     }
     console.log('[DiscordChat] Received:', JSON.stringify(body).slice(0, 200));
 
@@ -41,6 +115,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, skipped: 'empty message' });
     }
 
+    const fanoutPromise = fanoutDiscordChat(body);
+
     const watchCommand = parseWatchCommand(message) || parseWatchAcceptCommand(message);
     if (watchCommand && channelId) {
       if (process.env.DISCORD_CHAT_HANDLE_WATCH === 'true') {
@@ -54,10 +130,12 @@ export async function POST(request: NextRequest) {
           userMessageId: messageId,
           publicBaseUrl: request.nextUrl.origin,
         });
-        return NextResponse.json({ success: true, commandHandled: 'watch-request' });
+        const fanout = await fanoutPromise;
+        return NextResponse.json({ success: true, commandHandled: 'watch-request', fanout });
       }
       console.log(`[DiscordChat] Watch request command skipped because DISCORD_CHAT_HANDLE_WATCH is not true: ${message}`);
-      return NextResponse.json({ success: true, skipped: 'watch-command-handled-by-voice-bot' });
+      const fanout = await fanoutPromise;
+      return NextResponse.json({ success: true, skipped: 'watch-command-handled-by-voice-bot', fanout });
     }
 
     // Chat Tag: detect @spmt or spmt commands (Discord converts @spmt to <@botId>)
@@ -91,7 +169,8 @@ export async function POST(request: NextRequest) {
     const userDoc = await db.collection('servers').doc(guildId).collection('users').doc(userId).get();
     if (!userDoc.exists) {
       console.log(`[DiscordChat] ${userName} (${userId}) not in community DB, skipping points`);
-      return NextResponse.json({ success: true, pointsAwarded: false, reason: 'not-a-member' });
+      const fanout = await fanoutPromise;
+      return NextResponse.json({ success: true, pointsAwarded: false, reason: 'not-a-member', fanout });
     }
 
     // Track Discord chat activity in chat-tag (auto-wake, lastSeenChannel)
@@ -117,7 +196,8 @@ export async function POST(request: NextRequest) {
     const now = Date.now();
     const lastAwarded = discordChatCooldowns.get(userId);
     if (lastAwarded && now - lastAwarded < COOLDOWN_MS) {
-      return NextResponse.json({ success: true, pointsAwarded: false, reason: 'cooldown' });
+      const fanout = await fanoutPromise;
+      return NextResponse.json({ success: true, pointsAwarded: false, reason: 'cooldown', fanout });
     }
     discordChatCooldowns.set(userId, now);
 
@@ -132,10 +212,12 @@ export async function POST(request: NextRequest) {
         metadata: { username: userName, channelId, avatarUrl: userAvatar }
       });
       console.log(`[DiscordChat] Awarded ${result.pointsAwarded} pts to ${userName}`);
-      return NextResponse.json({ success: true, pointsAwarded: true, points: result.pointsAwarded });
+      const fanout = await fanoutPromise;
+      return NextResponse.json({ success: true, pointsAwarded: true, points: result.pointsAwarded, fanout });
     } catch (pointsError) {
       console.error('[DiscordChat] awardPoints failed:', pointsError);
-      return NextResponse.json({ success: true, pointsAwarded: false, reason: 'award-error' });
+      const fanout = await fanoutPromise;
+      return NextResponse.json({ success: true, pointsAwarded: false, reason: 'award-error', fanout });
     }
   } catch (error) {
     console.error('[DiscordChat] Error:', error);
