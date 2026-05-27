@@ -16,6 +16,11 @@ type FanoutTarget = {
   url: string;
 };
 
+function isWatchOrControlCommand(message: string) {
+  return /^!(wr|watch)(?:\s|$)/i.test(message)
+    || /^!(add|accept|controls?|watch-controls)$/i.test(message.trim());
+}
+
 function timeoutSignal(milliseconds: number) {
   const controller = new AbortController();
   setTimeout(() => controller.abort(), milliseconds);
@@ -81,8 +86,11 @@ async function postDiscordChat(target: FanoutTarget, body: any) {
   }
 }
 
-async function fanoutDiscordChat(body: any) {
-  return Promise.all(getFanoutTargets().map((target) => postDiscordChat(target, body)));
+async function fanoutDiscordChat(body: any, message: string) {
+  const targets = isWatchOrControlCommand(message)
+    ? getFanoutTargets().filter((target) => target.name === 'hearmeout')
+    : getFanoutTargets();
+  return Promise.all(targets.map((target) => postDiscordChat(target, body)));
 }
 
 export async function POST(request: NextRequest) {
@@ -115,7 +123,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, skipped: 'empty message' });
     }
 
-    const fanoutPromise = fanoutDiscordChat(body);
+    const fanoutPromise = fanoutDiscordChat(body, message);
 
     const watchCommand = parseWatchCommand(message) || parseWatchAcceptCommand(message);
     if (watchCommand && channelId) {
