@@ -41,16 +41,19 @@ DSH_PID=$!
   echo "[Startup] WARNING: Could not start polling after 80s"
 ) &
 
-# 5. Start the Discord watch command bot after the web API is available.
-# It controls Activity sessions and invites only; video/audio plays in the Activity.
-if [ -n "$DISCORD_BOT_TOKEN" ]; then
+# 5. Optional legacy Discord watch command bot.
+# External bots can send the same command payloads to /api/discord/chat, so keep
+# this disabled unless a deploy explicitly opts into the in-container bot.
+if [ "$ENABLE_WATCH_VOICE_BOT" = "true" ] && [ -n "$DISCORD_BOT_TOKEN" ]; then
   (
     echo "[Startup] Waiting to start watch command bot..."
     sleep 25
     WATCHROOM_DSH_BASE_URL="${WATCHROOM_DSH_BASE_URL:-http://localhost:3000}" npm run watch-voice-bot
   ) &
+elif [ "$ENABLE_WATCH_VOICE_BOT" = "true" ]; then
+  echo "[Startup] ENABLE_WATCH_VOICE_BOT=true but DISCORD_BOT_TOKEN is not set; watch command bot disabled"
 else
-  echo "[Startup] DISCORD_BOT_TOKEN not set; watch command bot disabled"
+  echo "[Startup] Legacy watch command bot disabled; expecting external bot to POST /api/discord/chat"
 fi
 
 # 6. Keep container alive with the DSH process
