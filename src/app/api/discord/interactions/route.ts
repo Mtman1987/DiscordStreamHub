@@ -23,6 +23,44 @@ function ephemeral(content: string, extra: any = {}) {
 }
 
 const CHAT_TAG_SERVICE_SECRET = process.env.CHAT_TAG_BOT_SECRET || process.env.BOT_SECRET_KEY || '1234';
+const HMO_WATCH_SESSION_ID = 'discord-watch-room';
+
+function getHearMeOutUrl() {
+  return (process.env.HEARMEOUT_URL || 'https://hearmeout-main.fly.dev').replace(/\/$/, '');
+}
+
+async function runHearMeOutWatchControl(action: string) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const url = `${getHearMeOutUrl()}/api/watch/sessions/${HMO_WATCH_SESSION_ID}/quick-control?action=${encodeURIComponent(action)}&format=json`;
+    const response = await fetch(url, { signal: controller.signal, cache: 'no-store' });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      return { ok: false, message: payload?.error || `HearMeOut returned ${response.status}` };
+    }
+
+    const title = payload?.session?.current?.item?.title || 'watch room';
+    const status = payload?.session?.playback?.status || 'updated';
+    const label = action === 'next' ? 'Skipped' : action === 'clear' ? 'Cleared' : action[0].toUpperCase() + action.slice(1);
+    return { ok: true, message: `${label}: **${title}** (${status})` };
+  } catch (error: any) {
+    return { ok: false, message: error?.name === 'AbortError' ? 'HearMeOut timed out.' : 'HearMeOut control request failed.' };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function updateDeferredInteraction(applicationId: string, token: string, content: string) {
+  if (!applicationId || !token) return;
+  await fetch(`https://discord.com/api/v10/webhooks/${applicationId}/${token}/messages/@original`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ content }),
+  }).catch((error) => {
+    console.error('[DiscordInteractions] Failed to update HearMeOut control response:', error);
+  });
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -49,6 +87,19 @@ export async function POST(request: NextRequest) {
     const customId: string | undefined = body.data?.custom_id;
 
     if (body.type === 3 && customId) {
+      if (customId.startsWith('hmo_watch_control:')) {
+        const action = customId.split(':')[1] || '';
+        const applicationId = body.application_id || process.env.DISCORD_CLIENT_ID || process.env.DISCORD_APP_ID;
+        runHearMeOutWatchControl(action)
+          .then((result) => updateDeferredInteraction(applicationId, body.token, result.ok ? `✅ ${result.message}` : `❌ ${result.message}`))
+          .catch((error) => updateDeferredInteraction(applicationId, body.token, `❌ ${error?.message || 'HearMeOut control request failed.'}`));
+
+        return NextResponse.json({
+          type: 5,
+          data: { content: 'Sending control to HearMeOut...', flags: 64 },
+        });
+      }
+
       // ── Chat Tag button interactions ──
       if (customId.startsWith('chattag_')) {
         const serverId = body.guild_id || process.env.HARDCODED_GUILD_ID;

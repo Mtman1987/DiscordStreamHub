@@ -9,7 +9,9 @@ const parseWatchCommand = (s: string) => null;
 
 const COOLDOWN_MS = 5 * 60 * 1000; // 1 point per 5 min per user
 const discordChatCooldowns = new Map<string, number>();
+const processedDiscordMessages = new Map<string, number>();
 const CHAT_TAG_SERVICE_SECRET = process.env.CHAT_TAG_BOT_SECRET || process.env.BOT_SECRET_KEY || '1234';
+const PROCESSED_MESSAGE_TTL_MS = 10 * 60 * 1000;
 
 type FanoutTarget = {
   name: string;
@@ -30,6 +32,10 @@ function timeoutSignal(milliseconds: number) {
 function discordChatUrl(baseUrl: string, override?: string) {
   if (override) return override;
   return `${baseUrl.replace(/\/$/, '')}/api/discord/chat`;
+}
+
+function shouldFanoutDiscordChat() {
+  return process.env.DISCORD_CHAT_FANOUT === 'true';
 }
 
 function getFanoutTargets(): FanoutTarget[] {
@@ -56,6 +62,22 @@ function getFanoutTargets(): FanoutTarget[] {
     seen.add(target.url);
     return true;
   });
+}
+
+function markDiscordMessageSeen(guildId: string, channelId: string, messageId: string) {
+  if (!messageId || !channelId) return false;
+
+  const now = Date.now();
+  for (const [key, seenAt] of processedDiscordMessages) {
+    if (now - seenAt > PROCESSED_MESSAGE_TTL_MS) {
+      processedDiscordMessages.delete(key);
+    }
+  }
+
+  const key = `${guildId}:${channelId}:${messageId}`;
+  if (processedDiscordMessages.has(key)) return true;
+  processedDiscordMessages.set(key, now);
+  return false;
 }
 
 async function postDiscordChat(target: FanoutTarget, body: any) {
@@ -87,10 +109,51 @@ async function postDiscordChat(target: FanoutTarget, body: any) {
 }
 
 async function fanoutDiscordChat(body: any, message: string) {
+  if (!shouldFanoutDiscordChat()) {
+    return [];
+  }
+
   const targets = isWatchOrControlCommand(message)
     ? getFanoutTargets().filter((target) => target.name === 'hearmeout')
     : getFanoutTargets();
   return Promise.all(targets.map((target) => postDiscordChat(target, body)));
+}
+
+async function sendDiscordChannelMessage(channelId: string, payload: any) {
+  const botToken = process.env.DISCORD_BOT_TOKEN;
+  if (!botToken) throw new Error('DISCORD_BOT_TOKEN is not configured');
+
+  const response = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bot ${botToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Discord message failed: ${response.status} ${await response.text()}`);
+  }
+
+  return response.json();
+}
+
+async function sendHearMeOutControls(channelId: string) {
+  return sendDiscordChannelMessage(channelId, {
+    content: 'HearMeOut Activity controls',
+    components: [
+      {
+        type: 1,
+        components: [
+          { type: 2, style: 3, label: 'Play', custom_id: 'hmo_watch_control:play', emoji: { name: '▶️' } },
+          { type: 2, style: 2, label: 'Pause', custom_id: 'hmo_watch_control:pause', emoji: { name: '⏸️' } },
+          { type: 2, style: 1, label: 'Next', custom_id: 'hmo_watch_control:next', emoji: { name: '⏭️' } },
+          { type: 2, style: 4, label: 'Clear', custom_id: 'hmo_watch_control:clear', emoji: { name: '🧹' } },
+        ],
+      },
+    ],
+  });
 }
 
 export async function POST(request: NextRequest) {
@@ -123,6 +186,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, skipped: 'empty message' });
     }
 
+    if (markDiscordMessageSeen(guildId, channelId, messageId)) {
+      console.log(`[DiscordChat] Duplicate message ignored: ${guildId}/${channelId}/${messageId}`);
+      return NextResponse.json({ success: true, skipped: 'duplicate-message', messageId });
+    }
+
+    const msgLower = message.toLowerCase();
+
+    if (/^!(controls?|watch-controls)$/i.test(message.trim()) && channelId) {
+      await sendHearMeOutControls(channelId);
+      return NextResponse.json({ success: true, commandHandled: 'hearmeout-controls' });
+    }
+
     const fanoutPromise = fanoutDiscordChat(body, message);
 
     const watchCommand = parseWatchCommand(message) || parseWatchAcceptCommand(message);
@@ -147,7 +222,6 @@ export async function POST(request: NextRequest) {
     }
 
     // Chat Tag: detect @spmt or spmt commands (Discord converts @spmt to <@botId>)
-    const msgLower = message.toLowerCase();
     const isSpmtCommand = msgLower.startsWith('spmt ') || msgLower.startsWith('@spmt ') || message.startsWith('<@1279582181768957963>');
     if (isSpmtCommand && channelId) {
       // Normalize the message to always start with @spmt
@@ -156,6 +230,19 @@ export async function POST(request: NextRequest) {
         normalizedMsg = '@spmt ' + message.replace(/<@!?\d+>/g, '').trim();
       } else if (msgLower.startsWith('spmt ')) {
         normalizedMsg = '@spmt ' + message.substring(5);
+      }
+      const normalizedLower = normalizedMsg.toLowerCase().trim();
+      if (normalizedLower === '@spmt embed' || normalizedLower === '@spmt panel') {
+        try {
+          const { postOrUpdateGameEmbed } = await import('@/lib/chat-tag-service');
+          await postOrUpdateGameEmbed(guildId);
+          await sendDiscordChannelMessage(channelId, { content: '✅ Chat Tag embed refreshed.' });
+        } catch (err) {
+          console.error('[DiscordChat] Chat Tag embed refresh failed:', err);
+          await sendDiscordChannelMessage(channelId, { content: '❌ Chat Tag embed refresh failed. Check DSH logs.' }).catch(() => {});
+        }
+        const fanout = await fanoutPromise;
+        return NextResponse.json({ success: true, commandHandled: 'chat-tag-embed-refresh', fanout });
       }
       // Replace Discord user mentions with usernames for target resolution
       const mentionPattern = /<@!?(\d+)>/g;
