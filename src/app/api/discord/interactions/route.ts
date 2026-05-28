@@ -42,8 +42,10 @@ async function runHearMeOutWatchControl(action: string) {
 
     const title = payload?.session?.current?.item?.title || 'watch room';
     const status = payload?.session?.playback?.status || 'updated';
+    const muted = payload?.session?.playback?.muted;
     const label = action === 'next' ? 'Skipped' : action === 'clear' ? 'Cleared' : action[0].toUpperCase() + action.slice(1);
-    return { ok: true, message: `${label}: **${title}** (${status})` };
+    const audio = typeof muted === 'boolean' ? (muted ? ', muted' : ', unmuted') : '';
+    return { ok: true, message: `${label}: **${title}** (${status}${audio})` };
   } catch (error: any) {
     return { ok: false, message: error?.name === 'AbortError' ? 'HearMeOut timed out.' : 'HearMeOut control request failed.' };
   } finally {
