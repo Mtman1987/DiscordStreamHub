@@ -139,9 +139,45 @@ async function sendDiscordChannelMessage(channelId: string, payload: any) {
   return response.json();
 }
 
-async function sendHearMeOutControls(channelId: string) {
-  return sendDiscordChannelMessage(channelId, {
-    content: 'HearMeOut Activity controls',
+async function deleteDiscordMessage(channelId: string, messageId: string) {
+  const botToken = process.env.DISCORD_BOT_TOKEN;
+  if (!botToken || !channelId || !messageId) return { ok: false, skipped: true };
+  const response = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages/${messageId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bot ${botToken}` },
+  }).catch(() => null);
+  return { ok: Boolean(response?.ok), status: response?.status || 0 };
+}
+
+async function createDiscordDmChannel(userId: string) {
+  const botToken = process.env.DISCORD_BOT_TOKEN;
+  if (!botToken) throw new Error('DISCORD_BOT_TOKEN is not configured');
+
+  const response = await fetch('https://discord.com/api/v10/users/@me/channels', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bot ${botToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ recipient_id: userId }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Discord DM channel failed: ${response.status} ${await response.text()}`);
+  }
+
+  return response.json();
+}
+
+function buildHearMeOutControlsPayload(joinUrl?: string) {
+  return {
+    content: '',
+    embeds: [{
+      title: 'HearMeOut Watch Controls',
+      description: joinUrl ? `[Join the Discord Activity](${joinUrl})` : 'Control the shared HearMeOut watch room.',
+      color: 0x22c55e,
+      footer: { text: 'Controls update the shared Activity playback.' },
+    }],
     components: [
       {
         type: 1,
@@ -156,11 +192,22 @@ async function sendHearMeOutControls(channelId: string) {
       {
         type: 1,
         components: [
+          ...(joinUrl ? [{ type: 2, style: 5, label: 'Join Activity', url: joinUrl, emoji: { name: '🎬' } }] : []),
           { type: 2, style: 4, label: 'Clear', custom_id: 'hmo_watch_control:clear', emoji: { name: '🧹' } },
         ],
       },
     ],
-  });
+    allowed_mentions: { parse: [] },
+  };
+}
+
+async function sendHearMeOutControls(channelId: string, userId?: string) {
+  const payload = buildHearMeOutControlsPayload(`${process.env.HEARMEOUT_URL || 'https://hearmeout-main.fly.dev'}/activity`);
+  if (userId) {
+    const dm = await createDiscordDmChannel(userId);
+    if (dm?.id) return sendDiscordChannelMessage(dm.id, payload);
+  }
+  return sendDiscordChannelMessage(channelId, payload);
 }
 
 export async function POST(request: NextRequest) {
@@ -201,8 +248,25 @@ export async function POST(request: NextRequest) {
     const msgLower = message.toLowerCase();
 
     if (/^!(controls?|watch-controls)$/i.test(message.trim()) && channelId) {
-      await sendHearMeOutControls(channelId);
-      return NextResponse.json({ success: true, commandHandled: 'hearmeout-controls' });
+      const deletedCommand = await deleteDiscordMessage(channelId, messageId);
+      try {
+        await sendHearMeOutControls(channelId, userId);
+        return NextResponse.json({ success: true, commandHandled: 'hearmeout-controls', delivery: userId ? 'dm' : 'channel', deletedCommand });
+      } catch (error: any) {
+        const fallback = await sendDiscordChannelMessage(channelId, {
+          ...buildHearMeOutControlsPayload(`${process.env.HEARMEOUT_URL || 'https://hearmeout-main.fly.dev'}/activity`),
+          content: userId ? `<@${userId}> I could not DM you, so here are the controls.` : '',
+          allowed_mentions: { users: userId ? [userId] : [] },
+        });
+        return NextResponse.json({
+          success: true,
+          commandHandled: 'hearmeout-controls',
+          delivery: 'channel-fallback',
+          deletedCommand,
+          fallback,
+          dmError: error?.message || 'DM failed',
+        });
+      }
     }
 
     const fanoutPromise = fanoutDiscordChat(body, message);
