@@ -530,9 +530,10 @@ export async function POST(request: NextRequest) {
       }
       if (normalizedLower === '@spmt controls' || normalizedLower === '@spmt control') {
         const sent = await sendDiscordChannelMessage(channelId, buildChatTagControlsButtonPayload(guildId));
+        const deletedCommand = await deleteDiscordMessage(channelId, messageId);
         console.log(`[DiscordChat] Sent Chat Tag controls button: ${sent?.id || 'unknown-message-id'}`);
         const fanout = await fanoutPromise;
-        return NextResponse.json({ success: true, commandHandled: 'chat-tag-controls', messageId: sent?.id, fanout });
+        return NextResponse.json({ success: true, commandHandled: 'chat-tag-controls', messageId: sent?.id, deletedCommand, fanout });
       }
       // Replace Discord user mentions with usernames for target resolution
       const mentionPattern = /<@!?(\d+)>/g;
