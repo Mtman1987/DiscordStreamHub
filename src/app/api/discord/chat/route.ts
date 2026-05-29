@@ -12,6 +12,11 @@ const discordChatCooldowns = new Map<string, number>();
 const processedDiscordMessages = new Map<string, number>();
 const CHAT_TAG_SERVICE_SECRET = process.env.CHAT_TAG_BOT_SECRET || process.env.BOT_SECRET_KEY || '1234';
 const PROCESSED_MESSAGE_TTL_MS = 10 * 60 * 1000;
+const CHAT_TAG_WEBHOOK_NAME = process.env.CHAT_TAG_WEBHOOK_NAME || 'Chat Tag';
+const CHAT_TAG_AVATAR_URL =
+  process.env.CHAT_TAG_AVATAR_URL ||
+  process.env.DISCORD_CHAT_TAG_AVATAR_URL ||
+  '';
 const DISCORD_ACTIVITY_APPLICATION_ID =
   process.env.DISCORD_ACTIVITY_APPLICATION_ID ||
   process.env.DISCORD_APP_ID ||
@@ -144,6 +149,56 @@ async function sendDiscordChannelMessage(channelId: string, payload: any) {
   return response.json();
 }
 
+async function getOrCreateChatTagWebhook(channelId: string) {
+  const botToken = process.env.DISCORD_BOT_TOKEN;
+  if (!botToken) throw new Error('DISCORD_BOT_TOKEN is not configured');
+
+  const webhookDoc = await db.collection('webhooks').doc(channelId).get();
+  const savedWebhook = webhookDoc.exists ? webhookDoc.data() : null;
+  if (savedWebhook?.id && savedWebhook?.token) return savedWebhook;
+
+  const webhooksResponse = await fetch(`https://discord.com/api/v10/channels/${channelId}/webhooks`, {
+    headers: { Authorization: `Bot ${botToken}` },
+    signal: timeoutSignal(7_000),
+  });
+
+  if (webhooksResponse.ok) {
+    const webhooks = await webhooksResponse.json();
+    const existing = Array.isArray(webhooks)
+      ? webhooks.find((entry: any) => entry.name === CHAT_TAG_WEBHOOK_NAME)
+      : null;
+    if (existing?.id && existing?.token) {
+      await db.collection('webhooks').doc(channelId).set({
+        id: existing.id,
+        token: existing.token,
+        channelId,
+        name: existing.name || CHAT_TAG_WEBHOOK_NAME,
+      });
+      return existing;
+    }
+  }
+
+  const createResponse = await fetch(`https://discord.com/api/v10/channels/${channelId}/webhooks`, {
+    method: 'POST',
+    headers: { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: CHAT_TAG_WEBHOOK_NAME, avatar: null }),
+    signal: timeoutSignal(7_000),
+  });
+
+  if (!createResponse.ok) {
+    throw new Error(`Failed to create Chat Tag webhook: ${createResponse.status} ${await createResponse.text()}`);
+  }
+
+  const webhook = await createResponse.json();
+  await db.collection('webhooks').doc(channelId).set({
+    id: webhook.id,
+    token: webhook.token,
+    channelId,
+    name: webhook.name || CHAT_TAG_WEBHOOK_NAME,
+  });
+  return webhook;
+}
+
 function buildChatTagControlsButtonPayload(serverId: string) {
   return {
     content: '🏷️ Chat Tag controls',
@@ -157,6 +212,34 @@ function buildChatTagControlsButtonPayload(serverId: string) {
     ],
     allowed_mentions: { parse: [] },
   };
+}
+
+async function sendChatTagControlsButton(channelId: string, serverId: string) {
+  const payload: any = {
+    ...buildChatTagControlsButtonPayload(serverId),
+    username: CHAT_TAG_WEBHOOK_NAME,
+  };
+  if (CHAT_TAG_AVATAR_URL) payload.avatar_url = CHAT_TAG_AVATAR_URL;
+
+  try {
+    const webhook = await getOrCreateChatTagWebhook(channelId);
+    const response = await fetch(
+      `https://discord.com/api/v10/webhooks/${webhook.id}/${webhook.token}?wait=true&with_components=true`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: timeoutSignal(7_000),
+      },
+    );
+    if (!response.ok) {
+      throw new Error(`Chat Tag webhook controls message failed: ${response.status} ${await response.text()}`);
+    }
+    return response.json();
+  } catch (error) {
+    console.error('[DiscordChat] Chat Tag webhook controls post failed, falling back to bot message:', error);
+    return sendDiscordChannelMessage(channelId, buildChatTagControlsButtonPayload(serverId));
+  }
 }
 
 async function deleteDiscordMessage(channelId: string, messageId: string) {
@@ -530,7 +613,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true, commandHandled: 'chat-tag-embed-refresh', deletedCommand, fanout });
       }
       if (normalizedLower === '@spmt controls' || normalizedLower === '@spmt control') {
-        const sent = await sendDiscordChannelMessage(channelId, buildChatTagControlsButtonPayload(guildId));
+        const sent = await sendChatTagControlsButton(channelId, guildId);
         const deletedCommand = await deleteDiscordMessage(channelId, messageId);
         console.log(`[DiscordChat] Sent Chat Tag controls button: ${sent?.id || 'unknown-message-id'}`);
         const fanout = await fanoutPromise;
