@@ -339,9 +339,17 @@ export async function POST(request: NextRequest) {
         } catch {}
       }
       console.log(`[DiscordChat] @spmt command detected from ${userName}: ${normalizedMsg} (channelId: ${channelId})`);
-      handleSpmtCommand(normalizedMsg, userId, userName, guildId, channelId, messageId).catch(err =>
-        console.error('[DiscordChat] @spmt handler error:', err)
-      );
+      try {
+        await handleSpmtCommand(normalizedMsg, userId, userName, guildId, channelId, messageId);
+      } catch (err: any) {
+        console.error('[DiscordChat] @spmt handler error:', err);
+        await sendDiscordChannelMessage(channelId, {
+          content: `❌ Chat Tag command failed: ${err?.message || 'unknown error'}`,
+          allowed_mentions: { parse: [] },
+        }).catch(() => {});
+      }
+      const fanout = await fanoutPromise;
+      return NextResponse.json({ success: true, commandHandled: 'chat-tag', fanout });
     }
 
     // Check if user is in our community

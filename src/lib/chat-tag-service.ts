@@ -3,6 +3,9 @@ import { db } from '@/lib/db';
 const CHAT_TAG_API = process.env.CHAT_TAG_API_BASE || 'https://chat-tag-new.fly.dev';
 const CHAT_TAG_BOT_URL = process.env.CHAT_TAG_BOT_URL || 'https://chat-tag-bot-new.fly.dev';
 const CHAT_TAG_CHANNEL_ID = process.env.CHAT_TAG_CHANNEL_ID || '1463633163673927732';
+const CHAT_TAG_SERVICE_SECRET = process.env.CHAT_TAG_BOT_SECRET || process.env.BOT_SECRET_KEY || '1234';
+const sentChatTagReplies = new Map<string, number>();
+const SENT_REPLY_TTL_MS = 10 * 60 * 1000;
 
 // ── API helpers ──
 
@@ -26,7 +29,7 @@ async function tagApi(endpoint: string, options: RequestInit = {}): Promise<any>
 async function postTagApi(endpoint: string, body: any): Promise<any> {
   return tagApi(endpoint, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'x-bot-secret': CHAT_TAG_SERVICE_SECRET },
     body: JSON.stringify(body),
   });
 }
@@ -98,6 +101,21 @@ async function sendDiscordReply(channelId: string, content: string, userMessageI
     console.error('[ChatTag] sendDiscordReply: No channelId');
     return;
   }
+  if (userMessageId) {
+    const now = Date.now();
+    for (const [key, sentAt] of sentChatTagReplies) {
+      if (now - sentAt > SENT_REPLY_TTL_MS) {
+        sentChatTagReplies.delete(key);
+      }
+    }
+
+    const dedupeKey = `${channelId}:${userMessageId}`;
+    if (sentChatTagReplies.has(dedupeKey)) {
+      console.log(`[ChatTag] Duplicate reply ignored for ${dedupeKey}`);
+      return;
+    }
+    sentChatTagReplies.set(dedupeKey, now);
+  }
   try {
     const webhook = await getOrCreateDiscordWebhook(channelId, botToken);
     const res = await fetch(`https://discord.com/api/v10/webhooks/${webhook.id}/${webhook.token}?wait=true`, {
@@ -109,12 +127,14 @@ async function sendDiscordReply(channelId: string, content: string, userMessageI
     if (!res.ok) {
       const errText = await res.text();
       console.error(`[ChatTag] webhook reply failed (${res.status}): ${errText}`);
+      await sendDiscordBotReply(channelId, content, botToken);
       return;
     }
     const webhookMsg = await res.json();
     console.log(`[ChatTag] Webhook reply sent to ${channelId}: ${content.slice(0, 80)}...`);
 
-    // Auto-cleanup after 5 minutes: delete bot reply + user's original message
+    // Auto-cleanup after 5 minutes: only remove the bot's temporary reply.
+    // The user's command message is left intact so command handling is auditable.
     setTimeout(() => {
       // Delete webhook reply
       if (webhookMsg?.id) {
@@ -122,15 +142,29 @@ async function sendDiscordReply(channelId: string, content: string, userMessageI
           method: 'DELETE',
         }).catch(() => {});
       }
-      // Delete user's original command message
-      if (userMessageId) {
-        fetch(`https://discord.com/api/v10/channels/${channelId}/messages/${userMessageId}`, {
-          method: 'DELETE', headers: { Authorization: `Bot ${botToken}` },
-        }).catch(() => {});
-      }
     }, CLEANUP_DELAY_MS);
   } catch (e: any) {
     console.error(`[ChatTag] sendDiscordReply error: ${e.message}`);
+    await sendDiscordBotReply(channelId, content, botToken);
+  }
+}
+
+async function sendDiscordBotReply(channelId: string, content: string, botToken: string): Promise<void> {
+  try {
+    const res = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bot ${botToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ content, allowed_mentions: { parse: [] } }),
+      signal: timeoutSignal(7_000),
+    });
+    if (!res.ok) {
+      console.error(`[ChatTag] bot reply failed (${res.status}): ${await res.text()}`);
+    }
+  } catch (error: any) {
+    console.error(`[ChatTag] bot reply error: ${error.message}`);
   }
 }
 
@@ -294,8 +328,8 @@ export async function handleSpmtCommand(
           await sendDiscordReply(channelId, `❌ ${displayName}: ${realRes.error}`, userMessageId);
         } else {
           const msg = realRes.doublePoints
-            ? `🔥 ${displayName} tagged @${target} for DOUBLE POINTS! @${target} is now it! (Pin has tagged them ${pinCount} times total)`
-            : `🎯 ${displayName} tagged @${target}! @${target} is now it! (Pin has tagged them ${pinCount} times total)`;
+            ? `🔥 ${displayName} tagged @${target} for DOUBLE POINTS! They are now it! (Pin has tagged them ${pinCount} times total)`
+            : `🎯 ${displayName} tagged @${target}! They are now it! (Pin has tagged them ${pinCount} times total)`;
           await sendDiscordReply(channelId, msg, userMessageId);
           await postTagApi('/api/discord/announce', { tagger: displayName, tagged: target, doublePoints: realRes.doublePoints });
           broadcastToTwitch(msg);
@@ -318,8 +352,8 @@ export async function handleSpmtCommand(
     } else {
       const taggerName = twitchLogin || displayName;
       const tagMsg = res.doublePoints
-        ? `🔥 ${taggerName} tagged @${target} for DOUBLE POINTS! @${target} is now it! Type "@spmt join" to play!`
-        : `🎯 ${taggerName} tagged @${target}! @${target} is now it! Type "@spmt join" to play!`;
+        ? `🔥 ${taggerName} tagged @${target} for DOUBLE POINTS! They are now it! Type "@spmt join" to play!`
+        : `🎯 ${taggerName} tagged @${target}! They are now it! Type "@spmt join" to play!`;
       await sendDiscordReply(channelId, tagMsg, userMessageId);
       await postTagApi('/api/discord/announce', {
         tagger: taggerName,
@@ -408,7 +442,7 @@ export async function handleSpmtCommand(
       await sendDiscordReply(channelId, `❌ ${displayName}: ${res.error}`, userMessageId);
     } else {
       const passerName = twitchLogin || displayName;
-      const passMsg = `🎟️ ${passerName} used their PASS to tag @${target} for DOUBLE POINTS! @${target} is now it! Raid, follow, cheer, or sub to earn yours!`;
+      const passMsg = `🎟️ ${passerName} used their PASS to tag @${target} for DOUBLE POINTS! They are now it! Raid, follow, cheer, or sub to earn yours!`;
       await sendDiscordReply(channelId, passMsg, userMessageId);
       await postTagApi('/api/discord/announce', {
         tagger: passerName,
@@ -779,6 +813,10 @@ export async function setMeAsIt(userId: string): Promise<any> {
 
 export async function clearAllImmunity(): Promise<any> {
   return postTagApi('/api/tag', { action: 'clear-all-away', performedBy: 'discord-admin' });
+}
+
+export async function triggerFreeForAll(): Promise<any> {
+  return postTagApi('/api/tag', { action: 'trigger-ffa', performedBy: 'discord-admin' });
 }
 
 export async function generateNewBingoCard(): Promise<any> {
