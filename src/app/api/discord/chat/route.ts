@@ -144,6 +144,23 @@ async function sendDiscordChannelMessage(channelId: string, payload: any) {
   return response.json();
 }
 
+function buildChatTagControlsButtonPayload(serverId: string, messageId?: string) {
+  const payload: any = {
+    content: '🏷️ Chat Tag controls',
+    components: [
+      {
+        type: 1,
+        components: [
+          { type: 2, style: 1, label: 'Controls', custom_id: `chattag_controls_${serverId}` },
+        ],
+      },
+    ],
+    allowed_mentions: { parse: [] },
+  };
+  if (messageId) payload.message_reference = { message_id: messageId };
+  return payload;
+}
+
 async function deleteDiscordMessage(channelId: string, messageId: string) {
   const botToken = process.env.DISCORD_BOT_TOKEN;
   if (!botToken || !channelId || !messageId) return { ok: false, skipped: true };
@@ -497,15 +514,26 @@ export async function POST(request: NextRequest) {
       const normalizedLower = normalizedMsg.toLowerCase().trim();
       if (normalizedLower === '@spmt embed' || normalizedLower === '@spmt panel') {
         try {
-          const { postOrUpdateGameEmbed } = await import('@/lib/chat-tag-service');
-          await postOrUpdateGameEmbed(guildId);
+          const response = await fetch(`${process.env.CHAT_TAG_API_BASE || 'https://chat-tag-new.fly.dev'}/api/discord/announce`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-bot-secret': CHAT_TAG_SERVICE_SECRET },
+            body: JSON.stringify({ refreshOnly: true, message: 'manual discord command' }),
+          });
+          if (!response.ok) {
+            throw new Error(`Chat Tag refresh failed: ${response.status} ${await response.text()}`);
+          }
           await sendDiscordChannelMessage(channelId, { content: '✅ Chat Tag embed refreshed.' });
         } catch (err) {
           console.error('[DiscordChat] Chat Tag embed refresh failed:', err);
-          await sendDiscordChannelMessage(channelId, { content: '❌ Chat Tag embed refresh failed. Check DSH logs.' }).catch(() => {});
+          await sendDiscordChannelMessage(channelId, { content: '❌ Chat Tag embed refresh failed. Check Chat Tag logs.' }).catch(() => {});
         }
         const fanout = await fanoutPromise;
         return NextResponse.json({ success: true, commandHandled: 'chat-tag-embed-refresh', fanout });
+      }
+      if (normalizedLower === '@spmt controls' || normalizedLower === '@spmt control') {
+        const sent = await sendDiscordChannelMessage(channelId, buildChatTagControlsButtonPayload(guildId, messageId));
+        const fanout = await fanoutPromise;
+        return NextResponse.json({ success: true, commandHandled: 'chat-tag-controls', messageId: sent?.id, fanout });
       }
       // Replace Discord user mentions with usernames for target resolution
       const mentionPattern = /<@!?(\d+)>/g;
