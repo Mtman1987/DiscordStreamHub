@@ -339,15 +339,6 @@ class TwitchPollingService {
         console.error(`[TwitchPolling] Leaderboard refresh error:`, lbError);
       }
 
-      // Update Chat Tag game state embed
-      try {
-        const { postOrUpdateGameEmbed } = await import('./chat-tag-service');
-        await postOrUpdateGameEmbed(serverId);
-        console.log(`[TwitchPolling] Chat Tag embed updated`);
-      } catch (chatTagError) {
-        console.error(`[TwitchPolling] Chat Tag embed error:`, chatTagError);
-      }
-
       // Periodic orphan sweep — catch any embeds that slipped through delete failures
       try {
         const { cleanupOrphanedDiscordEmbeds } = await import('./discord-orphan-cleanup-service');
