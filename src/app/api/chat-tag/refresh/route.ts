@@ -10,9 +10,9 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
     const serverId = body.serverId || body.guildId || DEFAULT_SERVER_ID;
 
-    await postOrUpdateGameEmbed(serverId);
+    const result = await postOrUpdateGameEmbed(serverId);
 
-    return NextResponse.json({ success: true, serverId });
+    return NextResponse.json({ success: true, serverId, ...result });
   } catch (error) {
     console.error('[ChatTagRefresh] Failed to refresh Chat Tag embed:', error);
     return NextResponse.json(

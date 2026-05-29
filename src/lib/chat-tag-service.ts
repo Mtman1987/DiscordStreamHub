@@ -136,25 +136,32 @@ async function sendDiscordReply(channelId: string, content: string, userMessageI
 
 async function sendDiscordEmbed(channelId: string, payload: any): Promise<string | null> {
   const botToken = process.env.DISCORD_BOT_TOKEN;
-  if (!botToken) return null;
+  if (!botToken) throw new Error('DISCORD_BOT_TOKEN is not configured');
   const res = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
     method: 'POST',
     headers: { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  if (!res.ok) return null;
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Discord embed post failed (${res.status}): ${text.slice(0, 300) || res.statusText}`);
+  }
   const data = await res.json();
   return data.id || null;
 }
 
 async function editDiscordMessage(channelId: string, messageId: string, payload: any): Promise<void> {
   const botToken = process.env.DISCORD_BOT_TOKEN;
-  if (!botToken) return;
-  await fetch(`https://discord.com/api/v10/channels/${channelId}/messages/${messageId}`, {
+  if (!botToken) throw new Error('DISCORD_BOT_TOKEN is not configured');
+  const res = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages/${messageId}`, {
     method: 'PATCH',
     headers: { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Discord embed edit failed (${res.status}): ${text.slice(0, 300) || res.statusText}`);
+  }
 }
 
 // ── Twitch bot broadcast ──
@@ -715,12 +722,11 @@ export function buildAdminEmbed(gameState: any, serverId: string): any {
 
 // ── Persistent embed management ──
 
-export async function postOrUpdateGameEmbed(serverId: string): Promise<void> {
+export async function postOrUpdateGameEmbed(serverId: string): Promise<{ action: 'updated' | 'posted'; messageId: string }> {
   const secret = process.env.CHAT_TAG_BOT_SECRET || '1234';
   const gameState = await tagApi(`/api/discord/game-state?secret=${secret}`);
   if (!gameState || gameState.error) {
-    console.error('[ChatTag] Failed to fetch game state:', gameState?.error);
-    return;
+    throw new Error(`Failed to fetch game state: ${gameState?.error || 'empty response'}`);
   }
 
   const embedPayload = buildGameStateEmbed(gameState, serverId);
@@ -733,10 +739,10 @@ export async function postOrUpdateGameEmbed(serverId: string): Promise<void> {
   if (storedMessageId) {
     try {
       await editDiscordMessage(CHAT_TAG_CHANNEL_ID, storedMessageId, embedPayload);
-      console.log('[ChatTag] Updated persistent embed');
-      return;
-    } catch {
-      console.log('[ChatTag] Failed to edit, posting new embed');
+      console.log('[ChatTag] Updated persistent embed:', storedMessageId);
+      return { action: 'updated', messageId: storedMessageId };
+    } catch (error: any) {
+      console.log(`[ChatTag] Failed to edit stored embed ${storedMessageId}, posting new embed: ${error.message}`);
     }
   }
 
@@ -744,7 +750,10 @@ export async function postOrUpdateGameEmbed(serverId: string): Promise<void> {
   if (newMessageId) {
     await configRef.set({ embedMessageId: newMessageId, channelId: CHAT_TAG_CHANNEL_ID }, { merge: true });
     console.log('[ChatTag] Posted new persistent embed:', newMessageId);
+    return { action: 'posted', messageId: newMessageId };
   }
+
+  throw new Error('Discord embed post did not return a message id');
 }
 
 // ── Fetch helpers for interactions ──
