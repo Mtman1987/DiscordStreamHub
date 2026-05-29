@@ -576,6 +576,14 @@ export async function handleSpmtCommand(
     ).join(' | ');
     await sendDiscordReply(channelId, `📌 Pin's Top 5: ${top5}`, userMessageId);
   }
+
+  else {
+    await sendDiscordReply(
+      channelId,
+      `❌ ${displayName}: Unknown Chat Tag command \`spmt ${cmd}\`. Try \`spmt help\` or \`spmt controls\`.`,
+      userMessageId
+    );
+  }
 }
 
 // ── Embed builders ──

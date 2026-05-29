@@ -144,8 +144,8 @@ async function sendDiscordChannelMessage(channelId: string, payload: any) {
   return response.json();
 }
 
-function buildChatTagControlsButtonPayload(serverId: string, messageId?: string) {
-  const payload: any = {
+function buildChatTagControlsButtonPayload(serverId: string) {
+  return {
     content: '🏷️ Chat Tag controls',
     components: [
       {
@@ -157,8 +157,6 @@ function buildChatTagControlsButtonPayload(serverId: string, messageId?: string)
     ],
     allowed_mentions: { parse: [] },
   };
-  if (messageId) payload.message_reference = { message_id: messageId };
-  return payload;
 }
 
 async function deleteDiscordMessage(channelId: string, messageId: string) {
@@ -531,7 +529,8 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true, commandHandled: 'chat-tag-embed-refresh', fanout });
       }
       if (normalizedLower === '@spmt controls' || normalizedLower === '@spmt control') {
-        const sent = await sendDiscordChannelMessage(channelId, buildChatTagControlsButtonPayload(guildId, messageId));
+        const sent = await sendDiscordChannelMessage(channelId, buildChatTagControlsButtonPayload(guildId));
+        console.log(`[DiscordChat] Sent Chat Tag controls button: ${sent?.id || 'unknown-message-id'}`);
         const fanout = await fanoutPromise;
         return NextResponse.json({ success: true, commandHandled: 'chat-tag-controls', messageId: sent?.id, fanout });
       }
@@ -546,9 +545,9 @@ export async function POST(request: NextRequest) {
         } catch {}
       }
       console.log(`[DiscordChat] @spmt command detected from ${userName}: ${normalizedMsg} (channelId: ${channelId})`);
-      handleSpmtCommand(normalizedMsg, userId, userName, guildId, channelId, messageId).catch(err =>
-        console.error('[DiscordChat] @spmt handler error:', err)
-      );
+      await handleSpmtCommand(normalizedMsg, userId, userName, guildId, channelId, messageId);
+      const fanout = await fanoutPromise;
+      return NextResponse.json({ success: true, commandHandled: 'chat-tag-command', fanout });
     }
 
     // Check if user is in our community
