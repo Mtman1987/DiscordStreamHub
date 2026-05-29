@@ -29,11 +29,31 @@ function getHearMeOutUrl() {
   return (process.env.HEARMEOUT_URL || 'https://hearmeout-main.fly.dev').replace(/\/$/, '');
 }
 
+async function fetchHearMeOutWatchSession(signal: AbortSignal) {
+  const url = `${getHearMeOutUrl()}/api/watch/sessions/${HMO_WATCH_SESSION_ID}?format=json`;
+  const response = await fetch(url, { signal, cache: 'no-store' });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) return null;
+  return payload?.session || payload;
+}
+
+async function resolveHearMeOutToggleAction(action: string, signal: AbortSignal) {
+  if (action !== 'play-pause' && action !== 'mute-unmute') return action;
+
+  const session = await fetchHearMeOutWatchSession(signal).catch(() => null);
+  if (action === 'play-pause') {
+    return session?.playback?.status === 'playing' ? 'pause' : 'play';
+  }
+
+  return session?.playback?.muted === true ? 'unmute' : 'mute';
+}
+
 async function runHearMeOutWatchControl(action: string) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10_000);
   try {
-    const url = `${getHearMeOutUrl()}/api/watch/sessions/${HMO_WATCH_SESSION_ID}/quick-control?action=${encodeURIComponent(action)}&format=json`;
+    const resolvedAction = await resolveHearMeOutToggleAction(action, controller.signal);
+    const url = `${getHearMeOutUrl()}/api/watch/sessions/${HMO_WATCH_SESSION_ID}/quick-control?action=${encodeURIComponent(resolvedAction)}&format=json`;
     const response = await fetch(url, { signal: controller.signal, cache: 'no-store' });
     const payload = await response.json().catch(() => null);
     if (!response.ok) {
@@ -43,7 +63,7 @@ async function runHearMeOutWatchControl(action: string) {
     const title = payload?.session?.current?.item?.title || 'watch room';
     const status = payload?.session?.playback?.status || 'updated';
     const muted = payload?.session?.playback?.muted;
-    const label = action === 'next' ? 'Skipped' : action === 'clear' ? 'Cleared' : action[0].toUpperCase() + action.slice(1);
+    const label = resolvedAction === 'next' ? 'Skipped' : resolvedAction === 'clear' ? 'Cleared' : resolvedAction[0].toUpperCase() + resolvedAction.slice(1);
     const audio = typeof muted === 'boolean' ? (muted ? ', muted' : ', unmuted') : '';
     return { ok: true, message: `${label}: **${title}** (${status}${audio})` };
   } catch (error: any) {
