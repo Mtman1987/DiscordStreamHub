@@ -25,6 +25,50 @@ function ephemeral(content: string, extra: any = {}) {
 const CHAT_TAG_SERVICE_SECRET = process.env.CHAT_TAG_BOT_SECRET || process.env.BOT_SECRET_KEY || '1234';
 const HMO_WATCH_SESSION_ID = 'discord-watch-room';
 
+function buildChatTagControlRows(serverId: string) {
+  return [
+    {
+      type: 1,
+      components: [
+        { type: 2, style: 3, label: 'Join Game', custom_id: `chattag_join_${serverId}` },
+        { type: 2, style: 1, label: 'Status', custom_id: `chattag_status_${serverId}` },
+        { type: 2, style: 1, label: 'My Score', custom_id: `chattag_score_${serverId}` },
+        { type: 2, style: 4, label: 'Away', custom_id: `chattag_togglesleep_${serverId}` },
+        { type: 2, style: 2, label: 'Admin', custom_id: `chattag_admin_${serverId}` },
+      ],
+    },
+  ];
+}
+
+async function deleteDiscordMessage(channelId?: string, messageId?: string) {
+  const botToken = process.env.DISCORD_BOT_TOKEN;
+  if (!botToken || !channelId || !messageId) return;
+
+  const response = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages/${messageId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bot ${botToken}` },
+  }).catch((error) => {
+    console.error('[DiscordInteractions] Failed to delete Chat Tag controls button:', error);
+    return null;
+  });
+
+  if (response && !response.ok && response.status !== 404) {
+    console.error(`[DiscordInteractions] Failed to delete Chat Tag controls button: ${response.status} ${await response.text().catch(() => '')}`);
+  }
+}
+
+async function refreshChatTagEmbed(reason: string) {
+  const response = await fetch(`${process.env.CHAT_TAG_API_BASE || 'https://chat-tag-new.fly.dev'}/api/discord/announce`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-bot-secret': CHAT_TAG_SERVICE_SECRET },
+    body: JSON.stringify({ refreshOnly: true, message: reason }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Chat Tag refresh failed: ${response.status} ${await response.text().catch(() => '')}`);
+  }
+}
+
 function getHearMeOutUrl() {
   return (process.env.HEARMEOUT_URL || 'https://hearmeout-main.fly.dev').replace(/\/$/, '');
 }
@@ -127,6 +171,16 @@ export async function POST(request: NextRequest) {
         const serverId = body.guild_id || process.env.HARDCODED_GUILD_ID;
         const clickerId = body.member?.user?.id || body.user?.id;
         const clickerName = body.member?.user?.username || body.user?.username || 'Unknown';
+
+        if (customId.startsWith('chattag_controls_')) {
+          deleteDiscordMessage(body.channel_id || body.message?.channel_id, body.message?.id).catch((error) => {
+            console.error('[DiscordInteractions] Chat Tag controls cleanup failed:', error);
+          });
+          return ephemeral('🏷️ **Chat Tag Controls**', {
+            components: buildChatTagControlRows(serverId),
+            allowed_mentions: { parse: [] },
+          });
+        }
 
         if (customId.startsWith('chattag_score_')) {
           const { fetchTagData, buildScoreEmbed } = await import('@/lib/chat-tag-service');
@@ -249,7 +303,7 @@ export async function POST(request: NextRequest) {
         }
 
         if (customId.startsWith('chattag_makemeit_')) {
-          const { setMeAsIt, fetchTagData, postOrUpdateGameEmbed } = await import('@/lib/chat-tag-service');
+          const { setMeAsIt, fetchTagData } = await import('@/lib/chat-tag-service');
           const twitchLogin = await (async () => {
             try {
               const doc = await db.collection('servers').doc(serverId).collection('users').doc(clickerId).get();
@@ -261,26 +315,32 @@ export async function POST(request: NextRequest) {
           const player = data?.players?.find((p: any) => (p.twitchUsername || '').toLowerCase() === twitchLogin);
           if (!player) return ephemeral('❌ You\'re not in the tag game.');
           await setMeAsIt(player.id);
-          await postOrUpdateGameEmbed(serverId).catch((error) => {
-            console.error('[ChatTag] Failed to refresh embed after Make Me IT:', error);
+          await refreshChatTagEmbed('Make Me IT button').catch((error) => {
+            console.error('[ChatTag] Failed to refresh Chat Tag-owned embed after Make Me IT:', error);
           });
           return ephemeral(`✅ ${clickerName} is now IT!`);
         }
 
         if (customId.startsWith('chattag_clearimmunity_')) {
-          const { clearAllImmunity, postOrUpdateGameEmbed } = await import('@/lib/chat-tag-service');
+          const { clearAllImmunity } = await import('@/lib/chat-tag-service');
           await clearAllImmunity();
-          await postOrUpdateGameEmbed(serverId).catch((error) => {
-            console.error('[ChatTag] Failed to refresh embed after clearing immunity:', error);
+          await refreshChatTagEmbed('clear immunity button').catch((error) => {
+            console.error('[ChatTag] Failed to refresh Chat Tag-owned embed after clearing immunity:', error);
           });
           return ephemeral('✅ All immunity cleared!');
         }
 
         if (customId.startsWith('chattag_triggerffa_')) {
-          const { triggerFreeForAll, postOrUpdateGameEmbed } = await import('@/lib/chat-tag-service');
-          await triggerFreeForAll();
-          await postOrUpdateGameEmbed(serverId).catch((error) => {
-            console.error('[ChatTag] Failed to refresh embed after FFA:', error);
+          const response = await fetch(`${process.env.CHAT_TAG_API_BASE || 'https://chat-tag-new.fly.dev'}/api/tag`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-bot-secret': CHAT_TAG_SERVICE_SECRET },
+            body: JSON.stringify({ action: 'trigger-ffa', performedBy: 'discord-admin' }),
+          });
+          if (!response.ok) {
+            return ephemeral(`❌ Free-for-all failed: ${response.status}`);
+          }
+          await refreshChatTagEmbed('free-for-all button').catch((error) => {
+            console.error('[ChatTag] Failed to refresh Chat Tag-owned embed after FFA:', error);
           });
           return ephemeral('🔥 Free-for-all triggered. Anyone can tag for double points.');
         }
