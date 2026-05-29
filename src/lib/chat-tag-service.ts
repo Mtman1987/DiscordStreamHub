@@ -720,40 +720,24 @@ export function buildAdminEmbed(gameState: any, serverId: string): any {
   };
 }
 
-// ── Persistent embed management ──
+// ── Persistent embed compatibility ──
 
-export async function postOrUpdateGameEmbed(serverId: string): Promise<{ action: 'updated' | 'posted'; messageId: string }> {
-  const secret = process.env.CHAT_TAG_BOT_SECRET || '1234';
-  const gameState = await tagApi(`/api/discord/game-state?secret=${secret}`);
-  if (!gameState || gameState.error) {
-    throw new Error(`Failed to fetch game state: ${gameState?.error || 'empty response'}`);
+export async function postOrUpdateGameEmbed(serverId: string): Promise<{ action: string; messageId: string }> {
+  const secret = process.env.CHAT_TAG_BOT_SECRET || process.env.BOT_SECRET_KEY || '1234';
+  const response = await fetch(`${CHAT_TAG_API}/api/discord/announce`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-bot-secret': secret },
+    body: JSON.stringify({ refreshOnly: true, message: `dsh compatibility refresh for ${serverId}` }),
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok || payload?.success === false || payload?.embed?.ok === false) {
+    throw new Error(payload?.error || payload?.embed?.error || `Chat Tag returned ${response.status}`);
   }
 
-  const embedPayload = buildGameStateEmbed(gameState, serverId);
-
-  // Check for stored message ID
-  const configRef = db.collection('servers').doc(serverId).collection('config').doc('chatTag');
-  const configDoc = await configRef.get();
-  const storedMessageId = configDoc.data()?.embedMessageId;
-
-  if (storedMessageId) {
-    try {
-      await editDiscordMessage(CHAT_TAG_CHANNEL_ID, storedMessageId, embedPayload);
-      console.log('[ChatTag] Updated persistent embed:', storedMessageId);
-      return { action: 'updated', messageId: storedMessageId };
-    } catch (error: any) {
-      console.log(`[ChatTag] Failed to edit stored embed ${storedMessageId}, posting new embed: ${error.message}`);
-    }
-  }
-
-  const newMessageId = await sendDiscordEmbed(CHAT_TAG_CHANNEL_ID, embedPayload);
-  if (newMessageId) {
-    await configRef.set({ embedMessageId: newMessageId, channelId: CHAT_TAG_CHANNEL_ID }, { merge: true });
-    console.log('[ChatTag] Posted new persistent embed:', newMessageId);
-    return { action: 'posted', messageId: newMessageId };
-  }
-
-  throw new Error('Discord embed post did not return a message id');
+  return {
+    action: payload?.embed?.action || 'refreshed',
+    messageId: payload?.embed?.messageId || '',
+  };
 }
 
 // ── Fetch helpers for interactions ──
