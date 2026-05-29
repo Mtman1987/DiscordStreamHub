@@ -416,7 +416,6 @@ export async function handleSpmtCommand(
     } else {
       const passerName = twitchLogin || displayName;
       const passMsg = `🎟️ ${passerName} used their PASS to tag @${target} for DOUBLE POINTS! @${target} is now it! Raid, follow, cheer, or sub to earn yours!`;
-      await sendDiscordReply(channelId, passMsg, userMessageId);
       await postTagApi('/api/discord/announce', {
         tagger: passerName,
         tagged: target,
