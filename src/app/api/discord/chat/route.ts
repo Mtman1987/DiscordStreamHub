@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { awardPoints } from '@/lib/points-service';
-import { handleSpmtCommand } from '@/lib/chat-tag-service';
 // watch-request-service moved to hearmeout
 const handleWatchRequestCommand = async (...args: any[]) => null;
 const parseWatchAcceptCommand = (s: string) => null;
@@ -593,25 +592,6 @@ export async function POST(request: NextRequest) {
         normalizedMsg = '@spmt ' + message.substring(5);
       }
       const normalizedLower = normalizedMsg.toLowerCase().trim();
-      if (normalizedLower === '@spmt embed' || normalizedLower === '@spmt panel') {
-        try {
-          const response = await fetch(`${process.env.CHAT_TAG_API_BASE || 'https://chat-tag-new.fly.dev'}/api/discord/announce`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'x-bot-secret': CHAT_TAG_SERVICE_SECRET },
-            body: JSON.stringify({ refreshOnly: true, message: 'manual discord command' }),
-          });
-          if (!response.ok) {
-            throw new Error(`Chat Tag refresh failed: ${response.status} ${await response.text()}`);
-          }
-          await sendDiscordChannelMessage(channelId, { content: '✅ Chat Tag embed refreshed.' });
-        } catch (err) {
-          console.error('[DiscordChat] Chat Tag embed refresh failed:', err);
-          await sendDiscordChannelMessage(channelId, { content: '❌ Chat Tag embed refresh failed. Check Chat Tag logs.' }).catch(() => {});
-        }
-        const deletedCommand = await deleteDiscordMessage(channelId, messageId);
-        const fanout = await fanoutPromise;
-        return NextResponse.json({ success: true, commandHandled: 'chat-tag-embed-refresh', deletedCommand, fanout });
-      }
       if (normalizedLower === '@spmt controls' || normalizedLower === '@spmt control') {
         const sent = await sendChatTagControlsButton(channelId, guildId);
         const deletedCommand = await deleteDiscordMessage(channelId, messageId);
@@ -619,21 +599,9 @@ export async function POST(request: NextRequest) {
         const fanout = await fanoutPromise;
         return NextResponse.json({ success: true, commandHandled: 'chat-tag-controls', messageId: sent?.id, deletedCommand, fanout });
       }
-      // Replace Discord user mentions with usernames for target resolution
-      const mentionPattern = /<@!?(\d+)>/g;
-      let match;
-      while ((match = mentionPattern.exec(normalizedMsg)) !== null) {
-        try {
-          const mentionedDoc = await db.collection('servers').doc(guildId).collection('users').doc(match[1]).get();
-          const twitchName = mentionedDoc.data()?.twitchLogin || mentionedDoc.data()?.username;
-          if (twitchName) normalizedMsg = normalizedMsg.replace(match[0], twitchName);
-        } catch {}
-      }
-      console.log(`[DiscordChat] @spmt command detected from ${userName}: ${normalizedMsg} (channelId: ${channelId})`);
-      await handleSpmtCommand(normalizedMsg, userId, userName, guildId, channelId, messageId);
-      const deletedCommand = await deleteDiscordMessage(channelId, messageId);
+      console.log(`[DiscordChat] Ignoring non-controls @spmt command; Chat Tag owns it: ${normalizedMsg}`);
       const fanout = await fanoutPromise;
-      return NextResponse.json({ success: true, commandHandled: 'chat-tag-command', deletedCommand, fanout });
+      return NextResponse.json({ success: true, skipped: 'chat-tag-owned-command', fanout });
     }
 
     // Check if user is in our community
