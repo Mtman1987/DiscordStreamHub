@@ -525,8 +525,9 @@ export async function POST(request: NextRequest) {
           console.error('[DiscordChat] Chat Tag embed refresh failed:', err);
           await sendDiscordChannelMessage(channelId, { content: '❌ Chat Tag embed refresh failed. Check Chat Tag logs.' }).catch(() => {});
         }
+        const deletedCommand = await deleteDiscordMessage(channelId, messageId);
         const fanout = await fanoutPromise;
-        return NextResponse.json({ success: true, commandHandled: 'chat-tag-embed-refresh', fanout });
+        return NextResponse.json({ success: true, commandHandled: 'chat-tag-embed-refresh', deletedCommand, fanout });
       }
       if (normalizedLower === '@spmt controls' || normalizedLower === '@spmt control') {
         const sent = await sendDiscordChannelMessage(channelId, buildChatTagControlsButtonPayload(guildId));
@@ -547,8 +548,9 @@ export async function POST(request: NextRequest) {
       }
       console.log(`[DiscordChat] @spmt command detected from ${userName}: ${normalizedMsg} (channelId: ${channelId})`);
       await handleSpmtCommand(normalizedMsg, userId, userName, guildId, channelId, messageId);
+      const deletedCommand = await deleteDiscordMessage(channelId, messageId);
       const fanout = await fanoutPromise;
-      return NextResponse.json({ success: true, commandHandled: 'chat-tag-command', fanout });
+      return NextResponse.json({ success: true, commandHandled: 'chat-tag-command', deletedCommand, fanout });
     }
 
     // Check if user is in our community
