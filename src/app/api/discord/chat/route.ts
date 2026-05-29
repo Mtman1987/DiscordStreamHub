@@ -12,6 +12,11 @@ const discordChatCooldowns = new Map<string, number>();
 const processedDiscordMessages = new Map<string, number>();
 const CHAT_TAG_SERVICE_SECRET = process.env.CHAT_TAG_BOT_SECRET || process.env.BOT_SECRET_KEY || '1234';
 const PROCESSED_MESSAGE_TTL_MS = 10 * 60 * 1000;
+const DISCORD_ACTIVITY_APPLICATION_ID =
+  process.env.DISCORD_ACTIVITY_APPLICATION_ID ||
+  process.env.DISCORD_APP_ID ||
+  process.env.DISCORD_CLIENT_ID ||
+  process.env.NEXT_PUBLIC_DISCORD_CLIENT_ID;
 
 type FanoutTarget = {
   name: string;
@@ -169,10 +174,6 @@ async function createDiscordDmChannel(userId: string) {
   return response.json();
 }
 
-function getHearMeOutActivityUrl() {
-  return `${(process.env.HEARMEOUT_URL || 'https://hearmeout-main.fly.dev').replace(/\/$/, '')}/activity`;
-}
-
 function getPublicBaseUrl(origin?: string) {
   return (process.env.NEXT_PUBLIC_APP_URL || process.env.PUBLIC_BASE_URL || origin || '').replace(/\/$/, '');
 }
@@ -185,12 +186,16 @@ function getSpaceMountainIconUrl(origin?: string) {
   return baseUrl ? `${baseUrl}/cosmicraid.png` : undefined;
 }
 
-function findJoinUrl(payload: any) {
+function isDiscordActivityInviteUrl(url: string) {
+  return /^https:\/\/(discord\.gg|discord\.com\/invite)\//i.test(url);
+}
+
+function findDiscordActivityInviteUrl(payload: any) {
   for (const row of payload?.components || []) {
     for (const component of row?.components || []) {
       if (component?.type === 2 && component?.style === 5 && typeof component?.url === 'string') {
         const label = String(component.label || '').toLowerCase();
-        if (label.includes('join') || component.url.includes('/activity') || component.url.includes('discord.gg')) {
+        if (label.includes('join') && isDiscordActivityInviteUrl(component.url)) {
           return component.url;
         }
       }
@@ -198,12 +203,50 @@ function findJoinUrl(payload: any) {
   }
 
   for (const embed of payload?.embeds || []) {
-    if (typeof embed?.url === 'string' && (embed.url.includes('/activity') || embed.url.includes('discord.gg'))) {
+    if (typeof embed?.url === 'string' && isDiscordActivityInviteUrl(embed.url)) {
       return embed.url;
     }
   }
 
   return undefined;
+}
+
+function getActivityVoiceChannelId(data: any) {
+  return data.voiceChannelId
+    || data.voice_channel_id
+    || data.voiceChannel?.id
+    || data.voice?.channelId
+    || data.voice?.channel_id
+    || data.member?.voice?.channel_id
+    || process.env.DISCORD_ACTIVITY_VOICE_CHANNEL_ID;
+}
+
+async function createDiscordActivityInvite(voiceChannelId: string) {
+  const botToken = process.env.DISCORD_BOT_TOKEN;
+  if (!botToken) throw new Error('DISCORD_BOT_TOKEN is not configured');
+  if (!DISCORD_ACTIVITY_APPLICATION_ID) throw new Error('DISCORD_ACTIVITY_APPLICATION_ID is not configured');
+
+  const response = await fetch(`https://discord.com/api/v10/channels/${voiceChannelId}/invites`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bot ${botToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      max_age: 3600,
+      max_uses: 0,
+      target_type: 2,
+      target_application_id: DISCORD_ACTIVITY_APPLICATION_ID,
+    }),
+  });
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(`Discord Activity invite failed: ${response.status} ${JSON.stringify(payload)}`);
+  }
+
+  if (!payload?.code) throw new Error('Discord did not return an Activity invite code.');
+  return `https://discord.gg/${payload.code}`;
 }
 
 function compactHearMeOutControls(components: any[] = []) {
@@ -240,11 +283,11 @@ function extractWatchTitle(payload: any) {
   return contentTitle || undefined;
 }
 
-function normalizeHearMeOutReply(reply: any, origin?: string) {
+function normalizeHearMeOutReply(reply: any, origin?: string, activityInviteUrl?: string) {
   if (!reply || typeof reply === 'string') return reply;
 
   const payload = { ...reply };
-  const joinUrl = findJoinUrl(payload);
+  const joinUrl = findDiscordActivityInviteUrl(payload) || activityInviteUrl;
   const watchTitle = extractWatchTitle(payload);
   const authorIcon = getSpaceMountainIconUrl(origin);
   const originalEmbed = payload.embeds?.[0] || {};
@@ -262,15 +305,15 @@ function normalizeHearMeOutReply(reply: any, origin?: string) {
   return payload;
 }
 
-function buildHearMeOutControlsPayload(options: { joinUrl?: string; includeJoinPreview?: boolean; origin?: string } = {}) {
-  const { joinUrl, includeJoinPreview = false, origin } = options;
+function buildHearMeOutControlsPayload(options: { activityInviteUrl?: string; includeJoinPreview?: boolean; origin?: string } = {}) {
+  const { activityInviteUrl, includeJoinPreview = false, origin } = options;
   const authorIcon = getSpaceMountainIconUrl(origin);
 
   return {
     content: '',
     embeds: [{
       title: 'HearMeOut',
-      ...(joinUrl && includeJoinPreview ? { url: joinUrl } : {}),
+      ...(activityInviteUrl && includeJoinPreview ? { url: activityInviteUrl } : {}),
       description: 'Control the shared HearMeOut watch room.',
       color: 0x22c55e,
       author: { name: 'Watch Controls', ...(authorIcon ? { icon_url: authorIcon } : {}) },
@@ -305,6 +348,18 @@ function getHearMeOutFanoutReplies(fanout: any[]) {
   const replies = hmo?.payload?.replies;
   if (Array.isArray(replies)) return replies;
   return hmo?.payload?.reply ? [hmo.payload.reply] : [];
+}
+
+async function createDiscordActivityInviteForPayload(data: any) {
+  const voiceChannelId = getActivityVoiceChannelId(data);
+  if (!voiceChannelId) return undefined;
+
+  try {
+    return await createDiscordActivityInvite(voiceChannelId);
+  } catch (error) {
+    console.warn('[DiscordChat] Could not create Discord Activity invite:', error);
+    return undefined;
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -368,16 +423,34 @@ export async function POST(request: NextRequest) {
 
     if (/^!invite$/i.test(message.trim()) && channelId) {
       const deletedCommand = await deleteDiscordMessage(channelId, messageId);
-      const payload = buildHearMeOutControlsPayload({
-        joinUrl: getHearMeOutActivityUrl(),
-        includeJoinPreview: true,
-        origin: request.nextUrl.origin,
-      });
-      payload.embeds[0].description = 'Open the HearMeOut Discord Activity without queueing another video.';
-      payload.embeds[0].author.name = 'Activity Invite';
-      payload.components = [];
-      const sent = await sendDiscordChannelMessage(channelId, payload);
-      return NextResponse.json({ success: true, commandHandled: 'hearmeout-invite', sent, deletedCommand });
+      const voiceChannelId = getActivityVoiceChannelId(data);
+      if (!voiceChannelId) {
+        const sent = await sendDiscordChannelMessage(channelId, {
+          content: 'Join a voice channel first, then run `!invite` again so I can create the Discord Activity invite.',
+          allowed_mentions: { parse: [] },
+        });
+        return NextResponse.json({ success: true, commandHandled: 'hearmeout-invite', sent, deletedCommand, error: 'missing-voice-channel' });
+      }
+
+      try {
+        const activityInviteUrl = await createDiscordActivityInvite(voiceChannelId);
+        const payload = buildHearMeOutControlsPayload({
+          activityInviteUrl,
+          includeJoinPreview: true,
+          origin: request.nextUrl.origin,
+        });
+        payload.embeds[0].description = 'Open the Discord Activity without queueing another video.';
+        payload.embeds[0].author.name = 'Activity Invite';
+        payload.components = [];
+        const sent = await sendDiscordChannelMessage(channelId, payload);
+        return NextResponse.json({ success: true, commandHandled: 'hearmeout-invite', sent, deletedCommand });
+      } catch (error: any) {
+        const sent = await sendDiscordChannelMessage(channelId, {
+          content: `I could not create a Discord Activity invite: ${error?.message || 'unknown error'}`,
+          allowed_mentions: { parse: [] },
+        });
+        return NextResponse.json({ success: true, commandHandled: 'hearmeout-invite', sent, deletedCommand, error: error?.message || 'invite-create-failed' });
+      }
     }
 
     const fanoutPromise = fanoutDiscordChat(body, message);
@@ -402,9 +475,10 @@ export async function POST(request: NextRequest) {
       console.log(`[DiscordChat] Watch request command skipped because DISCORD_CHAT_HANDLE_WATCH is not true: ${message}`);
       const fanout = await fanoutPromise;
       const replies = getHearMeOutFanoutReplies(fanout);
+      const activityInviteUrl = await createDiscordActivityInviteForPayload(data);
       const discordSends = await Promise.all(replies.map((reply) => sendDiscordChannelMessage(
         channelId,
-        typeof reply === 'string' ? { content: reply, allowed_mentions: { parse: [] } } : normalizeHearMeOutReply(reply, request.nextUrl.origin)
+        typeof reply === 'string' ? { content: reply, allowed_mentions: { parse: [] } } : normalizeHearMeOutReply(reply, request.nextUrl.origin, activityInviteUrl)
       )));
       const deletedCommand = await deleteDiscordMessage(channelId, messageId);
       return NextResponse.json({ success: true, skipped: 'watch-command-handled-by-voice-bot', fanout, discordSends, deletedCommand });
