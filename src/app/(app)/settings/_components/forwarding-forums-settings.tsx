@@ -23,6 +23,7 @@ const emptyMapping = (): Mapping => ({ sourceChannelId: '', threadId: '', label:
 
 export function ForwardingForumsSettings() {
   const { toast } = useToast();
+  const [ruleLabel, setRuleLabel] = React.useState('');
   const [sourceServerId, setSourceServerId] = React.useState('');
   const [destinationServerId, setDestinationServerId] = React.useState('');
   const [mappings, setMappings] = React.useState<Mapping[]>([emptyMapping()]);
@@ -46,6 +47,7 @@ export function ForwardingForumsSettings() {
       const res = await fetch(`/api/settings/forwarding-forums?sourceServerId=${encodeURIComponent(sourceServerId.trim())}`);
       if (!res.ok) throw new Error();
       const data = await res.json();
+      setRuleLabel(data.ruleLabel || '');
       setDestinationServerId(data.destinationServerId || '');
       setForumChannelId(data.forumChannelId || '');
       setForwardingMode(data.forwardingMode === 'single-thread' ? 'single-thread' : 'per-source-thread');
@@ -98,6 +100,7 @@ export function ForwardingForumsSettings() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          ruleLabel: ruleLabel.trim() || `${sourceServerId.trim()} → ${destinationServerId.trim()}`,
           sourceServerId: sourceServerId.trim(),
           destinationServerId: destinationServerId.trim(),
           forumChannelId: forwardingMode === 'per-source-thread' ? forumChannelId.trim() : '',
@@ -136,6 +139,18 @@ export function ForwardingForumsSettings() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        <div className="space-y-1">
+          <Label className="text-xs">Rule Label</Label>
+          <Input
+            placeholder="e.g. Space Mountain inbound"
+            value={ruleLabel}
+            onChange={e => setRuleLabel(e.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">
+            Friendly name for this forwarding rule so you can tell it apart from other partner flows.
+          </p>
+        </div>
+
         <div className="grid gap-3 md:grid-cols-2">
           <div className="space-y-1">
             <Label className="text-xs">Source Server ID</Label>
@@ -161,10 +176,6 @@ export function ForwardingForumsSettings() {
           <Button variant="outline" size="sm" onClick={loadRule} disabled={isLoading || !sourceServerId.trim()}>
             {isLoading ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <RefreshCw className="h-4 w-4 mr-1" />}
             Load Rule
-          </Button>
-          <Button size="sm" onClick={save} disabled={isSaving}>
-            {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
-            Save Rule
           </Button>
         </div>
 

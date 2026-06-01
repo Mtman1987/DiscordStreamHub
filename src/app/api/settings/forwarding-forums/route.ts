@@ -4,6 +4,7 @@ import { db } from '@/lib/db';
 /**
  * GET  /api/settings/forwarding-forums?sourceServerId=xxx
  * POST /api/settings/forwarding-forums  {
+ *   ruleLabel,
  *   sourceServerId,
  *   destinationServerId,
  *   forumChannelId,
@@ -16,6 +17,7 @@ import { db } from '@/lib/db';
  *
  * Stores at: servers/{sourceServerId}/config/forwardingForums
  *   {
+ *     ruleLabel,
  *     sourceServerId,
  *     destinationServerId,
  *     forumChannelId,
@@ -34,6 +36,7 @@ export async function GET(request: NextRequest) {
   try {
     const doc = await db.collection('servers').doc(sourceServerId).collection('config').doc('forwardingForums').get();
     return NextResponse.json(doc.exists ? doc.data() : {
+      ruleLabel: '',
       sourceServerId,
       destinationServerId: '',
       mappings: {},
@@ -50,6 +53,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    const ruleLabel = typeof body.ruleLabel === 'string' ? body.ruleLabel.trim() : '';
     const sourceServerId = String(body.sourceServerId || body.serverId || '').trim();
     const destinationServerId = String(body.destinationServerId || '').trim();
     const {
@@ -67,6 +71,7 @@ export async function POST(request: NextRequest) {
 
     await db.collection('servers').doc(sourceServerId).collection('config').doc('forwardingForums').set(
       {
+        ruleLabel: ruleLabel || `${sourceServerId} → ${destinationServerId}`,
         sourceServerId,
         destinationServerId,
         forumChannelId: forumChannelId || undefined,
