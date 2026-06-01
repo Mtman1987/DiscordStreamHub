@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { writeFile, mkdir, readdir, unlink } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
+import { getStoragePath } from '@/lib/runtime-config';
 
-const STORAGE_PATH = process.env.STORAGE_PATH || '/data/clips';
+const STORAGE_PATH = getStoragePath();
 const MAX_GIFS_PER_STREAMER = 5;
 const WORKER_SECRET = process.env.CLIP_WORKER_SECRET || process.env.BOT_SECRET_KEY || '1234';
 

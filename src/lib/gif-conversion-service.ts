@@ -8,9 +8,10 @@ import { join } from 'path';
 import { existsSync } from 'fs';
 import puppeteer from 'puppeteer';
 import { getClipVideoUrl } from './clip-url-finder';
+import { getStoragePath } from './runtime-config';
 
 const execAsync = promisify(exec);
-const STORAGE_PATH = process.env.STORAGE_PATH || '/data/clips';
+const STORAGE_PATH = getStoragePath();
 
 export interface GifConversionOptions {
   serverId?: string;

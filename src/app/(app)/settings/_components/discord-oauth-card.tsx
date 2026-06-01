@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { ExternalLink, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { getRuntimeConfigClient } from '@/lib/runtime-config-client';
 
 interface DiscordOAuthCardProps {
   serverId: string;
@@ -17,6 +18,13 @@ export function DiscordOAuthCard({ serverId }: DiscordOAuthCardProps) {
   const [isConnected, setIsConnected] = React.useState(false);
   const [userInfo, setUserInfo] = React.useState<any>(null);
   const [isLoading, setIsLoading] = React.useState(false);
+  const [clientId, setClientId] = React.useState('');
+
+  React.useEffect(() => {
+    getRuntimeConfigClient().then((config) => {
+      setClientId(config?.publicIds?.discordClientId || '');
+    }).catch(() => setClientId(''));
+  }, []);
 
   const checkOAuthStatus = React.useCallback(async () => {
     try {
@@ -39,9 +47,17 @@ export function DiscordOAuthCard({ serverId }: DiscordOAuthCardProps) {
 
   const handleDiscordOAuth = () => {
     setIsLoading(true);
-    const clientId = process.env.NEXT_PUBLIC_DISCORD_CLIENT_ID || '1279582181768957963';
-    const redirectUri = encodeURIComponent('https://discord-stream-hub-new.fly.dev/api/discord/oauth/callback');
+    const redirectUri = encodeURIComponent(`${window.location.origin}/api/discord/oauth/callback`);
     const scope = encodeURIComponent('identify email guilds');
+    if (!clientId) {
+      setIsLoading(false);
+      toast({
+        title: 'Discord OAuth unavailable',
+        description: 'Missing Discord client ID in the app configuration.',
+        variant: 'destructive',
+      });
+      return;
+    }
     
     const authUrl = `https://discord.com/api/oauth2/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}&state=hearmeout`;
     
@@ -125,7 +141,7 @@ export function DiscordOAuthCard({ serverId }: DiscordOAuthCardProps) {
               Disconnect Discord
             </Button>
           ) : (
-            <Button onClick={handleDiscordOAuth} disabled={isLoading}>
+            <Button onClick={handleDiscordOAuth} disabled={isLoading || !clientId}>
               {isLoading ? (
                 <>
                   <RefreshCw className="h-4 w-4 mr-2 animate-spin" />

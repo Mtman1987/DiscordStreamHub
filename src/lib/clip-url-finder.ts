@@ -1,5 +1,7 @@
 'use server';
 
+import { getTwitchClientId } from '@/lib/runtime-config';
+
 // Clip URL finder - uses Twitch API fallback only in production
 export async function getClipVideoUrl(clipUrl: string): Promise<string | null> {
   try {
@@ -10,7 +12,7 @@ export async function getClipVideoUrl(clipUrl: string): Promise<string | null> {
     console.log(`[ClipUrlFinder] Getting video URL for clip: ${clipSlug}`);
     
     // Use Twitch API to get clip info
-    const twitchClientId = process.env.TWITCH_CLIENT_ID;
+    const twitchClientId = getTwitchClientId();
     const twitchClientSecret = process.env.TWITCH_CLIENT_SECRET;
     
     if (!twitchClientId || !twitchClientSecret) {

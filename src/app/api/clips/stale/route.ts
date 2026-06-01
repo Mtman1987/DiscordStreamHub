@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { readdir } from 'fs/promises';
 import { existsSync } from 'fs';
+import { getHardcodedGuildId, getStoragePath } from '@/lib/runtime-config';
 
-const STORAGE_PATH = process.env.STORAGE_PATH || '/data/clips';
+const STORAGE_PATH = getStoragePath();
 const STALE_DAYS = 30;
 const WORKER_SECRET = process.env.CLIP_WORKER_SECRET || process.env.BOT_SECRET_KEY || '1234';
 
@@ -16,7 +17,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const serverId = request.nextUrl.searchParams.get('serverId') || process.env.HARDCODED_GUILD_ID || '';
+  const serverId = request.nextUrl.searchParams.get('serverId') || getHardcodedGuildId() || '';
   if (!serverId) {
     return NextResponse.json({ error: 'serverId required' }, { status: 400 });
   }

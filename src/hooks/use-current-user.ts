@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { getRuntimeConfigClient } from '@/lib/runtime-config-client';
 
 interface CurrentUser {
   id: string;
@@ -21,29 +22,37 @@ export function useCurrentUser() {
 
   useEffect(() => {
     const userId = localStorage.getItem('discordUserId');
-    const serverId = localStorage.getItem('discordServerId') || process.env.NEXT_PUBLIC_HARDCODED_GUILD_ID || '1240832965865635881';
-    const hardcodedAdminId = process.env.NEXT_PUBLIC_HARDCODED_ADMIN_DISCORD_ID || '767875979561009173';
-    const cacheKey = userId && serverId ? `${serverId}:${userId}` : null;
-    if (_cache.fetched && _cache.key === cacheKey) { setUser(_cache.user); setIsLoading(false); return; }
     if (!userId) { setIsLoading(false); _cache = { key: null, user: null, fetched: true }; return; }
 
-    // Hardcoded admin always gets in, even if DB is down
     const localDisplayName = localStorage.getItem('discordDisplayName') || localStorage.getItem('discordUsername') || userId;
     const localAvatar = localStorage.getItem('discordAvatar') || undefined;
-    const fallbackAdmin: CurrentUser = {
-      id: userId,
-      username: localDisplayName,
-      displayName: localDisplayName,
-      avatarUrl: localAvatar,
-      isAdmin: true,
-      group: 'Crew',
-    };
 
-    Promise.all([
-      fetch(`/api/db?path=servers/${serverId}/users/${userId}`).then(r => r.ok ? r.json() : null),
-      fetch(`/api/db?path=servers/${serverId}`).then(r => r.ok ? r.json() : null),
-    ])
-      .then(([data, serverData]) => {
+    getRuntimeConfigClient()
+      .then((runtime) => {
+        const serverId = localStorage.getItem('discordServerId') || runtime?.publicIds?.hardcodedGuildId || '1240832965865635881';
+        const hardcodedAdminId = runtime?.publicIds?.hardcodedAdminDiscordId || '767875979561009173';
+        const cacheKey = `${serverId}:${userId}`;
+        if (_cache.fetched && _cache.key === cacheKey) { setUser(_cache.user); setIsLoading(false); return null; }
+
+        const fallbackAdmin: CurrentUser = {
+          id: userId,
+          username: localDisplayName,
+          displayName: localDisplayName,
+          avatarUrl: localAvatar,
+          isAdmin: true,
+          group: 'Crew',
+        };
+
+        return Promise.all([
+          fetch(`/api/db?path=servers/${serverId}/users/${userId}`).then(r => r.ok ? r.json() : null),
+          fetch(`/api/db?path=servers/${serverId}`).then(r => r.ok ? r.json() : null),
+          Promise.resolve({ serverId, hardcodedAdminId, cacheKey, fallbackAdmin }),
+        ]);
+      })
+      .then((result) => {
+        if (!result) return;
+        const [data, serverData, context] = result as any;
+        const { hardcodedAdminId, cacheKey, fallbackAdmin } = context;
         if (data?.exists && data.data) {
           const ownerRoleId = '1283213615939194955'; // 『👑』Owner
           const userRoles: string[] = data.data.roles || [];
@@ -89,12 +98,7 @@ export function useCurrentUser() {
       })
       .catch(() => {
         // DB unreachable — still let hardcoded admin in
-        if (userId === hardcodedAdminId) {
-          _cache = { key: cacheKey, user: fallbackAdmin, fetched: true };
-          setUser(fallbackAdmin);
-        } else {
-          _cache = { key: cacheKey, user: null, fetched: true };
-        }
+        _cache = { key: null, user: null, fetched: true };
       })
       .finally(() => setIsLoading(false));
   }, []);

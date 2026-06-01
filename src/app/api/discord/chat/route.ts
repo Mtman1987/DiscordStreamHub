@@ -1,6 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { awardPoints } from '@/lib/points-service';
+import {
+  getAppUrl,
+  getChatTagApiBase,
+  getChatTagAvatarUrl,
+  getChatTagWebhookName,
+  getDiscordActivityApplicationId,
+  getDiscordActivityVoiceChannelId,
+  getDiscordChatFanoutEnabled,
+  getDiscordChatHandleWatchEnabled,
+  getHearMeOutDiscordChatUrl,
+  getHardcodedGuildId,
+  getSpaceMountainIconUrl as getConfiguredSpaceMountainIconUrl,
+  getStreamweaverDiscordChatUrl,
+} from '@/lib/runtime-config';
 // watch-request-service moved to hearmeout
 const handleWatchRequestCommand = async (...args: any[]) => null;
 const parseWatchAcceptCommand = (s: string) => null;
@@ -11,16 +25,9 @@ const discordChatCooldowns = new Map<string, number>();
 const processedDiscordMessages = new Map<string, number>();
 const CHAT_TAG_SERVICE_SECRET = process.env.CHAT_TAG_BOT_SECRET || process.env.BOT_SECRET_KEY || '1234';
 const PROCESSED_MESSAGE_TTL_MS = 10 * 60 * 1000;
-const CHAT_TAG_WEBHOOK_NAME = process.env.CHAT_TAG_WEBHOOK_NAME || 'Chat Tag';
-const CHAT_TAG_AVATAR_URL =
-  process.env.CHAT_TAG_AVATAR_URL ||
-  process.env.DISCORD_CHAT_TAG_AVATAR_URL ||
-  '';
-const DISCORD_ACTIVITY_APPLICATION_ID =
-  process.env.DISCORD_ACTIVITY_APPLICATION_ID ||
-  process.env.DISCORD_APP_ID ||
-  process.env.DISCORD_CLIENT_ID ||
-  process.env.NEXT_PUBLIC_DISCORD_CLIENT_ID;
+const CHAT_TAG_WEBHOOK_NAME = getChatTagWebhookName();
+const CHAT_TAG_AVATAR_URL = getChatTagAvatarUrl();
+const DISCORD_ACTIVITY_APPLICATION_ID = getDiscordActivityApplicationId();
 
 type FanoutTarget = {
   name: string;
@@ -44,24 +51,18 @@ function discordChatUrl(baseUrl: string, override?: string) {
 }
 
 function shouldFanoutDiscordChat() {
-  return process.env.DISCORD_CHAT_FANOUT === 'true';
+  return getDiscordChatFanoutEnabled();
 }
 
 function getFanoutTargets(): FanoutTarget[] {
   const targets = [
     {
       name: 'hearmeout',
-      url: discordChatUrl(
-        process.env.HEARMEOUT_URL || 'https://hearmeout-main.fly.dev',
-        process.env.HEARMEOUT_DISCORD_CHAT_URL
-      ),
+      url: discordChatUrl(getHearMeOutDiscordChatUrl() || 'https://hearmeout-main.fly.dev'),
     },
     {
       name: 'streamweaver',
-      url: discordChatUrl(
-        process.env.STREAMWEAVER_URL || process.env.STREAMWEAVE_URL || 'https://streamweaver-new.fly.dev',
-        process.env.STREAMWEAVER_DISCORD_CHAT_URL
-      ),
+      url: discordChatUrl(getStreamweaverDiscordChatUrl() || 'https://streamweaver-new.fly.dev'),
     },
   ];
 
@@ -272,11 +273,11 @@ async function createDiscordDmChannel(userId: string) {
 }
 
 function getPublicBaseUrl(origin?: string) {
-  return (process.env.NEXT_PUBLIC_APP_URL || process.env.PUBLIC_BASE_URL || origin || '').replace(/\/$/, '');
+  return (getAppUrl() || origin || '').replace(/\/$/, '');
 }
 
 function getSpaceMountainIconUrl(origin?: string) {
-  const configured = process.env.SPACE_MOUNTAIN_ICON_URL || process.env.DISCORD_AUTHOR_ICON_URL;
+  const configured = getConfiguredSpaceMountainIconUrl();
   if (configured) return configured;
 
   const baseUrl = getPublicBaseUrl(origin);
@@ -315,7 +316,7 @@ function getActivityVoiceChannelId(data: any) {
     || data.voice?.channelId
     || data.voice?.channel_id
     || data.member?.voice?.channel_id
-    || process.env.DISCORD_ACTIVITY_VOICE_CHANNEL_ID;
+    || getDiscordActivityVoiceChannelId();
 }
 
 async function createDiscordActivityInvite(voiceChannelId: string) {
@@ -474,7 +475,7 @@ export async function POST(request: NextRequest) {
     // Support Kite format (may nest under 'root'), direct format, and old format
     const data = body.root || body;
     const userId = data.userId;
-    const guildId = data.guildId || data.serverId || process.env.HARDCODED_GUILD_ID;
+    const guildId = data.guildId || data.serverId || getHardcodedGuildId();
     const userName = data.userName || data.displayName || data.username || 'Unknown';
     const userAvatar = data.userAvatar || data.avatarUrl || '';
     const message = data.message || data.content || '';
@@ -576,7 +577,7 @@ export async function POST(request: NextRequest) {
     const watchCommand = parseWatchCommand(message) || parseWatchAcceptCommand(message);
     const isForwardedWatchCommand = /^!(wr|watch)(?:\s|$)/i.test(message) || /^!(add|accept)$/i.test(message.trim());
     if ((watchCommand || isForwardedWatchCommand) && channelId) {
-      if (process.env.DISCORD_CHAT_HANDLE_WATCH === 'true') {
+      if (getDiscordChatHandleWatchEnabled()) {
         console.log(`[DiscordChat] Watch request command detected from ${userName}: ${message} (channelId: ${channelId})`);
         await handleWatchRequestCommand({
           message,
@@ -638,13 +639,13 @@ export async function POST(request: NextRequest) {
     if (twitchLogin) {
       const tagData = await (async () => {
         try {
-          const r = await fetch(`${process.env.CHAT_TAG_API_BASE || 'https://chat-tag-new.fly.dev'}/api/tag`);
+          const r = await fetch(`${getChatTagApiBase()}/api/tag`);
           return r.ok ? await r.json() : null;
         } catch { return null; }
       })();
       const player = tagData?.players?.find((p: any) => (p.twitchUsername || '').toLowerCase() === twitchLogin.toLowerCase());
       if (player) {
-        fetch(`${process.env.CHAT_TAG_API_BASE || 'https://chat-tag-new.fly.dev'}/api/tag`, {
+        fetch(`${getChatTagApiBase()}/api/tag`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-bot-secret': CHAT_TAG_SERVICE_SECRET },
           body: JSON.stringify({ action: 'chat-activity', userId: player.id, twitchUsername: twitchLogin, channel: 'discord' }),

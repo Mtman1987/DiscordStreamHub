@@ -1,5 +1,6 @@
 import { Timestamp, db } from '@/data/server-init';
 import type { LeaderboardSettings } from '@/lib/types';
+import { getHardcodedGuildId } from '@/lib/runtime-config';
 
 export type PointsEventType =
   | 'raid'
@@ -190,7 +191,7 @@ export class PointsService {
 
   async addPoints(userId: string, username: string, displayName: string, points: number): Promise<{ points: number }> {
     // For now, we'll use a default server ID. In a real implementation, this should be passed as a parameter
-    const serverId = process.env.HARDCODED_GUILD_ID || 'default';
+    const serverId = getHardcodedGuildId() || 'default';
 
     const leaderboardRef = db.collection('servers').doc(serverId).collection('leaderboard').doc(userId);
     const currentDoc = await leaderboardRef.get();
@@ -210,7 +211,7 @@ export class PointsService {
   }
 
   async getUserRank(userId: string, serverId?: string): Promise<{ rank: number; points: number } | null> {
-    const actualServerId = serverId || process.env.HARDCODED_GUILD_ID || 'default';
+    const actualServerId = serverId || getHardcodedGuildId() || 'default';
     const userRef = db.collection('servers').doc(actualServerId).collection('leaderboard').doc(userId);
     const userDoc = await userRef.get();
 
@@ -231,7 +232,7 @@ export class PointsService {
   }
 
   async getUserPoints(userId: string, serverId?: string): Promise<{ username?: string; displayName?: string; points: number } | null> {
-    const actualServerId = serverId || process.env.HARDCODED_GUILD_ID || 'default';
+    const actualServerId = serverId || getHardcodedGuildId() || 'default';
     const userRef = db.collection('servers').doc(actualServerId).collection('leaderboard').doc(userId);
     const userDoc = await userRef.get();
 
@@ -248,7 +249,7 @@ export class PointsService {
   }
 
   async getLeaderboard(limit: number = 50, serverId?: string): Promise<any[]> {
-    const actualServerId = serverId || process.env.HARDCODED_GUILD_ID || 'default';
+    const actualServerId = serverId || getHardcodedGuildId() || 'default';
     
     const leaderboardRef = db
       .collection('servers')

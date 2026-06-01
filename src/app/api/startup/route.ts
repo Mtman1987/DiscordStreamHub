@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cleanupOrphanedDiscordEmbeds } from '@/lib/discord-orphan-cleanup-service';
 import { startTwitchPolling } from '@/lib/twitch-polling-service';
+import { getHardcodedGuildId } from '@/lib/runtime-config';
 
-const HARDCODED_SERVER_ID = process.env.HARDCODED_GUILD_ID || '1240832965865635881';
+const HARDCODED_SERVER_ID = getHardcodedGuildId() || '1240832965865635881';
 
 export async function POST(request: NextRequest) {
   try {

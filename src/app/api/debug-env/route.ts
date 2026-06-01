@@ -1,4 +1,8 @@
 export async function GET() {
+  if (process.env.NODE_ENV === 'production') {
+    return Response.json({ error: 'Not found' }, { status: 404 });
+  }
+
   const allEnvKeys = Object.keys(process.env).sort();
   const discordKeys = allEnvKeys.filter(key => key.includes('DISCORD'));
   

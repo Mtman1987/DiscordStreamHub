@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getDiscordShoutoutChannelId } from '@/lib/runtime-config';
 
 export async function POST(request: NextRequest) {
   try {
     const { channelId } = await request.json();
+    const targetChannelId = channelId || getDiscordShoutoutChannelId();
+    if (!targetChannelId) {
+      return NextResponse.json({ error: 'channelId is required' }, { status: 400 });
+    }
     
-    const response = await fetch(`https://discord.com/api/v10/channels/${channelId || process.env.DISCORD_SHOUTOUT_CHANNEL_ID}/invites`, {
+    const response = await fetch(`https://discord.com/api/v10/channels/${targetChannelId}/invites`, {
       method: 'POST',
       headers: {
         'Authorization': `Bot ${process.env.DISCORD_BOT_TOKEN}`,

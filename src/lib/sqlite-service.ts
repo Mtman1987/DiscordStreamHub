@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'fs';
 import { join } from 'path';
+import { getDatabaseFilePath } from './runtime-config';
 
 const Database = require('better-sqlite3');
 
@@ -15,7 +16,7 @@ type StoredState = {
 };
 
 const STORAGE_PATH = process.env.NODE_ENV === 'production' ? '/data' : join(process.cwd(), 'data');
-const DB_PATH = process.env.DB_FILE || join(STORAGE_PATH, 'app.db');
+const DB_PATH = getDatabaseFilePath() || join(STORAGE_PATH, 'app.db');
 const LEGACY_JSON_PATH = join(STORAGE_PATH, 'app.db.json');
 
 function ensureStorage(): void {

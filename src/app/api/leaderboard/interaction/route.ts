@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/data/server-init';
 import { verifyKey } from 'discord-interactions';
+import { getDiscordPublicKey } from '@/lib/runtime-config';
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,7 +13,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing signature headers' }, { status: 401 });
     }
 
-    const isValid = verifyKey(rawBody, signature, timestamp, process.env.DISCORD_PUBLIC_KEY!);
+    const isValid = verifyKey(rawBody, signature, timestamp, getDiscordPublicKey());
     if (!isValid) {
       return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
     }

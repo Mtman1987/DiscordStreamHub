@@ -2,6 +2,7 @@
 
 import { db } from '@/data/server-init';
 import { getUnmatchedUsers } from '@/lib/twitch-linking-service';
+import { getCrewBannerGifUrl, getTwitchClientId } from '@/lib/runtime-config';
 
 interface ProcessedMemberData {
   totalMembers: number;
@@ -118,7 +119,7 @@ class MemberProcessingService {
 
   async generateShoutoutTemplateEmbed(group: 'Raid Pile' | 'Everyone Else' | 'Honored Guests' | 'Partners' | 'Crew', userData?: any): Promise<any> {
     try {
-      const twitchClientId = process.env.TWITCH_CLIENT_ID;
+      const twitchClientId = getTwitchClientId();
       const twitchClientSecret = process.env.TWITCH_CLIENT_SECRET;
       
       let mockStream;
@@ -229,7 +230,7 @@ class MemberProcessingService {
   private generateCrewDividerEmbed(): any {
     return {
       image: {
-        url: process.env.CREW_BANNER_GIF_URL || 'https://via.placeholder.com/1920x120/00D9FF/FFFFFF?text=SPACE+MOUNTAIN+CREW'
+        url: getCrewBannerGifUrl()
       },
       color: 0x00D9FF
     };

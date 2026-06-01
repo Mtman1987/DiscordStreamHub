@@ -1,5 +1,7 @@
 'use server';
 
+import { getAppUrl } from '@/lib/runtime-config';
+
 let isInitialized = false;
 
 export async function initializeServices() {
@@ -14,7 +16,7 @@ export async function initializeServices() {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
     
-    const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL}/api/startup`, {
+    const response = await fetch(`${getAppUrl()}/api/startup`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       signal: controller.signal

@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { getHardcodedGuildId } from '@/lib/runtime-config';
 
-const HARDCODED_SERVER_ID = process.env.HARDCODED_GUILD_ID || '1240832965865635881';
+const HARDCODED_SERVER_ID = getHardcodedGuildId() || '1240832965865635881';
 
 // Returns community members who are currently live on Twitch
 // Used by HearMeOut to show "Live on Twitch" in the sidebar

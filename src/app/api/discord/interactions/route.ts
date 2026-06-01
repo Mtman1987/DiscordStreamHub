@@ -4,6 +4,13 @@ import { db } from '@/lib/db';
 import { submitCaptainLog, submitMission } from '@/lib/calendar-admin-actions';
 import { shiftCalendarMonth } from '@/lib/calendar-discord-service-new';
 import { format } from 'date-fns';
+import {
+  getChatTagApiBase,
+  getDiscordClientId,
+  getHardcodedGuildId,
+  getDiscordPublicKey,
+  getHearMeOutUrl as getHearMeOutUrlFromRuntime,
+} from '@/lib/runtime-config';
 
 function extractValues(components: any[] = []) {
   const values: Record<string, string> = {};
@@ -58,7 +65,7 @@ async function deleteDiscordMessage(channelId?: string, messageId?: string) {
 }
 
 async function refreshChatTagEmbed(reason: string) {
-  const response = await fetch(`${process.env.CHAT_TAG_API_BASE || 'https://chat-tag-new.fly.dev'}/api/discord/announce`, {
+  const response = await fetch(`${getChatTagApiBase()}/api/discord/announce`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-bot-secret': CHAT_TAG_SERVICE_SECRET },
     body: JSON.stringify({ refreshOnly: true, message: reason }),
@@ -70,7 +77,7 @@ async function refreshChatTagEmbed(reason: string) {
 }
 
 function getHearMeOutUrl() {
-  return (process.env.HEARMEOUT_URL || 'https://hearmeout-main.fly.dev').replace(/\/$/, '');
+  return getHearMeOutUrlFromRuntime().replace(/\/$/, '');
 }
 
 async function fetchHearMeOutWatchSession(signal: AbortSignal) {
@@ -134,7 +141,7 @@ export async function POST(request: NextRequest) {
     const timestamp = request.headers.get('x-signature-timestamp');
     const rawBody = await request.text();
 
-    const publicKey = process.env.DISCORD_PUBLIC_KEY;
+    const publicKey = getDiscordPublicKey();
     if (!publicKey || !signature || !timestamp) {
       return NextResponse.json({ error: 'Invalid request' }, { status: 401 });
     }
@@ -155,7 +162,7 @@ export async function POST(request: NextRequest) {
     if (body.type === 3 && customId) {
       if (customId.startsWith('hmo_watch_control:')) {
         const action = customId.split(':')[1] || '';
-        const applicationId = body.application_id || process.env.DISCORD_CLIENT_ID || process.env.DISCORD_APP_ID;
+        const applicationId = body.application_id || getDiscordClientId();
         runHearMeOutWatchControl(action)
           .then((result) => updateDeferredInteraction(applicationId, body.token, result.ok ? `✅ ${result.message}` : `❌ ${result.message}`))
           .catch((error) => updateDeferredInteraction(applicationId, body.token, `❌ ${error?.message || 'HearMeOut control request failed.'}`));
@@ -168,7 +175,7 @@ export async function POST(request: NextRequest) {
 
       // ── Chat Tag button interactions ──
       if (customId.startsWith('chattag_')) {
-        const serverId = body.guild_id || process.env.HARDCODED_GUILD_ID;
+        const serverId = body.guild_id || getHardcodedGuildId();
         const clickerId = body.member?.user?.id || body.user?.id;
         const clickerName = body.member?.user?.username || body.user?.username || 'Unknown';
 
@@ -212,7 +219,7 @@ export async function POST(request: NextRequest) {
           const data = await fetchTagData();
           const existing = data?.players?.find((p: any) => (p.twitchUsername || '').toLowerCase() === joinName);
           if (existing) return ephemeral(`✅ You're already in the game as ${joinName}!`);
-          const { default: postTagApi } = await import('@/lib/chat-tag-service').then(m => ({ default: (e: string, b: any) => fetch(`${process.env.CHAT_TAG_API_BASE || 'https://chat-tag-new.fly.dev'}${e}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-bot-secret': CHAT_TAG_SERVICE_SECRET }, body: JSON.stringify(b) }).then(r => r.json()).catch(() => null) }));
+          const { default: postTagApi } = await import('@/lib/chat-tag-service').then(m => ({ default: (e: string, b: any) => fetch(`${getChatTagApiBase()}${e}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-bot-secret': CHAT_TAG_SERVICE_SECRET }, body: JSON.stringify(b) }).then(r => r.json()).catch(() => null) }));
           const res = await postTagApi('/api/tag', { action: 'join', userId: `discord_${clickerId}`, twitchUsername: joinName, avatar: '' });
           return ephemeral(res?.error ? `❌ ${res.error}` : `🎯 You joined the tag game as ${joinName}!`);
         }
@@ -252,7 +259,7 @@ export async function POST(request: NextRequest) {
           if (!player) return ephemeral('❌ You\'re not in the tag game. Use the Join button first.');
           const isSleeping = player.sleepingImmunity || player.offlineImmunity;
           const action = isSleeping ? 'wake' : 'sleep';
-          await fetch(`${process.env.CHAT_TAG_API_BASE || 'https://chat-tag-new.fly.dev'}/api/tag`, {
+          await fetch(`${getChatTagApiBase()}/api/tag`, {
             method: 'POST', headers: { 'Content-Type': 'application/json', 'x-bot-secret': CHAT_TAG_SERVICE_SECRET },
             body: JSON.stringify({ action, userId: player.id }),
           });
@@ -331,7 +338,7 @@ export async function POST(request: NextRequest) {
         }
 
         if (customId.startsWith('chattag_triggerffa_')) {
-          const response = await fetch(`${process.env.CHAT_TAG_API_BASE || 'https://chat-tag-new.fly.dev'}/api/tag`, {
+          const response = await fetch(`${getChatTagApiBase()}/api/tag`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'x-bot-secret': CHAT_TAG_SERVICE_SECRET },
             body: JSON.stringify({ action: 'trigger-ffa', performedBy: 'discord-admin' }),
@@ -355,7 +362,7 @@ export async function POST(request: NextRequest) {
         if (customId.startsWith('chattag_logs_')) {
           const { fetchLogs } = await import('@/lib/chat-tag-service');
           const logs = await fetchLogs();
-          const logsUrl = `${process.env.CHAT_TAG_API_BASE || 'https://chat-tag-new.fly.dev'}/api/logs`;
+          const logsUrl = `${getChatTagApiBase()}/api/logs`;
           return ephemeral(`📋 **Recent Logs:**\n\`\`\`\n${logs}\n\`\`\`\n🔗 [Live Logs](${logsUrl})`);
         }
       }
@@ -877,7 +884,7 @@ export async function POST(request: NextRequest) {
             const msg = result.success
               ? `📅 Calendar shifted to **${(result as any).monthLabel}**`
               : `⚠️ ${(result as any).message ?? 'Unable to update calendar.'}`;
-            await fetch(`https://discord.com/api/v10/webhooks/${process.env.DISCORD_APP_ID}/${body.token}/messages/@original`, {
+            await fetch(`https://discord.com/api/v10/webhooks/${getDiscordClientId()}/${body.token}/messages/@original`, {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ content: msg })
@@ -901,7 +908,7 @@ export async function POST(request: NextRequest) {
             const msg = result.success
               ? `📅 Calendar shifted to **${(result as any).monthLabel}**`
               : `⚠️ ${(result as any).message ?? 'Unable to update calendar.'}`;
-            await fetch(`https://discord.com/api/v10/webhooks/${process.env.DISCORD_APP_ID}/${body.token}/messages/@original`, {
+            await fetch(`https://discord.com/api/v10/webhooks/${getDiscordClientId()}/${body.token}/messages/@original`, {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ content: msg })
@@ -1022,7 +1029,7 @@ export async function POST(request: NextRequest) {
                 msg = { content: `⚠️ ${twitchLogin}'s schedule is not available right now.` };
               }
             }
-            await fetch(`https://discord.com/api/v10/webhooks/${process.env.DISCORD_APP_ID}/${body.token}/messages/@original`, {
+            await fetch(`https://discord.com/api/v10/webhooks/${getDiscordClientId()}/${body.token}/messages/@original`, {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(msg)
@@ -1083,11 +1090,11 @@ export async function POST(request: NextRequest) {
         }
 
         try {
-          const homeServerId = process.env.HARDCODED_GUILD_ID || process.env.GUILD_ID || '';
+          const homeServerId = getHardcodedGuildId() || '';
           await db.collection('servers').doc(homeServerId).collection('forwardedMessages').doc(forwardedMessageId).delete();
         } catch {}
 
-        await fetch(`https://discord.com/api/v10/webhooks/${process.env.DISCORD_CLIENT_ID}/${body.token}/messages/@original`, {
+        await fetch(`https://discord.com/api/v10/webhooks/${getDiscordClientId()}/${body.token}/messages/@original`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ content: '🗑️ Both messages removed.' })
@@ -1381,7 +1388,7 @@ export async function POST(request: NextRequest) {
           try {
             const result = await submitCaptainLog({ serverId, userId, selectedDate: values.log_date });
             const msg = (result as any).success ? `✅ ${(result as any).message}` : `⚠️ ${(result as any).error || 'Failed to save captain log.'}`;
-            await fetch(`https://discord.com/api/v10/webhooks/${process.env.DISCORD_APP_ID}/${body.token}/messages/@original`, {
+            await fetch(`https://discord.com/api/v10/webhooks/${getDiscordClientId()}/${body.token}/messages/@original`, {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ content: msg })
@@ -1411,7 +1418,7 @@ export async function POST(request: NextRequest) {
               missionTime: values.mission_time,
             });
             const msg = (result as any).success ? `✅ ${(result as any).message}` : `⚠️ ${(result as any).error || 'Failed to add mission.'}`;
-            await fetch(`https://discord.com/api/v10/webhooks/${process.env.DISCORD_APP_ID}/${body.token}/messages/@original`, {
+            await fetch(`https://discord.com/api/v10/webhooks/${getDiscordClientId()}/${body.token}/messages/@original`, {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ content: msg })
@@ -1452,7 +1459,7 @@ export async function POST(request: NextRequest) {
           body: JSON.stringify(replyBody),
         });
 
-        await fetch(`https://discord.com/api/v10/webhooks/${process.env.DISCORD_CLIENT_ID}/${body.token}/messages/@original`, {
+        await fetch(`https://discord.com/api/v10/webhooks/${getDiscordClientId()}/${body.token}/messages/@original`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ content: '✅ Reply sent to the original channel!' })
@@ -1480,7 +1487,7 @@ export async function POST(request: NextRequest) {
           { method: 'PUT', headers: { Authorization: `Bot ${botToken}` } },
         );
 
-        await fetch(`https://discord.com/api/v10/webhooks/${process.env.DISCORD_CLIENT_ID}/${body.token}/messages/@original`, {
+        await fetch(`https://discord.com/api/v10/webhooks/${getDiscordClientId()}/${body.token}/messages/@original`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ content: `✅ Reacted with ${emoji}!` })

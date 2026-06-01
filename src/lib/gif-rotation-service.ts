@@ -4,6 +4,7 @@ import { db } from '@/lib/db';
 import { getClipsForUser } from './twitch-api-service';
 import { readdir, readFile, unlink, writeFile } from 'fs/promises';
 import { join } from 'path';
+import { getStoragePath } from './runtime-config';
 
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const GIF_STORAGE_CHANNEL = '1341552730971443293';
@@ -39,7 +40,7 @@ export async function fetchNewGifOnLive(serverId: string, discordUserId: string,
       return;
     }
 
-    const STORAGE_PATH = process.env.STORAGE_PATH || '/data/clips';
+    const STORAGE_PATH = getStoragePath();
     const mediaPath = join(STORAGE_PATH, twitchLogin);
 
     const files = await readdir(mediaPath).catch(() => [] as string[]);
@@ -101,7 +102,7 @@ export async function getNextGifCdnUrl(serverId: string, discordUserId: string, 
     const gifDoc = await db.collection('servers').doc(serverId).collection('users').doc(discordUserId)
       .collection('gifRotation').doc('storage').get();
 
-    const STORAGE_PATH = process.env.STORAGE_PATH || '/data/clips';
+    const STORAGE_PATH = getStoragePath();
     const mediaPath = join(STORAGE_PATH, twitchLogin);
     console.log(`[GifRotation] Reading directory: ${mediaPath}`);
     

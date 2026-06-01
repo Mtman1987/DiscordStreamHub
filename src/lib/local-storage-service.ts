@@ -4,8 +4,9 @@ import { mkdir, writeFile, unlink, readdir, stat } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
 import fetch from 'node-fetch';
+import { getStoragePath } from './runtime-config';
 
-const STORAGE_PATH = process.env.STORAGE_PATH || '/data/clips';
+const STORAGE_PATH = getStoragePath();
 
 class LocalStorageService {
   private storagePath: string;

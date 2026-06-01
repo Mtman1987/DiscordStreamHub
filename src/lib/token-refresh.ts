@@ -1,6 +1,7 @@
 'use server';
 
 import { db } from '@/lib/db';
+import { getDiscordClientId } from '@/lib/runtime-config';
 
 const DISCORD_API = 'https://discord.com/api/v10';
 
@@ -38,7 +39,7 @@ async function refreshTokenRecord(tokenId: string, raw: any): Promise<TokenData 
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
-        client_id: process.env.DISCORD_CLIENT_ID!,
+        client_id: getDiscordClientId(),
         client_secret: process.env.DISCORD_CLIENT_SECRET!,
         grant_type: 'refresh_token',
         refresh_token: tokenData.refreshToken,
@@ -139,7 +140,7 @@ export async function refreshDiscordToken(userId: string): Promise<TokenData | n
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
-        client_id: process.env.DISCORD_CLIENT_ID!,
+        client_id: getDiscordClientId(),
         client_secret: process.env.DISCORD_CLIENT_SECRET!,
         grant_type: 'refresh_token',
         refresh_token: tokenData.refreshToken,

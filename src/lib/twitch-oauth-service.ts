@@ -1,6 +1,7 @@
 'use server';
 
 import { db } from '@/lib/db';
+import { getTwitchClientId } from '@/lib/runtime-config';
 
 export async function getUserAccessToken(serverId: string): Promise<string | null> {
   try {
@@ -19,7 +20,7 @@ export async function getUserAccessToken(serverId: string): Promise<string | nul
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
-          client_id: process.env.TWITCH_CLIENT_ID!,
+          client_id: getTwitchClientId(),
           client_secret: process.env.TWITCH_CLIENT_SECRET!,
           grant_type: 'refresh_token',
           refresh_token: data.refreshToken,
@@ -55,8 +56,8 @@ async function refreshTwitchOAuthToken(docPath: string, data: any): Promise<{ ac
   const refreshToken = data.refreshToken || data.refresh_token;
   if (!refreshToken) return null;
 
-  const clientId = process.env.TWITCH_CLIENT_ID || process.env.NEXT_PUBLIC_TWITCH_CLIENT_ID;
-  const clientSecret = process.env.TWITCH_CLIENT_SECRET || process.env.NEXT_PUBLIC_TWITCH_CLIENT_SECRET;
+  const clientId = getTwitchClientId();
+  const clientSecret = process.env.TWITCH_CLIENT_SECRET;
   if (!clientId || !clientSecret) {
     console.error('[TwitchOAuth] Twitch client credentials are not configured');
     return null;

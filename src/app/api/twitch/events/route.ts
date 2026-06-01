@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { awardPoints } from '@/lib/points-service';
+import { getHardcodedGuildId } from '@/lib/runtime-config';
 
 const CHAT_COOLDOWN_MS = 5 * 60 * 1000;
 const chatCooldowns = new Map<string, number>();
@@ -11,7 +12,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { type, serverId: providedServerId, twitchLogin, twitchId, username, channel, viewers, bits, recipient } = body;
-    const serverId = providedServerId || process.env.HARDCODED_GUILD_ID || '1240832965865635881';
+    const serverId = providedServerId || getHardcodedGuildId() || '1240832965865635881';
 
     if (!type || !twitchLogin) {
       return NextResponse.json({ error: 'type and twitchLogin required' }, { status: 400 });

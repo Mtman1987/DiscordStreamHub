@@ -7,9 +7,10 @@ import { writeFile, unlink, readFile, mkdir } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { existsSync } from 'fs';
+import { getStoragePath } from './runtime-config';
 
 const execAsync = promisify(exec);
-const STORAGE_PATH = process.env.STORAGE_PATH || '/data/clips';
+const STORAGE_PATH = getStoragePath();
 const BANNER_VERSION = '2026-05-02-1';
 
 export async function generateCrewBanners(crewMembers: string[]): Promise<void> {

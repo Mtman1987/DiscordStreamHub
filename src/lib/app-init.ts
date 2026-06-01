@@ -2,6 +2,7 @@
 
 import { startTwitchPolling } from './twitch-polling-service';
 import { db } from '@/data/server-init';
+import { getHardcodedGuildId } from '@/lib/runtime-config';
 
 let initialized = false;
 
@@ -14,7 +15,7 @@ export async function initializeApp() {
   console.log('[AppInit] Starting application initialization...');
   
   try {
-    const serverId = process.env.HARDCODED_GUILD_ID || process.env.GUILD_ID;
+    const serverId = getHardcodedGuildId();
     
     if (!serverId) {
       console.warn('[AppInit] No server ID found in environment');

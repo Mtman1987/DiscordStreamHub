@@ -1,8 +1,9 @@
 import { readFile, writeFile, mkdir, rename, unlink } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
+import { getStoragePath } from './runtime-config';
 
-const EMBED_STORAGE_PATH = '/data/embeds';
+const EMBED_STORAGE_PATH = join(getStoragePath(), 'embeds');
 
 interface EmbedData {
   [userId: string]: {

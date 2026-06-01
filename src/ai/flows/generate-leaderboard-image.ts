@@ -1,12 +1,13 @@
 'use server';
 
 import puppeteer from 'puppeteer';
+import { getAppUrl } from '@/lib/runtime-config';
 
 export async function generateLeaderboardImage(
   guildId: string
 ): Promise<string | null> {
   try {
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+    const baseUrl = getAppUrl() || 'http://localhost:3000';
     const url = `${baseUrl}/headless/leaderboard/${guildId}`;
     
     const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });

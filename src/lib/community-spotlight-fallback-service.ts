@@ -2,10 +2,11 @@
 
 import { sendDiscordMessage } from './discord-bot-service';
 import { getCommunityStats, generateSpotlightHeaderImage, generateSpotlightFooterImage } from './community-spotlight-enhanced-service';
+import { getAppUrl, getDiscordInviteUrl } from './runtime-config';
 
 async function getDiscordInvite(): Promise<string | null> {
   try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3001'}/api/discord/create-invite`, {
+    const response = await fetch(`${getAppUrl() || 'http://localhost:3001'}/api/discord/create-invite`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({})
@@ -17,7 +18,7 @@ async function getDiscordInvite(): Promise<string | null> {
   } catch (error) {
     console.error('Failed to create Discord invite:', error);
   }
-  return process.env.NEXT_PUBLIC_DISCORD_INVITE_URL || process.env.DISCORD_INVITE_URL || null;
+  return getDiscordInviteUrl() || null;
 }
 
 export async function postCommunitySpotlightFallback(serverId: string, channelId: string, keepIds?: string[]): Promise<void> {

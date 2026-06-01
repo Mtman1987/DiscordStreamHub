@@ -1,5 +1,6 @@
 import * as tmi from 'tmi.js';
 import axios from 'axios';
+import { getTwitchClientId } from '@/lib/runtime-config';
 
 // In-memory cache for the app access token
 let appAccessToken: { token: string; expires: number } | null = null;
@@ -15,13 +16,10 @@ async function getTwitchAppAccessToken(): Promise<string> {
     return appAccessToken.token;
   }
 
-  let clientId = process.env.NEXT_PUBLIC_TWITCH_CLIENT_ID;
-  let clientSecret = process.env.NEXT_PUBLIC_TWITCH_CLIENT_SECRET;
+  let clientId = getTwitchClientId();
+  let clientSecret = process.env.TWITCH_CLIENT_SECRET;
 
   // Client credentials should be in environment variables
-  if (!clientId) {
-    clientId = process.env.TWITCH_CLIENT_ID;
-  }
   if (!clientSecret) {
     clientSecret = process.env.TWITCH_CLIENT_SECRET;
   }
@@ -61,7 +59,7 @@ type TwitchUser = {
 // Get User Information from Twitch API
 export async function getTwitchUser(usernameOrId: string, by: "login" | "id" = "login"): Promise<{ id: string; bio: string; lastGame: string; displayName: string; profileImageUrl: string; } | null> {
     const appToken = await getTwitchAppAccessToken();
-    const clientId = process.env.NEXT_PUBLIC_TWITCH_CLIENT_ID;
+    const clientId = getTwitchClientId();
 
     if (!clientId) {
         throw new Error("Twitch client ID is missing from environment variables.");

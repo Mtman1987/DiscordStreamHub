@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { getHardcodedGuildId } from '@/lib/runtime-config';
 
 export async function POST(request: NextRequest) {
   try {
     await new Promise(resolve => setTimeout(resolve, 100));
     const body = await request.json().catch(() => ({}));
-    const serverId = body.serverId || process.env.HARDCODED_GUILD_ID || '1240832965865635881';
+    const serverId = body.serverId || getHardcodedGuildId() || '1240832965865635881';
 
     db.delete('users', `twitch_${serverId}`);
 

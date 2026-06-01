@@ -1,0 +1,58 @@
+{
+  "publicUrls": {
+    "appUrl": "https://discord-stream-hub-new.fly.dev",
+    "baseUrl": "https://discord-stream-hub-new.fly.dev",
+    "chatTagApiBase": "https://chat-tag-new.fly.dev",
+    "chatTagBotUrl": "https://chat-tag-bot-new.fly.dev",
+    "hearmeoutUrl": "https://hearmeout-main.fly.dev",
+    "streamweaverUrl": "https://streamweaver-new.fly.dev",
+    "discordInviteUrl": "https://discord.gg/spacemountain",
+    "clipWorkerUrl": "https://dsh-clip-worker.fly.dev",
+    "crewBannerGifUrl": "https://via.placeholder.com/1920x120/00D9FF/FFFFFF?text=SPACE+MOUNTAIN+CREW"
+  },
+  "publicIds": {
+    "twitchClientId": "rxmohc28tthq0nudfd6iwx0sgy88dp",
+    "discordClientId": "1279582181768957963",
+    "discordActivityApplicationId": "1279582181768957963",
+    "discordActivityVoiceChannelId": "",
+    "raidPileChannelId": "",
+    "hardcodedGuildId": "1240832965865635881",
+    "hardcodedAdminDiscordId": "767875979561009173",
+    "hardcodedAdminTwitchId": "94371378",
+    "chatTagChannelId": "1463633163673927732",
+    "discordShoutoutChannelId": ""
+  },
+  "publicText": {
+    "chatTagWebhookName": "Chat Tag",
+    "chatTagAvatarUrl": "",
+    "spaceMountainIconUrl": "",
+    "hearmeoutDiscordChatUrl": "",
+    "streamweaverDiscordChatUrl": "",
+    "discordPublicKey": "",
+    "storagePath": "/data/clips",
+    "puppeteerExecutablePath": "",
+    "databaseFilePath": "/data/app.db"
+  },
+  "publicNumbers": {
+    "pointsTwitchFollow": 25,
+    "pointsTwitchSub": 100,
+    "pointsTwitchBits": 1,
+    "pointsTwitchRaid": 50,
+    "pointsTwitchHost": 30,
+    "pointsStreamAttendance": 10,
+    "pointsDiscordMessage": 1,
+    "pointsDiscordReaction": 2,
+    "pointsDiscordVoiceMinute": 5,
+    "pointsDiscordHelpReaction": 10,
+    "pointsCommunityHelp": 50,
+    "pointsDailyBonus": 20,
+    "raidPilePointsReward": 25,
+    "raidPileMaxSize": 40,
+    "raidPileMinSize": 10
+  },
+  "publicFlags": {
+    "discordChatFanout": true,
+    "discordChatHandleWatch": true,
+    "discordDebugEnvLogs": false
+  }
+}

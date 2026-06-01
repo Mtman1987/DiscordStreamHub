@@ -7,8 +7,9 @@ import { deleteGif } from './local-storage-service';
 import { readdir } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
+import { getPuppeteerExecutablePath, getStoragePath } from './runtime-config';
 
-const STORAGE_PATH = process.env.STORAGE_PATH || '/data/clips';
+const STORAGE_PATH = getStoragePath();
 
 // In-memory cooldown guard — survives within process lifetime
 // Firestore is the source of truth, this prevents race conditions within a poll cycle
@@ -228,7 +229,7 @@ async function recordLiveStream(twitchLogin: string): Promise<number> {
     browser = await puppeteer.default.launch({
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--autoplay-policy=no-user-gesture-required'],
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+      executablePath: getPuppeteerExecutablePath() || undefined,
     });
 
     const page = await browser.newPage();

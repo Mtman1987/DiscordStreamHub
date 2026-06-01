@@ -8,6 +8,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { ExternalLink, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useSearchParams } from 'next/navigation';
+import { getRuntimeConfigClient } from '@/lib/runtime-config-client';
 
 interface TwitchOAuthCardProps {
   serverId: string;
@@ -19,6 +20,7 @@ export function TwitchOAuthCard({ serverId }: TwitchOAuthCardProps) {
   const [isConnected, setIsConnected] = React.useState(false);
   const [userInfo, setUserInfo] = React.useState<any>(null);
   const [isLoading, setIsLoading] = React.useState(false);
+  const [clientId, setClientId] = React.useState<string>('');
   const reportedSearchState = React.useRef<string | null>(null);
 
   const checkOAuthStatus = React.useCallback(async () => {
@@ -42,6 +44,12 @@ export function TwitchOAuthCard({ serverId }: TwitchOAuthCardProps) {
   React.useEffect(() => {
     checkOAuthStatus();
   }, [checkOAuthStatus]);
+
+  React.useEffect(() => {
+    getRuntimeConfigClient().then((config) => {
+      setClientId(config?.publicIds?.twitchClientId || '');
+    }).catch(() => setClientId(''));
+  }, []);
 
   React.useEffect(() => {
     setIsLoading(false);
@@ -78,7 +86,6 @@ export function TwitchOAuthCard({ serverId }: TwitchOAuthCardProps) {
 
   const handleTwitchOAuth = () => {
     setIsLoading(true);
-    const clientId = process.env.NEXT_PUBLIC_TWITCH_CLIENT_ID;
     const redirectUri = encodeURIComponent(`${window.location.origin}/api/twitch/bot-oauth/callback`);
     const scope = encodeURIComponent('chat:read chat:edit');
 
@@ -160,7 +167,7 @@ export function TwitchOAuthCard({ serverId }: TwitchOAuthCardProps) {
               Disconnect Bot
             </Button>
           ) : (
-            <Button onClick={handleTwitchOAuth} disabled={isLoading}>
+            <Button onClick={handleTwitchOAuth} disabled={isLoading || !clientId}>
               {isLoading ? (
                 <>
                   <RefreshCw className="h-4 w-4 mr-2 animate-spin" />

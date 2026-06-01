@@ -1,5 +1,7 @@
 'use server';
 
+import { getTwitchClientId } from '@/lib/runtime-config';
+
 interface TwitchUser {
   id: string;
   login: string;
@@ -45,7 +47,7 @@ class TwitchApiService {
   private tokenExpiry: number = 0;
 
   constructor() {
-    this.clientId = process.env.TWITCH_CLIENT_ID!;
+    this.clientId = getTwitchClientId();
     this.clientSecret = process.env.TWITCH_CLIENT_SECRET!;
   }
 

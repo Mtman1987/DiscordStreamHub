@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, ensureDb } from '@/lib/db';
+import { getAppUrl, getChatTagApiBase, getHardcodedGuildId, getTwitchClientId } from '@/lib/runtime-config';
 
 function getTwitchOAuthConfig() {
-  const clientId = process.env.TWITCH_CLIENT_ID;
   const clientSecret = process.env.TWITCH_CLIENT_SECRET;
-  return { clientId, clientSecret };
+  return { clientId: getTwitchClientId(), clientSecret };
 }
 
 class TwitchOAuthExchangeError extends Error {
@@ -18,7 +18,7 @@ class TwitchOAuthExchangeError extends Error {
 }
 
 function parseOAuthState(state: string | null) {
-  const fallbackServerId = process.env.HARDCODED_GUILD_ID || '1240832965865635881';
+  const fallbackServerId = getHardcodedGuildId() || '1240832965865635881';
   if (!state) return { serverId: fallbackServerId, isHearMeOut: false, isChatTag: false };
 
   const parts = state.split('|');
@@ -76,7 +76,7 @@ function popupCallbackResponse(publicUrl: string, payload: Record<string, string
 }
 
 function chatTagCallbackResponse(payload: Record<string, string>) {
-  const chatTagUrl = process.env.CHAT_TAG_URL || process.env.CHAT_TAG_APP_URL || 'https://chat-tag-new.fly.dev';
+  const chatTagUrl = getChatTagApiBase() || 'https://chat-tag-new.fly.dev';
   const params = new URLSearchParams(payload);
   return NextResponse.redirect(`${chatTagUrl}/api/auth/twitch/callback?${params}`);
 }
@@ -90,8 +90,7 @@ export async function GET(request: NextRequest) {
   const oauthErrorDescription = searchParams.get('error_description');
 
   const publicUrl =
-    process.env.NEXT_PUBLIC_APP_URL ||
-    process.env.NEXT_PUBLIC_BASE_URL ||
+    getAppUrl() ||
     request.nextUrl.origin ||
     'https://discord-stream-hub-new.fly.dev';
 
@@ -282,7 +281,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Determine redirect URI based on source
-    const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL || 'https://discord-stream-hub-new.fly.dev'}/api/twitch/oauth/callback`;
+    const redirectUri = `${getAppUrl() || 'https://discord-stream-hub-new.fly.dev'}/api/twitch/oauth/callback`;
 
     // Exchange code for access token
     const tokenResponse = await fetch('https://id.twitch.tv/oauth2/token', {

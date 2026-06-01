@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { getHardcodedGuildId } from '@/lib/runtime-config';
 
 export async function GET(request: Request) {
   try {
@@ -9,8 +10,7 @@ export async function GET(request: Request) {
       url.searchParams.get('serverId') ||
       url.searchParams.get('guildId') ||
       url.searchParams.get('discordServerId') ||
-      process.env.HARDCODED_GUILD_ID ||
-      process.env.NEXT_PUBLIC_HARDCODED_GUILD_ID ||
+      getHardcodedGuildId() ||
       '1240832965865635881';
 
     const serverConfig = db.get('servers', requestedServerId) || db.get('userSessions', requestedServerId);

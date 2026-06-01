@@ -3,6 +3,7 @@
 import { db } from '@/data/server-init';
 import { addMonths, format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, isSameDay, isSameMonth } from 'date-fns';
 import puppeteer from 'puppeteer';
+import { getPuppeteerExecutablePath } from '@/lib/runtime-config';
 
 export async function generateCalendarImage(
   serverId: string,
@@ -208,7 +209,7 @@ export async function generateCalendarImage(
     const browser = await puppeteer.launch({
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined
+      executablePath: getPuppeteerExecutablePath() || undefined
     });
     
     const page = await browser.newPage();

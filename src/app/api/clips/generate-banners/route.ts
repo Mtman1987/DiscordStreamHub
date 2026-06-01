@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getClipWorkerUrl } from '@/lib/runtime-config';
 
-const WORKER_URL = (process.env.CLIP_WORKER_URL || 'https://dsh-clip-worker.fly.dev').replace(/\/$/, '');
 const WORKER_SECRET = process.env.CLIP_WORKER_SECRET || process.env.BOT_SECRET_KEY || '1234';
 
 export async function POST(request: NextRequest) {
@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
     }
 
     const payload = await request.json().catch(() => ({}));
-    const response = await fetch(`${WORKER_URL}/api/banners/generate`, {
+    const response = await fetch(`${getClipWorkerUrl().replace(/\/$/, '')}/api/banners/generate`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${WORKER_SECRET}`,

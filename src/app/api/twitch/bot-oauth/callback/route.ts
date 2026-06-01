@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { getAppUrl, getTwitchClientId } from '@/lib/runtime-config';
 
 function getTwitchOAuthConfig() {
-  const clientId = process.env.NEXT_PUBLIC_TWITCH_CLIENT_ID || process.env.TWITCH_CLIENT_ID;
-  const clientSecret = process.env.NEXT_PUBLIC_TWITCH_CLIENT_SECRET || process.env.TWITCH_CLIENT_SECRET;
-  return { clientId, clientSecret };
+  const clientSecret = process.env.TWITCH_CLIENT_SECRET;
+  return { clientId: getTwitchClientId(), clientSecret };
 }
 
 function getPublicUrl(request: NextRequest): string {
@@ -13,7 +13,7 @@ function getPublicUrl(request: NextRequest): string {
   if (forwardedHost) {
     return `${forwardedProto}://${forwardedHost}`;
   }
-  return process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin;
+  return getAppUrl() || request.nextUrl.origin;
 }
 
 export async function GET(request: NextRequest) {

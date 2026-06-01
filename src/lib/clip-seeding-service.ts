@@ -9,9 +9,10 @@ import { join } from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { existsSync } from 'fs';
+import { getStoragePath } from './runtime-config';
 
 const execAsync = promisify(exec);
-const STORAGE_PATH = process.env.STORAGE_PATH || '/data/clips';
+const STORAGE_PATH = getStoragePath();
 
 interface ClipMp4 {
   clipId: string;

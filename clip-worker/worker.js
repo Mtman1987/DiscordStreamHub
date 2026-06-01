@@ -17,18 +17,38 @@
 const { exec } = require('child_process');
 const { promisify } = require('util');
 const fs = require('fs/promises');
-const { existsSync, mkdirSync } = require('fs');
+const fsSync = require('fs');
+const { existsSync, mkdirSync } = fsSync;
 const os = require('os');
 const path = require('path');
 const http = require('http');
 
 const execAsync = promisify(exec);
 
+function getDataDir() {
+  return process.env.DATA_DIR || process.env.FLY_VOLUME_PATH || path.join(process.cwd(), 'data');
+}
+
+function readRuntimeConfig() {
+  try {
+    const runtimeConfigPath = path.join(getDataDir(), 'runtime-config.json');
+    if (!existsSync(runtimeConfigPath)) return {};
+    return JSON.parse(fsSync.readFileSync(runtimeConfigPath, 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
+function getRuntimeValue(section, key, fallback = '') {
+  const config = readRuntimeConfig();
+  return (config?.[section]?.[key] || fallback || '').toString();
+}
+
 // ── Config ──
-const DSH_URL = process.env.DSH_URL || 'https://discord-stream-hub-new.fly.dev';
+const DSH_URL = getRuntimeValue('publicUrls', 'baseUrl', process.env.DSH_URL || 'https://discord-stream-hub-new.fly.dev');
 const WORKER_SECRET = process.env.CLIP_WORKER_SECRET || process.env.BOT_SECRET_KEY || '1234';
-const SERVER_ID = process.env.HARDCODED_GUILD_ID || '1240832965865635881';
-const TWITCH_CLIENT_ID = process.env.TWITCH_CLIENT_ID || 'rxmohc28tthq0nudfd6iwx0sgy88dp';
+const SERVER_ID = getRuntimeValue('publicIds', 'hardcodedGuildId', process.env.HARDCODED_GUILD_ID || '1240832965865635881');
+const TWITCH_CLIENT_ID = getRuntimeValue('publicIds', 'twitchClientId', process.env.TWITCH_CLIENT_ID || 'rxmohc28tthq0nudfd6iwx0sgy88dp');
 const TWITCH_CLIENT_SECRET = process.env.TWITCH_CLIENT_SECRET || '';
 const POLL_INTERVAL = 3 * 60 * 1000; // 3 minutes between cycles
 const GIFS_PER_STREAMER = 2;

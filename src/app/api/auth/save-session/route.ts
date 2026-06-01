@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { getHardcodedAdminDiscordId } from '@/lib/runtime-config';
 
 const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 
@@ -68,7 +69,7 @@ export async function POST(request: NextRequest) {
     const adminRoles: string[] = Array.isArray(existingServer.adminRoles) ? existingServer.adminRoles : [];
     const isAdmin = Boolean(
       discordUserId && (
-        discordUserId === (process.env.NEXT_PUBLIC_HARDCODED_ADMIN_DISCORD_ID || '767875979561009173') ||
+        discordUserId === getHardcodedAdminDiscordId() ||
         discordUserId === existingServer.ownerId ||
         roleMatches(adminRoles, memberRoles, Array.isArray(guildRoles) ? guildRoles : [])
       )

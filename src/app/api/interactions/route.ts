@@ -2,13 +2,20 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyKey } from 'discord-interactions';
 import { shiftCalendarMonth } from '@/lib/calendar-discord-service-new';
 import { db } from '@/lib/db';
+import {
+  getAppUrl,
+  getChatTagApiBase,
+  getDiscordClientId,
+  getDiscordPublicKey,
+  getHardcodedGuildId,
+} from '@/lib/runtime-config';
 
 export async function POST(request: NextRequest) {
   const signature = request.headers.get('x-signature-ed25519');
   const timestamp = request.headers.get('x-signature-timestamp');
   const rawBody = await request.text();
 
-  const publicKey = process.env.DISCORD_PUBLIC_KEY;
+  const publicKey = getDiscordPublicKey();
   if (!publicKey || !signature || !timestamp) {
     return NextResponse.json({ error: 'Invalid request' }, { status: 401 });
   }
@@ -667,12 +674,12 @@ export async function POST(request: NextRequest) {
 
       // Clean up DB
       try {
-        const homeServerId = process.env.HARDCODED_GUILD_ID || process.env.GUILD_ID || '';
+        const homeServerId = getHardcodedGuildId() || '';
         await db.collection('servers').doc(homeServerId).collection('forwardedMessages').doc(forwardedMessageId).delete();
       } catch {}
 
       // Edit the deferred response
-      await fetch(`https://discord.com/api/v10/webhooks/${process.env.DISCORD_CLIENT_ID}/${interaction.token}/messages/@original`, {
+      await fetch(`https://discord.com/api/v10/webhooks/${getDiscordClientId()}/${interaction.token}/messages/@original`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: '🗑️ Both messages removed.' })
@@ -928,7 +935,7 @@ export async function POST(request: NextRequest) {
       }
       
       // Edit the deferred response
-      await fetch(`https://discord.com/api/v10/webhooks/${process.env.DISCORD_CLIENT_ID}/${interaction.token}/messages/@original`, {
+      await fetch(`https://discord.com/api/v10/webhooks/${getDiscordClientId()}/${interaction.token}/messages/@original`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1033,7 +1040,7 @@ export async function POST(request: NextRequest) {
       const userId = interaction.member?.user?.id || interaction.user?.id;
       const logDate = interaction.data.components[0].components[0].value;
       
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/calendar/captain-log`, {
+      const response = await fetch(`${getAppUrl() || 'http://localhost:3000'}/api/calendar/captain-log`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ serverId, userId, selectedDate: logDate })
@@ -1081,7 +1088,7 @@ export async function POST(request: NextRequest) {
       });
 
       // Edit the deferred response
-      await fetch(`https://discord.com/api/v10/webhooks/${process.env.DISCORD_CLIENT_ID}/${interaction.token}/messages/@original`, {
+      await fetch(`https://discord.com/api/v10/webhooks/${getDiscordClientId()}/${interaction.token}/messages/@original`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: '✅ Reply sent to the original channel!' })
@@ -1112,7 +1119,7 @@ export async function POST(request: NextRequest) {
       );
 
       // Edit the deferred response
-      await fetch(`https://discord.com/api/v10/webhooks/${process.env.DISCORD_CLIENT_ID}/${interaction.token}/messages/@original`, {
+      await fetch(`https://discord.com/api/v10/webhooks/${getDiscordClientId()}/${interaction.token}/messages/@original`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: `✅ Reacted with ${emoji}!` })
@@ -1131,7 +1138,7 @@ export async function POST(request: NextRequest) {
       const missionTime = components[2].components[0].value;
       const missionDescription = components[3].components[0].value;
       
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/calendar/add-mission`, {
+      const response = await fetch(`${getAppUrl() || 'http://localhost:3000'}/api/calendar/add-mission`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ serverId, userId, missionName, missionDate, missionTime, missionDescription })

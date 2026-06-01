@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Mountain, Users, Target, Crown, Eye, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { getRuntimeConfigClient } from "@/lib/runtime-config-client";
 
 interface RaidPileMember {
   userId: string;
@@ -31,19 +32,27 @@ interface RaidPile {
 export default function RaidPilePage() {
   const [piles, setPiles] = useState<RaidPile[]>([]);
   const [loading, setLoading] = useState(true);
+  const [channelId, setChannelId] = useState('');
+  const [pointsReward, setPointsReward] = useState(25);
+  const [maxSize, setMaxSize] = useState(40);
+  const [minSize, setMinSize] = useState(10);
   const { toast } = useToast();
 
   useEffect(() => {
+    getRuntimeConfigClient().then((config) => {
+      const numbers = config?.publicNumbers || {};
+      const ids = config?.publicIds || {};
+      setChannelId(ids.raidPileChannelId || '');
+      setPointsReward(Number(numbers.raidPilePointsReward || 25));
+      setMaxSize(Number(numbers.raidPileMaxSize || 40));
+      setMinSize(Number(numbers.raidPileMinSize || 10));
+    }).catch(() => {});
     fetchPiles();
   }, []);
 
   const fetchPiles = async () => {
     try {
-      const response = await fetch('/api/raid-pile/status', {
-        headers: {
-          'Authorization': `Bearer ${process.env.NEXT_PUBLIC_BOT_SECRET_KEY || '1234'}`
-        }
-      });
+      const response = await fetch('/api/raid-pile/status');
       if (response.ok) {
         const data = await response.json();
         setPiles(data);
@@ -60,11 +69,10 @@ export default function RaidPilePage() {
       const response = await fetch('/api/raid-pile/channel', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${process.env.NEXT_PUBLIC_BOT_SECRET_KEY || '1234'}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          channelId: process.env.NEXT_PUBLIC_DISCORD_RAID_PILE_CHANNEL_ID
+          channelId
         })
       });
       
@@ -113,7 +121,7 @@ export default function RaidPilePage() {
             Free community raid system with intelligent targeting
           </p>
         </div>
-        <Button onClick={updateRaidPileChannel}>
+        <Button onClick={updateRaidPileChannel} disabled={!channelId}>
           🏔️ Update Channel
         </Button>
       </div>
@@ -155,7 +163,7 @@ export default function RaidPilePage() {
               <h3 className="text-sm font-medium">Points per Raid</h3>
               <span className="text-base">🎯</span>
             </div>
-            <div className="text-2xl font-bold">{process.env.NEXT_PUBLIC_RAID_PILE_POINTS_REWARD || 25}</div>
+            <div className="text-2xl font-bold">{pointsReward}</div>
           </CardContent>
         </Card>
       </div>
@@ -181,7 +189,7 @@ export default function RaidPilePage() {
             </div>
             <div>
               <h4 className="font-semibold mb-2">🔄 Auto Split/Merge</h4>
-              <p>Piles split at {process.env.NEXT_PUBLIC_RAID_PILE_MAX_SIZE || 40}+ members, merge below {process.env.NEXT_PUBLIC_RAID_PILE_MIN_SIZE || 10}.</p>
+              <p>Piles split at {maxSize}+ members, merge below {minSize}.</p>
             </div>
           </div>
         </CardContent>

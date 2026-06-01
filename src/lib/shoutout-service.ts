@@ -5,6 +5,7 @@ import { getStreamByLogin } from '@/lib/twitch-api-service';
 import { sendShoutout } from '@/lib/discord-sync-service';
 import { getCurrentClipForUser } from '@/lib/clip-rotation-service';
 import { getEmbedTemplates } from '@/lib/embed-templates';
+import { getAppUrl, getDiscordInviteUrl, getStoragePath } from '@/lib/runtime-config';
 import { existsSync } from 'fs';
 import { join } from 'path';
 
@@ -17,12 +18,7 @@ interface ShoutoutData {
 }
 
 function getPublicBaseUrl(): string {
-  return (
-    process.env.NEXT_PUBLIC_APP_URL ||
-    process.env.PUBLIC_BASE_URL ||
-    process.env.APP_URL ||
-    'https://discord-stream-hub-new.fly.dev'
-  ).replace(/\/$/, '');
+  return getAppUrl().replace(/\/$/, '');
 }
 
 function toAbsoluteUrl(url: string | null | undefined): string | null {
@@ -33,7 +29,7 @@ function toAbsoluteUrl(url: string | null | undefined): string | null {
 }
 
 function getStoredBannerUrl(username: string): string | null {
-  const storagePath = process.env.STORAGE_PATH || '/data/clips';
+  const storagePath = getStoragePath();
   const bannerKey = username.toLowerCase();
   const bannerPath = join(storagePath, 'banners', `${bannerKey}.gif`);
   if (!existsSync(bannerPath)) return null;
@@ -157,13 +153,13 @@ async function generatePartnersShoutout(twitchLogin: string, stream: any, baseMe
   const { getUserByLogin } = await import('./twitch-api-service');
   const userInfo = await getUserByLogin(twitchLogin);
   const templates = await getEmbedTemplates(serverId);
-  const fallbackGifUrl = process.env.CREW_BANNER_GIF_URL || 'https://via.placeholder.com/1920x120/00D9FF/FFFFFF?text=SPACE+MOUNTAIN+CREW';
+  const fallbackGifUrl = 'https://via.placeholder.com/1920x120/00D9FF/FFFFFF?text=SPACE+MOUNTAIN+CREW';
   
   const userDoc = await db.collection('servers').doc(serverId).collection('users')
     .where('twitchLogin', '==', twitchLogin).limit(1).get();
   
   let clip = null;
-  let partnerDiscordLink = 'https://discord.gg/spacemountain';
+  let partnerDiscordLink = getDiscordInviteUrl() || 'https://discord.gg/spacemountain';
   
   if (!userDoc.empty) {
     const { getCurrentClipForUser } = await import('./clip-rotation-service');

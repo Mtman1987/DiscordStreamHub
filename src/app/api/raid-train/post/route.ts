@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { raidTrainService } from '@/lib/raid-train-service';
 import { addDays } from 'date-fns';
+import { getAppUrl } from '@/lib/runtime-config';
 
 export async function POST(request: NextRequest) {
   try {
@@ -16,7 +17,7 @@ export async function POST(request: NextRequest) {
     const components = raidTrainService.generateScheduleButtons(targetDate);
 
     // Post to Discord
-    const discordResponse = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL}/api/discord/post`, {
+    const discordResponse = await fetch(`${getAppUrl()}/api/discord/post`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

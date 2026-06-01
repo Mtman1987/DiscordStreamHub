@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, ensureDb } from '@/lib/db';
 import { createHmac } from 'crypto';
+import { getAppUrl, getDiscordClientId, getHearMeOutUrl } from '@/lib/runtime-config';
 
-const HMO_URL = process.env.HEARMEOUT_URL || 'https://hearmeout-main.fly.dev';
 const DSH_REDIRECT_SECRET = process.env.DSH_REDIRECT_SECRET || '';
 
 function getDiscordOAuthConfig() {
-  const clientId = process.env.DISCORD_CLIENT_ID || process.env.NEXT_PUBLIC_DISCORD_CLIENT_ID;
+  const clientId = getDiscordClientId();
   const clientSecret = process.env.DISCORD_CLIENT_SECRET;
   return { clientId, clientSecret };
 }
@@ -17,7 +17,7 @@ function getPublicUrl(request: NextRequest): string {
   if (forwardedHost) {
     return `${forwardedProto}://${forwardedHost}`;
   }
-  return process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin;
+  return getAppUrl() || request.nextUrl.origin;
 }
 
 function signHearMeOutRedirect(userId: string, exp: string): string | null {
@@ -28,7 +28,7 @@ function signHearMeOutRedirect(userId: string, exp: string): string | null {
 }
 
 function hearMeOutRedirect(payload: Record<string, string>) {
-  const url = new URL('/api/auth/discord/callback', HMO_URL);
+  const url = new URL('/api/auth/discord/callback', getHearMeOutUrl() || 'https://hearmeout-main.fly.dev');
   for (const [key, value] of Object.entries(payload)) {
     url.searchParams.set(key, value);
   }

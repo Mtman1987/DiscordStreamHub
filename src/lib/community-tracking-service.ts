@@ -1,5 +1,19 @@
 import { db } from '@/data/server-init';
 import { PointsService } from './points-service';
+import {
+  getPointsCommunityHelp,
+  getPointsDailyBonus,
+  getPointsDiscordHelpReaction,
+  getPointsDiscordMessage,
+  getPointsDiscordReaction,
+  getPointsDiscordVoiceMinute,
+  getPointsStreamAttendance,
+  getPointsTwitchBits,
+  getPointsTwitchFollow,
+  getPointsTwitchHost,
+  getPointsTwitchRaid,
+  getPointsTwitchSub,
+} from './runtime-config';
 
 export interface CommunityActivity {
   userId: string;
@@ -36,12 +50,12 @@ export class CommunityTrackingService {
 
   async trackTwitchActivity(userId: string, username: string, displayName: string, activityType: string, metadata?: any): Promise<void> {
     const pointsConfig = {
-      'follow': parseInt(process.env.POINTS_TWITCH_FOLLOW || '25'),
-      'subscription': parseInt(process.env.POINTS_TWITCH_SUB || '100'),
-      'bits': parseInt(process.env.POINTS_TWITCH_BITS || '1'),
-      'raid': parseInt(process.env.POINTS_TWITCH_RAID || '50'),
-      'host': parseInt(process.env.POINTS_TWITCH_HOST || '30'),
-      'stream_attendance': parseInt(process.env.POINTS_STREAM_ATTENDANCE || '10')
+      'follow': getPointsTwitchFollow(),
+      'subscription': getPointsTwitchSub(),
+      'bits': getPointsTwitchBits(),
+      'raid': getPointsTwitchRaid(),
+      'host': getPointsTwitchHost(),
+      'stream_attendance': getPointsStreamAttendance(),
     };
 
     const points = pointsConfig[activityType as keyof typeof pointsConfig] || 0;
@@ -57,11 +71,11 @@ export class CommunityTrackingService {
 
   async trackDiscordActivity(userId: string, username: string, displayName: string, activityType: string, metadata?: any): Promise<void> {
     const pointsConfig = {
-      'message': parseInt(process.env.POINTS_DISCORD_MESSAGE || '1'),
-      'reaction': parseInt(process.env.POINTS_DISCORD_REACTION || '2'),
-      'voice_minute': parseInt(process.env.POINTS_DISCORD_VOICE_MINUTE || '5'),
-      'help_reaction': parseInt(process.env.POINTS_DISCORD_HELP_REACTION || '10'),
-      'community_help': parseInt(process.env.POINTS_COMMUNITY_HELP || '50')
+      'message': getPointsDiscordMessage(),
+      'reaction': getPointsDiscordReaction(),
+      'voice_minute': getPointsDiscordVoiceMinute(),
+      'help_reaction': getPointsDiscordHelpReaction(),
+      'community_help': getPointsCommunityHelp(),
     };
 
     const points = pointsConfig[activityType as keyof typeof pointsConfig] || 0;
@@ -146,7 +160,7 @@ export class CommunityTrackingService {
   }
 
   async processDailyBonus(): Promise<void> {
-    const dailyBonus = parseInt(process.env.POINTS_DAILY_BONUS || '20');
+    const dailyBonus = getPointsDailyBonus();
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     

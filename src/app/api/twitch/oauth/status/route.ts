@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { getHardcodedGuildId } from '@/lib/runtime-config';
 
 export async function GET(request: NextRequest) {
   try {
     await new Promise(resolve => setTimeout(resolve, 100)); // Wait for db init
-    const serverId = request.nextUrl.searchParams.get('serverId') || process.env.HARDCODED_GUILD_ID || '1240832965865635881';
+    const serverId = request.nextUrl.searchParams.get('serverId') || getHardcodedGuildId() || '1240832965865635881';
     const serverBot = db.get('users', `twitch_${serverId}`);
 
     if (serverBot) {

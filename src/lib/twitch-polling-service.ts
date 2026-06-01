@@ -3,6 +3,7 @@
 import { db } from '@/lib/db';
 import { getStreamByLogin } from '@/lib/twitch-api-service';
 import { sendShoutoutToDiscord, getUserGroup } from '@/lib/shoutout-service';
+import { getAppUrl, getChatTagApiBase, getCrewBannerGifUrl, getStoragePath } from '@/lib/runtime-config';
 
 interface PollingState {
   isPolling: boolean;
@@ -202,7 +203,7 @@ class TwitchPollingService {
       console.log(`[TwitchPolling] Checking ${linkedUsers.length} linked users`);
 
       // Get live statuses via chat-tag's Twitch API (batched, fast)
-      const CHAT_TAG_URL = process.env.CHAT_TAG_URL || 'https://chat-tag-new.fly.dev';
+      const CHAT_TAG_URL = getChatTagApiBase();
       const logins = linkedUsers.map(u => u.twitchLogin);
       let liveUsers: any[] = [];
       try {
@@ -326,7 +327,7 @@ class TwitchPollingService {
             const base64 = image.replace(/^data:image\/png;base64,/, '');
             const fileName = `leaderboard-${Date.now()}.png`;
             await fs.writeFile(path.join(dir, fileName), Buffer.from(base64, 'base64'));
-            const imageUrl = `https://discord-stream-hub-new.fly.dev/api/media/leaderboard/${serverId}/${fileName}`;
+            const imageUrl = `${getAppUrl()}/api/media/leaderboard/${serverId}/${fileName}`;
             const meta = leaderboardMeta.data()!;
             const botToken = process.env.DISCORD_BOT_TOKEN;
             await fetch(`https://discord.com/api/v10/channels/${meta.channelId}/messages/${meta.messageId}`, {
@@ -448,14 +449,14 @@ class TwitchPollingService {
       // Then get clip with new index
       const { getCurrentClipForUser } = await import('./clip-rotation-service');
       const clip = await getCurrentClipForUser(serverId, discordUserId);
-      const bannerUrl = `https://discord-stream-hub-new.fly.dev/api/media/banners/${twitchLogin.toLowerCase()}.gif?v=${Date.now()}`;
+      const bannerUrl = `${getAppUrl()}/api/media/banners/${twitchLogin.toLowerCase()}.gif?v=${Date.now()}`;
       const streamThumbnail = stream.thumbnail_url?.replace('{width}', '1920').replace('{height}', '1080');
       const crewImageUrl = clip?.gifUrl || streamThumbnail || null;
       
       // Check if per-user banner exists on disk
       const { existsSync: bannerExists } = await import('fs');
       const { join: joinPath } = await import('path');
-      const CLIP_PATH = process.env.STORAGE_PATH || '/data/clips';
+            const CLIP_PATH = getStoragePath();
       const bannerFilePath = joinPath(CLIP_PATH, 'banners', `${twitchLogin.toLowerCase()}.gif`);
       const resolvedBannerUrl = bannerExists(bannerFilePath) ? bannerUrl : null;
       
@@ -519,7 +520,7 @@ class TwitchPollingService {
       const userInfo = await getUserByLogin(twitchLogin);
       const userDoc = await db.collection('servers').doc(serverId).collection('users').doc(discordUserId).get();
       const partnerDiscordLink = userDoc.data()?.partnerDiscordLink || 'https://discord.gg/spacemountain';
-      const fallbackGifUrl = process.env.CREW_BANNER_GIF_URL || 'https://via.placeholder.com/1920x120/00D9FF/FFFFFF?text=SPACE+MOUNTAIN+CREW';
+      const fallbackGifUrl = getCrewBannerGifUrl();
       
       // Increment clip index FIRST
       const newIndex = (shoutoutState.currentClipIndex || 0) + 1;
@@ -1117,7 +1118,7 @@ class TwitchPollingService {
     let cleaned = 0;
     
     // Batch-check who's actually live via chat-tag
-    const CHAT_TAG_URL = process.env.CHAT_TAG_URL || 'https://chat-tag-new.fly.dev';
+    const CHAT_TAG_URL = getChatTagApiBase();
     const allLogins = usersSnap.docs.map(d => d.data().twitchLogin).filter(Boolean);
     const liveLogins = new Set<string>();
     

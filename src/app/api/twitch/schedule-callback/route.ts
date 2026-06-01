@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/data/server-init';
+import { getAppUrl, getTwitchClientId } from '@/lib/runtime-config';
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -18,11 +19,11 @@ export async function GET(request: NextRequest) {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
-        client_id: process.env.TWITCH_CLIENT_ID!,
+        client_id: getTwitchClientId(),
         client_secret: process.env.TWITCH_CLIENT_SECRET!,
         code,
         grant_type: 'authorization_code',
-        redirect_uri: `${process.env.NEXT_PUBLIC_BASE_URL || 'https://discord-stream-hub.fly.dev'}/api/twitch/schedule-callback`,
+        redirect_uri: `${getAppUrl() || 'https://discord-stream-hub.fly.dev'}/api/twitch/schedule-callback`,
       }),
     });
 
@@ -36,7 +37,7 @@ export async function GET(request: NextRequest) {
     const userResponse = await fetch('https://api.twitch.tv/helix/users', {
       headers: {
         'Authorization': `Bearer ${tokenData.access_token}`,
-        'Client-Id': process.env.TWITCH_CLIENT_ID!
+        'Client-Id': getTwitchClientId()
       }
     });
 

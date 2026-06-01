@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { RaidPileService } from '@/lib/raid-pile-service';
+import { getRaidPilePointsReward } from '@/lib/runtime-config';
 
 export async function POST(request: NextRequest) {
   try {
@@ -33,7 +34,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       type: 'INTERACTION_CALLBACK_TYPE',
       data: {
-        content: `${result.message}\n\n🎉 You earned ${process.env.RAID_PILE_POINTS_REWARD || 25} points for participating in the pile!`,
+        content: `${result.message}\n\n🎉 You earned ${getRaidPilePointsReward()} points for participating in the pile!`,
         flags: 64 // Ephemeral
       }
     });

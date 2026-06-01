@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PointsService } from '@/lib/points-service';
+import { getHardcodedGuildId } from '@/lib/runtime-config';
 
 export async function GET(request: NextRequest) {
   try {
@@ -10,7 +11,7 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const limit = parseInt(searchParams.get('limit') || '50');
-    const serverId = searchParams.get('serverId') || process.env.HARDCODED_GUILD_ID || 'default';
+    const serverId = searchParams.get('serverId') || getHardcodedGuildId() || 'default';
     
     const pointsService = PointsService.getInstance();
     const leaderboard = await pointsService.getLeaderboard(limit, serverId);

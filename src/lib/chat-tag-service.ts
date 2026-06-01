@@ -1,8 +1,9 @@
 import { db } from '@/lib/db';
+import { getChatTagApiBase, getChatTagBotUrl, getChatTagChannelId } from '@/lib/runtime-config';
 
-const CHAT_TAG_API = process.env.CHAT_TAG_API_BASE || 'https://chat-tag-new.fly.dev';
-const CHAT_TAG_BOT_URL = process.env.CHAT_TAG_BOT_URL || 'https://chat-tag-bot-new.fly.dev';
-const CHAT_TAG_CHANNEL_ID = process.env.CHAT_TAG_CHANNEL_ID || '1463633163673927732';
+const CHAT_TAG_API = getChatTagApiBase();
+const CHAT_TAG_BOT_URL = getChatTagBotUrl();
+const CHAT_TAG_CHANNEL_ID = getChatTagChannelId();
 
 // ── API helpers ──
 
