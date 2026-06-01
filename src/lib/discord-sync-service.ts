@@ -26,11 +26,12 @@ class DiscordSyncService {
   private baseUrl = 'https://discord.com/api/v10';
 
   private async getBotToken(serverId: string): Promise<string> {
-    // Debug what environment variables are actually available
-    console.log('Available env vars:', Object.keys(process.env).filter(k => k.includes('DISCORD')));
-    console.log('DISCORD_BOT_TOKEN exists:', !!process.env.DISCORD_BOT_TOKEN);
-    console.log('DISCORD_BOT_TOKEN length:', process.env.DISCORD_BOT_TOKEN?.length);
-    
+    if (process.env.DISCORD_DEBUG_ENV_LOGS === 'true') {
+      console.log('Available env vars:', Object.keys(process.env).filter(k => k.includes('DISCORD')));
+      console.log('DISCORD_BOT_TOKEN exists:', !!process.env.DISCORD_BOT_TOKEN);
+      console.log('DISCORD_BOT_TOKEN length:', process.env.DISCORD_BOT_TOKEN?.length);
+    }
+
     const token = process.env.DISCORD_BOT_TOKEN;
     if (!token) {
       throw new Error(`DISCORD_BOT_TOKEN environment variable not found. Available: ${Object.keys(process.env).join(', ')}`);
