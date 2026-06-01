@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 
 /**
- * GET  /api/settings/forwarding-forums?serverId=xxx
+ * GET  /api/settings/forwarding-forums?sourceServerId=xxx
  * POST /api/settings/forwarding-forums  {
- *   serverId,
+ *   sourceServerId,
+ *   destinationServerId,
  *   forumChannelId,
  *   forwardingMode,
  *   sharedThreadId,
@@ -13,8 +14,10 @@ import { db } from '@/lib/db';
  *   mappings: { sourceChannelId: threadId }
  * }
  *
- * Stores at: servers/{serverId}/config/forwardingForums
+ * Stores at: servers/{sourceServerId}/config/forwardingForums
  *   {
+ *     sourceServerId,
+ *     destinationServerId,
  *     forumChannelId,
  *     forwardingMode,
  *     sharedThreadId,
@@ -25,12 +28,14 @@ import { db } from '@/lib/db';
  */
 
 export async function GET(request: NextRequest) {
-  const serverId = request.nextUrl.searchParams.get('serverId');
-  if (!serverId) return NextResponse.json({ error: 'serverId required' }, { status: 400 });
+  const sourceServerId = request.nextUrl.searchParams.get('sourceServerId') || request.nextUrl.searchParams.get('serverId');
+  if (!sourceServerId) return NextResponse.json({ error: 'sourceServerId required' }, { status: 400 });
 
   try {
-    const doc = await db.collection('servers').doc(serverId).collection('config').doc('forwardingForums').get();
+    const doc = await db.collection('servers').doc(sourceServerId).collection('config').doc('forwardingForums').get();
     return NextResponse.json(doc.exists ? doc.data() : {
+      sourceServerId,
+      destinationServerId: '',
       mappings: {},
       forwardingMode: 'per-source-thread',
       restrictToWhitelist: false,
@@ -44,8 +49,10 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const body = await request.json();
+    const sourceServerId = String(body.sourceServerId || body.serverId || '').trim();
+    const destinationServerId = String(body.destinationServerId || '').trim();
     const {
-      serverId,
       forumChannelId,
       forwardingMode,
       sharedThreadId,
@@ -53,13 +60,15 @@ export async function POST(request: NextRequest) {
       sourceChannelWhitelist,
       mappings,
       labels,
-    } = await request.json();
-    if (!serverId || !mappings) {
-      return NextResponse.json({ error: 'serverId and mappings required' }, { status: 400 });
+    } = body;
+    if (!sourceServerId || !destinationServerId || !mappings) {
+      return NextResponse.json({ error: 'sourceServerId, destinationServerId and mappings required' }, { status: 400 });
     }
 
-    await db.collection('servers').doc(serverId).collection('config').doc('forwardingForums').set(
+    await db.collection('servers').doc(sourceServerId).collection('config').doc('forwardingForums').set(
       {
+        sourceServerId,
+        destinationServerId,
         forumChannelId: forumChannelId || undefined,
         forwardingMode: forwardingMode === 'single-thread' ? 'single-thread' : 'per-source-thread',
         sharedThreadId: typeof sharedThreadId === 'string' ? sharedThreadId.trim() || undefined : undefined,

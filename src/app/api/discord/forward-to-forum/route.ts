@@ -57,32 +57,9 @@ async function getChannelDetails(channelId: string): Promise<any | null> {
   }
 }
 
-/**
- * Look up the forum thread ID for a source channel first, then fall back to guild-level mappings.
- * Stored in: servers/{homeServerId}/config/forwardingForums
- *   { mappings: { [sourceChannelId]: threadId, [guildId]: threadId } }
- */
-async function getForumThreadId(guildId: string, channelId?: string): Promise<string | null> {
-  const homeServerId = process.env.HARDCODED_GUILD_ID || process.env.GUILD_ID;
-  if (!homeServerId) return null;
-  try {
-    const doc = await db
-      .collection('servers')
-      .doc(homeServerId)
-      .collection('config')
-      .doc('forwardingForums')
-      .get();
-    if (!doc.exists) return null;
-    const mappings = doc.data()?.mappings || {};
-    if (channelId && mappings[channelId]) return mappings[channelId];
-    return mappings[guildId] || null;
-  } catch {
-    return null;
-  }
-}
-
-type ForwardingForumConfig = {
-  homeServerId: string | null;
+type ForwardingForumRule = {
+  sourceServerId: string;
+  destinationServerId: string;
   forumChannelId: string | null;
   forwardingMode: ForwardingMode;
   sharedThreadId: string | null;
@@ -90,53 +67,44 @@ type ForwardingForumConfig = {
   sourceChannelWhitelist: string[];
 };
 
-async function getForumConfig(): Promise<ForwardingForumConfig> {
-  const homeServerId = process.env.HARDCODED_GUILD_ID || process.env.GUILD_ID;
-  if (!homeServerId) {
-    return {
-      homeServerId: null,
-      forumChannelId: null,
-      forwardingMode: 'per-source-thread',
-      sharedThreadId: null,
-      restrictToWhitelist: false,
-      sourceChannelWhitelist: [],
-    };
-  }
+async function getForwardedThreadId(sourceServerId: string, channelId?: string): Promise<string | null> {
   try {
     const doc = await db
       .collection('servers')
-      .doc(homeServerId)
+      .doc(sourceServerId)
       .collection('config')
       .doc('forwardingForums')
       .get();
-    const forumChannelId = typeof doc.data()?.forumChannelId === 'string'
-      ? doc.data().forumChannelId.trim()
-      : '';
-    const forwardingMode = doc.data()?.forwardingMode === 'single-thread'
-      ? 'single-thread'
-      : 'per-source-thread';
-    const sharedThreadId = typeof doc.data()?.sharedThreadId === 'string'
-      ? doc.data().sharedThreadId.trim()
-      : '';
-    const restrictToWhitelist = Boolean(doc.data()?.restrictToWhitelist);
-    const sourceChannelWhitelist = normalizeWhitelist(doc.data()?.sourceChannelWhitelist);
+    if (!doc.exists) return null;
+    const mappings = doc.data()?.mappings || {};
+    if (channelId && mappings[channelId]) return mappings[channelId];
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+async function getForumRule(sourceServerId: string): Promise<ForwardingForumRule | null> {
+  try {
+    const doc = await db
+      .collection('servers')
+      .doc(sourceServerId)
+      .collection('config')
+      .doc('forwardingForums')
+      .get();
+    if (!doc.exists) return null;
+    const data = doc.data() || {};
     return {
-      homeServerId,
-      forumChannelId: forumChannelId || null,
-      forwardingMode,
-      sharedThreadId: sharedThreadId || null,
-      restrictToWhitelist,
-      sourceChannelWhitelist,
+      sourceServerId,
+      destinationServerId: typeof data.destinationServerId === 'string' ? data.destinationServerId : '',
+      forumChannelId: typeof data.forumChannelId === 'string' ? data.forumChannelId.trim() : null,
+      forwardingMode: data.forwardingMode === 'single-thread' ? 'single-thread' : 'per-source-thread',
+      sharedThreadId: typeof data.sharedThreadId === 'string' ? data.sharedThreadId.trim() : null,
+      restrictToWhitelist: Boolean(data.restrictToWhitelist),
+      sourceChannelWhitelist: normalizeWhitelist(data.sourceChannelWhitelist),
     };
   } catch {
-    return {
-      homeServerId,
-      forumChannelId: null,
-      forwardingMode: 'per-source-thread',
-      sharedThreadId: null,
-      restrictToWhitelist: false,
-      sourceChannelWhitelist: [],
-    };
+    return null;
   }
 }
 
@@ -270,11 +238,15 @@ export async function POST(request: NextRequest) {
       },
     ];
 
-    const forumConfig = await getForumConfig();
-    const forwardingMode = forumConfig.forwardingMode;
-    const sharedThreadId = forumConfig.sharedThreadId || '';
-    const restrictToWhitelist = forumConfig.restrictToWhitelist;
-    const sourceChannelWhitelist = forumConfig.sourceChannelWhitelist;
+    const forumRule = await getForumRule(guildId);
+    if (!forumRule) {
+      return NextResponse.json({ error: 'No forwarding rule configured for this source server' }, { status: 404 });
+    }
+
+    const forwardingMode = forumRule.forwardingMode;
+    const sharedThreadId = forumRule.sharedThreadId || '';
+    const restrictToWhitelist = forumRule.restrictToWhitelist;
+    const sourceChannelWhitelist = forumRule.sourceChannelWhitelist;
 
     if (restrictToWhitelist && channelId && !isSourceAllowed(channelId, sourceChannelWhitelist)) {
       return NextResponse.json({ success: true, skipped: 'source-channel-not-whitelisted' });
@@ -282,7 +254,7 @@ export async function POST(request: NextRequest) {
 
     const mappedThreadId = forwardingMode === 'single-thread'
       ? sharedThreadId || null
-      : await getForumThreadId(guildId, channelId || undefined);
+      : await getForwardedThreadId(guildId, channelId || undefined);
 
     let threadId = mappedThreadId;
     let createdNewThread = false;
@@ -293,15 +265,15 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Shared thread ID is required for single-thread mode' }, { status: 400 });
       }
 
-      if (!forumConfig.forumChannelId) {
-        console.log(`[ForwardForum] No forum parent channel configured for guild ${guildId}`);
-        return NextResponse.json({ error: 'No forum parent channel configured for this server' }, { status: 404 });
+      if (!forumRule.forumChannelId) {
+        console.log(`[ForwardForum] No forum parent channel configured for source server ${guildId}`);
+        return NextResponse.json({ error: 'No forum parent channel configured for this source server' }, { status: 404 });
       }
 
-      const forumParent = await getChannelDetails(forumConfig.forumChannelId);
+      const forumParent = await getChannelDetails(forumRule.forumChannelId);
       const forumParentType = Number(forumParent?.type);
       if (![15, 16].includes(forumParentType)) {
-        console.log(`[ForwardForum] Configured forum parent ${forumConfig.forumChannelId} is not a forum/media channel (type=${forumParentType || 'unknown'})`);
+        console.log(`[ForwardForum] Configured forum parent ${forumRule.forumChannelId} is not a forum/media channel (type=${forumParentType || 'unknown'})`);
         return NextResponse.json(
           { error: 'Configured forum parent channel must be a forum or media channel' },
           { status: 400 },
@@ -309,7 +281,7 @@ export async function POST(request: NextRequest) {
       }
 
       const threadName = buildThreadName(guildName, channelName, channelId);
-      const created = await createForumThread(forumConfig.forumChannelId, {
+      const created = await createForumThread(forumRule.forumChannelId, {
         threadName,
         embed,
         components,
@@ -324,15 +296,16 @@ export async function POST(request: NextRequest) {
       threadId = created.id;
       starterMessageId = created.message?.id || created.id || null;
       createdNewThread = true;
-      const homeServerId = forumConfig.homeServerId || process.env.HARDCODED_GUILD_ID || process.env.GUILD_ID || '';
       const label = channelName || guildName || channelId || guildId;
       await db
         .collection('servers')
-        .doc(homeServerId)
+        .doc(guildId)
         .collection('config')
         .doc('forwardingForums')
         .set({
-          forumChannelId: forumConfig.forumChannelId,
+          sourceServerId: guildId,
+          destinationServerId: forumRule.destinationServerId,
+          forumChannelId: forumRule.forumChannelId,
           forwardingMode,
           sharedThreadId: sharedThreadId || undefined,
           restrictToWhitelist,
@@ -359,10 +332,9 @@ export async function POST(request: NextRequest) {
 
     // Store a mapping so we can find the forwarded message later (for Remove)
     if (forwardedMessageId) {
-      const homeServerId = process.env.HARDCODED_GUILD_ID || process.env.GUILD_ID || '';
       await db
         .collection('servers')
-        .doc(homeServerId)
+        .doc(guildId)
         .collection('forwardedMessages')
         .doc(forwardedMessageId)
         .set({
@@ -373,6 +345,8 @@ export async function POST(request: NextRequest) {
           originMessageId: messageId,
           originUserName: userName,
           originUserAvatar: userAvatar,
+          sourceServerId: guildId,
+          destinationServerId: forumRule.destinationServerId,
           forwardingMode,
           createdAt: new Date().toISOString(),
         });

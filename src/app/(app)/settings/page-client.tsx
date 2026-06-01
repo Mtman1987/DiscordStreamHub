@@ -157,9 +157,9 @@ export function SettingsClientComponents({ serverId }: { serverId: string }) {
       <TabsContent value="forwarding" className="space-y-4">
         <div className="rounded-lg border bg-card p-4">
           <h3 className="text-lg font-semibold mb-1">Message Forwarding</h3>
-          <p className="text-sm text-muted-foreground mb-4">Configure inbound or mirrored Discord flows for the server already loaded into this app session. Choose per-source auto-threading or one shared destination thread, then optionally whitelist the source channels you want copied.</p>
+          <p className="text-sm text-muted-foreground mb-4">Configure a source Discord server and a destination Discord server explicitly. The form below does not depend on the current app session.</p>
         </div>
-        <ForwardingForumsSettings serverId={serverId} />
+        <ForwardingForumsSettings />
       </TabsContent>
     </Tabs>
     </>

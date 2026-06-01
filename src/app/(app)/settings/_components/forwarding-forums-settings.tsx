@@ -9,59 +9,71 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Plus, Save, Trash2, Forward } from 'lucide-react';
+import { Loader2, Plus, Save, Trash2, Forward, RefreshCw } from 'lucide-react';
 
 type ForwardingMode = 'per-source-thread' | 'single-thread';
 
 interface Mapping {
   sourceChannelId: string;
   threadId: string;
-  label: string; // friendly name for display
+  label: string;
 }
 
-export function ForwardingForumsSettings({ serverId }: { serverId: string }) {
+const emptyMapping = (): Mapping => ({ sourceChannelId: '', threadId: '', label: '' });
+
+export function ForwardingForumsSettings() {
   const { toast } = useToast();
-  const [mappings, setMappings] = React.useState<Mapping[]>([]);
+  const [sourceServerId, setSourceServerId] = React.useState('');
+  const [destinationServerId, setDestinationServerId] = React.useState('');
+  const [mappings, setMappings] = React.useState<Mapping[]>([emptyMapping()]);
   const [forumChannelId, setForumChannelId] = React.useState('');
   const [forwardingMode, setForwardingMode] = React.useState<ForwardingMode>('per-source-thread');
   const [sharedThreadId, setSharedThreadId] = React.useState('');
   const [restrictToWhitelist, setRestrictToWhitelist] = React.useState(false);
   const [sourceChannelWhitelist, setSourceChannelWhitelist] = React.useState('');
-  const [isLoading, setIsLoading] = React.useState(true);
+  const [isLoading, setIsLoading] = React.useState(false);
   const [isSaving, setIsSaving] = React.useState(false);
 
-  React.useEffect(() => {
-    loadMappings();
-  }, [serverId]);
+  const loadRule = React.useCallback(async () => {
+    if (!sourceServerId.trim()) {
+      toast({ variant: 'destructive', title: 'Source server ID required' });
+      return;
+    }
 
-  const loadMappings = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch(`/api/settings/forwarding-forums?serverId=${serverId}`);
-      if (res.ok) {
-        const data = await res.json();
-        setForumChannelId(data.forumChannelId || '');
-        setForwardingMode(data.forwardingMode === 'single-thread' ? 'single-thread' : 'per-source-thread');
-        setSharedThreadId(data.sharedThreadId || '');
-        setRestrictToWhitelist(Boolean(data.restrictToWhitelist));
-        setSourceChannelWhitelist(Array.isArray(data.sourceChannelWhitelist) ? data.sourceChannelWhitelist.join('\n') : '');
-        const raw = data.mappings || {};
-        const labels = data.labels || {};
-        const loaded: Mapping[] = Object.entries(raw).map(([sourceChannelId, threadId]) => ({
-          sourceChannelId,
-          threadId: threadId as string,
-          label: (labels as Record<string, string>)[sourceChannelId] || '',
-        }));
-        setMappings(loaded.length > 0 ? loaded : [{ sourceChannelId: '', threadId: '', label: '' }]);
-      }
+      const res = await fetch(`/api/settings/forwarding-forums?sourceServerId=${encodeURIComponent(sourceServerId.trim())}`);
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setDestinationServerId(data.destinationServerId || '');
+      setForumChannelId(data.forumChannelId || '');
+      setForwardingMode(data.forwardingMode === 'single-thread' ? 'single-thread' : 'per-source-thread');
+      setSharedThreadId(data.sharedThreadId || '');
+      setRestrictToWhitelist(Boolean(data.restrictToWhitelist));
+      setSourceChannelWhitelist(Array.isArray(data.sourceChannelWhitelist) ? data.sourceChannelWhitelist.join('\n') : '');
+
+      const raw = data.mappings || {};
+      const labels = data.labels || {};
+      const loaded: Mapping[] = Object.entries(raw).map(([sourceChannelId, threadId]) => ({
+        sourceChannelId,
+        threadId: threadId as string,
+        label: (labels as Record<string, string>)[sourceChannelId] || '',
+      }));
+      setMappings(loaded.length > 0 ? loaded : [emptyMapping()]);
+      toast({ title: 'Rule loaded', description: `Loaded forwarding rule for ${sourceServerId.trim()}` });
     } catch {
-      toast({ variant: 'destructive', title: 'Failed to load forwarding config' });
+      toast({ variant: 'destructive', title: 'Failed to load forwarding rule' });
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [sourceServerId, toast]);
 
   const save = async () => {
+    if (!sourceServerId.trim() || !destinationServerId.trim()) {
+      toast({ variant: 'destructive', title: 'Source and destination server IDs are required' });
+      return;
+    }
+
     setIsSaving(true);
     try {
       const mappingsObj: Record<string, string> = {};
@@ -72,17 +84,20 @@ export function ForwardingForumsSettings({ serverId }: { serverId: string }) {
           if (m.label) labelsObj[m.sourceChannelId] = m.label;
         }
       }
+
       const whitelist = restrictToWhitelist
         ? sourceChannelWhitelist
           .split(/[\n,]/g)
           .map(part => part.trim())
           .filter(Boolean)
         : [];
+
       const res = await fetch('/api/settings/forwarding-forums', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          serverId,
+          sourceServerId: sourceServerId.trim(),
+          destinationServerId: destinationServerId.trim(),
           forumChannelId: forwardingMode === 'per-source-thread' ? forumChannelId.trim() : '',
           forwardingMode,
           sharedThreadId: forwardingMode === 'single-thread' ? sharedThreadId.trim() : '',
@@ -93,7 +108,7 @@ export function ForwardingForumsSettings({ serverId }: { serverId: string }) {
         }),
       });
       if (!res.ok) throw new Error();
-      toast({ title: 'Saved', description: 'Forwarding forum mappings updated.' });
+      toast({ title: 'Saved', description: 'Forwarding rule updated.' });
     } catch {
       toast({ variant: 'destructive', title: 'Failed to save' });
     } finally {
@@ -101,46 +116,57 @@ export function ForwardingForumsSettings({ serverId }: { serverId: string }) {
     }
   };
 
-  const addRow = () => setMappings(prev => [...prev, { sourceChannelId: '', threadId: '', label: '' }]);
+  const addRow = () => setMappings(prev => [...prev, emptyMapping()]);
   const removeRow = (i: number) => setMappings(prev => prev.filter((_, idx) => idx !== i));
   const updateRow = (i: number, field: keyof Mapping, value: string) =>
     setMappings(prev => prev.map((m, idx) => (idx === i ? { ...m, [field]: value } : m)));
-
-  if (isLoading) {
-    return (
-      <Card>
-        <CardContent className="flex justify-center py-8">
-          <Loader2 className="h-6 w-6 animate-spin" />
-        </CardContent>
-      </Card>
-    );
-  }
 
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Forward className="h-5 w-5" />
-          Forum Forwarding Mappings
+          Forum Forwarding Rule
         </CardTitle>
         <CardDescription>
-          Configure how Discord messages move between servers. This page is for the destination server that receives the forwarded posts.
-          In per-source mode, the first message from each source channel creates its own forum thread automatically.
-          In shared-thread mode, everything you allow here lands in one shared thread.
+          Set a source server and a destination server explicitly. The rule below defines where messages come from and where they go.
+          If the whitelist is empty, all source channels are allowed.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="text-xs text-muted-foreground space-y-1">
-          <p><strong>Active server in this session:</strong> <span className="font-mono">{serverId}</span></p>
-          <p><strong>Destination server:</strong> This page writes to the server whose ID is already loaded into the app session.</p>
-          <p><strong>Source Channel ID:</strong> A channel on the other server whose messages you want mirrored here.</p>
-          <p><strong>Forum Parent Channel ID:</strong> The forum or media channel in the destination server used for per-source auto-threading.</p>
-          <p><strong>Shared Thread ID:</strong> A single destination thread to reuse for every allowed source channel.</p>
-          <p><strong>Thread ID:</strong> Right-click the forum thread → Copy Channel ID</p>
-          <p><strong>Blank whitelist:</strong> If you leave the whitelist empty, all source channels are allowed.</p>
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="space-y-1">
+            <Label className="text-xs">Source Server ID</Label>
+            <Input
+              placeholder="123456789012345678"
+              value={sourceServerId}
+              onChange={e => setSourceServerId(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">Messages must originate from this Discord server.</p>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Destination Server ID</Label>
+            <Input
+              placeholder="987654321098765432"
+              value={destinationServerId}
+              onChange={e => setDestinationServerId(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">Forwarded posts land in this Discord server.</p>
+          </div>
         </div>
 
-        <div className="space-y-2 rounded-md border p-4">
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={loadRule} disabled={isLoading || !sourceServerId.trim()}>
+            {isLoading ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <RefreshCw className="h-4 w-4 mr-1" />}
+            Load Rule
+          </Button>
+          <Button size="sm" onClick={save} disabled={isSaving}>
+            {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
+            Save Rule
+          </Button>
+        </div>
+
+        <div className="rounded-md border p-4 space-y-2">
           <Label className="text-xs uppercase tracking-wide text-muted-foreground">Routing mode</Label>
           <Select value={forwardingMode} onValueChange={(v) => setForwardingMode(v as ForwardingMode)}>
             <SelectTrigger>
@@ -152,29 +178,34 @@ export function ForwardingForumsSettings({ serverId }: { serverId: string }) {
             </SelectContent>
           </Select>
           <p className="text-xs text-muted-foreground">
-            Use per-source mode when you want each source channel from the partner server to get its own thread.
-            Use shared-thread mode when you want every allowed source channel to post into the same destination thread.
+            Per-source mode creates a thread the first time a source channel speaks. Shared-thread mode sends all allowed source channels into one destination thread.
           </p>
         </div>
 
         <div className="space-y-1">
           {forwardingMode === 'per-source-thread' ? (
             <>
-              <Label className="text-xs">Forum Parent Channel ID</Label>
+              <Label className="text-xs">Destination Forum Parent Channel ID</Label>
               <Input
-                placeholder="123456789012345678"
+                placeholder="1510992840346435744"
                 value={forumChannelId}
                 onChange={e => setForumChannelId(e.target.value)}
               />
+              <p className="text-xs text-muted-foreground">
+                This must be a forum or media channel in the destination server.
+              </p>
             </>
           ) : (
             <>
-              <Label className="text-xs">Shared Thread ID</Label>
+              <Label className="text-xs">Shared Destination Thread ID</Label>
               <Input
-                placeholder="987654321098765432"
+                placeholder="1497583782524485653"
                 value={sharedThreadId}
                 onChange={e => setSharedThreadId(e.target.value)}
               />
+              <p className="text-xs text-muted-foreground">
+                Use this when every allowed source channel should post into one shared thread.
+              </p>
             </>
           )}
         </div>
@@ -187,10 +218,10 @@ export function ForwardingForumsSettings({ serverId }: { serverId: string }) {
           />
           <div className="space-y-2">
             <Label htmlFor="restrict-whitelist" className="text-sm font-medium">
-              Limit forwarding to a source whitelist
+              Restrict to a source channel whitelist
             </Label>
             <p className="text-xs text-muted-foreground">
-              Leave the list empty to mirror all source channels. When this is enabled, only the source channel IDs you list below will be forwarded.
+              Leave the whitelist empty to mirror all source channels. If you fill it in, only those source channel IDs will be forwarded.
             </p>
           </div>
         </div>
@@ -209,8 +240,7 @@ export function ForwardingForumsSettings({ serverId }: { serverId: string }) {
 
         {forwardingMode === 'single-thread' ? (
           <div className="rounded-md border p-3 text-xs text-muted-foreground">
-            In shared-thread mode the source-channel mapping rows below are optional and only useful as labels or reminders.
-            The shared thread ID above is the actual destination for all allowed messages from the source channels you allow.
+            In shared-thread mode, the rows below are optional notes. The shared thread ID above is the actual destination.
           </div>
         ) : null}
 
@@ -249,7 +279,7 @@ export function ForwardingForumsSettings({ serverId }: { serverId: string }) {
             ))
           ) : (
             <div className="rounded-md border p-3 text-xs text-muted-foreground">
-              The per-source mapping table is hidden in shared-thread mode because every allowed source channel uses the same shared thread.
+              The source-channel mapping rows are optional notes in shared-thread mode because all allowed source channels use the same destination thread.
             </div>
           )}
         </div>
@@ -262,7 +292,7 @@ export function ForwardingForumsSettings({ serverId }: { serverId: string }) {
           ) : null}
           <Button size="sm" onClick={save} disabled={isSaving}>
             {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
-            Save Mappings
+            Save Rule
           </Button>
         </div>
       </CardContent>
