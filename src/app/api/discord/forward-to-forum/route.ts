@@ -81,9 +81,27 @@ async function getForumThreadId(guildId: string, channelId?: string): Promise<st
   }
 }
 
-async function getForumConfig() {
+type ForwardingForumConfig = {
+  homeServerId: string | null;
+  forumChannelId: string | null;
+  forwardingMode: ForwardingMode;
+  sharedThreadId: string | null;
+  restrictToWhitelist: boolean;
+  sourceChannelWhitelist: string[];
+};
+
+async function getForumConfig(): Promise<ForwardingForumConfig> {
   const homeServerId = process.env.HARDCODED_GUILD_ID || process.env.GUILD_ID;
-  if (!homeServerId) return { homeServerId: null as string | null, forumChannelId: null as string | null };
+  if (!homeServerId) {
+    return {
+      homeServerId: null,
+      forumChannelId: null,
+      forwardingMode: 'per-source-thread',
+      sharedThreadId: null,
+      restrictToWhitelist: false,
+      sourceChannelWhitelist: [],
+    };
+  }
   try {
     const doc = await db
       .collection('servers')
@@ -94,9 +112,31 @@ async function getForumConfig() {
     const forumChannelId = typeof doc.data()?.forumChannelId === 'string'
       ? doc.data().forumChannelId.trim()
       : '';
-    return { homeServerId, forumChannelId: forumChannelId || null };
+    const forwardingMode = doc.data()?.forwardingMode === 'single-thread'
+      ? 'single-thread'
+      : 'per-source-thread';
+    const sharedThreadId = typeof doc.data()?.sharedThreadId === 'string'
+      ? doc.data().sharedThreadId.trim()
+      : '';
+    const restrictToWhitelist = Boolean(doc.data()?.restrictToWhitelist);
+    const sourceChannelWhitelist = normalizeWhitelist(doc.data()?.sourceChannelWhitelist);
+    return {
+      homeServerId,
+      forumChannelId: forumChannelId || null,
+      forwardingMode,
+      sharedThreadId: sharedThreadId || null,
+      restrictToWhitelist,
+      sourceChannelWhitelist,
+    };
   } catch {
-    return { homeServerId, forumChannelId: null };
+    return {
+      homeServerId,
+      forumChannelId: null,
+      forwardingMode: 'per-source-thread',
+      sharedThreadId: null,
+      restrictToWhitelist: false,
+      sourceChannelWhitelist: [],
+    };
   }
 }
 
@@ -112,6 +152,13 @@ function shouldMirrorMessage(message: string) {
   if (/^!/.test(trimmed)) return false;
   if (/^@?spmt\b/i.test(trimmed)) return false;
   return true;
+}
+
+type ForwardingMode = 'per-source-thread' | 'single-thread';
+
+function normalizeWhitelist(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map(item => String(item).trim()).filter(Boolean);
 }
 
 async function createForumThread(
@@ -138,6 +185,10 @@ async function createForumThread(
   });
   if (!created?.id) return null;
   return created;
+}
+
+function isSourceAllowed(channelId: string, whitelist: string[]) {
+  return whitelist.length === 0 || whitelist.includes(channelId);
 }
 
 export async function POST(request: NextRequest) {
@@ -220,11 +271,28 @@ export async function POST(request: NextRequest) {
     ];
 
     const forumConfig = await getForumConfig();
-    const mappedThreadId = await getForumThreadId(guildId, channelId || undefined);
+    const forwardingMode = forumConfig.forwardingMode;
+    const sharedThreadId = forumConfig.sharedThreadId || '';
+    const restrictToWhitelist = forumConfig.restrictToWhitelist;
+    const sourceChannelWhitelist = forumConfig.sourceChannelWhitelist;
+
+    if (restrictToWhitelist && channelId && !isSourceAllowed(channelId, sourceChannelWhitelist)) {
+      return NextResponse.json({ success: true, skipped: 'source-channel-not-whitelisted' });
+    }
+
+    const mappedThreadId = forwardingMode === 'single-thread'
+      ? sharedThreadId || null
+      : await getForumThreadId(guildId, channelId || undefined);
+
     let threadId = mappedThreadId;
+    let createdNewThread = false;
     let starterMessageId: string | null = null;
 
     if (!threadId) {
+      if (forwardingMode === 'single-thread') {
+        return NextResponse.json({ error: 'Shared thread ID is required for single-thread mode' }, { status: 400 });
+      }
+
       if (!forumConfig.forumChannelId) {
         console.log(`[ForwardForum] No forum parent channel configured for guild ${guildId}`);
         return NextResponse.json({ error: 'No forum parent channel configured for this server' }, { status: 404 });
@@ -255,6 +323,7 @@ export async function POST(request: NextRequest) {
 
       threadId = created.id;
       starterMessageId = created.message?.id || created.id || null;
+      createdNewThread = true;
       const homeServerId = forumConfig.homeServerId || process.env.HARDCODED_GUILD_ID || process.env.GUILD_ID || '';
       const label = channelName || guildName || channelId || guildId;
       await db
@@ -264,6 +333,10 @@ export async function POST(request: NextRequest) {
         .doc('forwardingForums')
         .set({
           forumChannelId: forumConfig.forumChannelId,
+          forwardingMode,
+          sharedThreadId: sharedThreadId || undefined,
+          restrictToWhitelist,
+          sourceChannelWhitelist,
           mappings: {
             [channelId || guildId]: threadId,
           },
@@ -275,7 +348,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Post to the forum thread
-    const posted = mappedThreadId
+    const posted = !createdNewThread
       ? await discordRequest(`/channels/${threadId}/messages`, {
         method: 'POST',
         body: JSON.stringify({ embeds: [embed], components }),
@@ -300,6 +373,7 @@ export async function POST(request: NextRequest) {
           originMessageId: messageId,
           originUserName: userName,
           originUserAvatar: userAvatar,
+          forwardingMode,
           createdAt: new Date().toISOString(),
         });
     }

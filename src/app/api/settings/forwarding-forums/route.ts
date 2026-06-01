@@ -3,9 +3,25 @@ import { db } from '@/lib/db';
 
 /**
  * GET  /api/settings/forwarding-forums?serverId=xxx
- * POST /api/settings/forwarding-forums  { serverId, forumChannelId, mappings: { sourceChannelId: threadId } }
+ * POST /api/settings/forwarding-forums  {
+ *   serverId,
+ *   forumChannelId,
+ *   forwardingMode,
+ *   sharedThreadId,
+ *   restrictToWhitelist,
+ *   sourceChannelWhitelist,
+ *   mappings: { sourceChannelId: threadId }
+ * }
  *
- * Stores at: servers/{serverId}/config/forwardingForums  { forumChannelId, mappings: { ... } }
+ * Stores at: servers/{serverId}/config/forwardingForums
+ *   {
+ *     forumChannelId,
+ *     forwardingMode,
+ *     sharedThreadId,
+ *     restrictToWhitelist,
+ *     sourceChannelWhitelist,
+ *     mappings: { ... }
+ *   }
  */
 
 export async function GET(request: NextRequest) {
@@ -14,7 +30,12 @@ export async function GET(request: NextRequest) {
 
   try {
     const doc = await db.collection('servers').doc(serverId).collection('config').doc('forwardingForums').get();
-    return NextResponse.json(doc.exists ? doc.data() : { mappings: {} });
+    return NextResponse.json(doc.exists ? doc.data() : {
+      mappings: {},
+      forwardingMode: 'per-source-thread',
+      restrictToWhitelist: false,
+      sourceChannelWhitelist: [],
+    });
   } catch (error) {
     console.error('[ForwardingForums] GET error:', error);
     return NextResponse.json({ error: 'Failed to load' }, { status: 500 });
@@ -23,7 +44,16 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { serverId, forumChannelId, mappings, labels } = await request.json();
+    const {
+      serverId,
+      forumChannelId,
+      forwardingMode,
+      sharedThreadId,
+      restrictToWhitelist,
+      sourceChannelWhitelist,
+      mappings,
+      labels,
+    } = await request.json();
     if (!serverId || !mappings) {
       return NextResponse.json({ error: 'serverId and mappings required' }, { status: 400 });
     }
@@ -31,6 +61,12 @@ export async function POST(request: NextRequest) {
     await db.collection('servers').doc(serverId).collection('config').doc('forwardingForums').set(
       {
         forumChannelId: forumChannelId || undefined,
+        forwardingMode: forwardingMode === 'single-thread' ? 'single-thread' : 'per-source-thread',
+        sharedThreadId: typeof sharedThreadId === 'string' ? sharedThreadId.trim() || undefined : undefined,
+        restrictToWhitelist: Boolean(restrictToWhitelist),
+        sourceChannelWhitelist: Array.isArray(sourceChannelWhitelist)
+          ? sourceChannelWhitelist.map((id: string) => String(id).trim()).filter(Boolean)
+          : [],
         mappings,
         labels: labels || {},
         updatedAt: new Date().toISOString(),
