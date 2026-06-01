@@ -480,6 +480,9 @@ export async function POST(request: NextRequest) {
     const message = data.message || data.content || '';
     const channelId = data.channelId || '';
     const messageId = data.messageId || '';
+    const dispatch = data.dispatch !== false;
+    const isDirectMessage = Boolean(data.isDM || data.isDirectMessage || data.is_direct_message);
+    const isBotAuthor = Boolean(data.author?.bot || data.user?.bot || data.member?.user?.bot);
 
     if (!userId || !guildId) {
       return NextResponse.json({ error: 'userId and guildId required' }, { status: 400 });
@@ -495,6 +498,24 @@ export async function POST(request: NextRequest) {
     }
 
     const msgLower = message.toLowerCase();
+
+    if (dispatch && !isDirectMessage && channelId && guildId && messageId && !isBotAuthor) {
+      void fetch(`${request.nextUrl.origin}/api/discord/forward-to-forum`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          guildId,
+          channelId,
+          messageId,
+          userId,
+          userName,
+          userAvatar,
+          message,
+        }),
+      }).catch((error) => {
+        console.warn('[DiscordChat] Forum forward request failed:', error?.message || error);
+      });
+    }
 
     if (/^!(controls?|watch-controls)$/i.test(message.trim()) && channelId) {
       const deletedCommand = await deleteDiscordMessage(channelId, messageId);

@@ -9,7 +9,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Loader2, Plus, Save, Trash2, Forward } from 'lucide-react';
 
 interface Mapping {
-  guildId: string;
+  sourceChannelId: string;
   threadId: string;
   label: string; // friendly name for display
 }
@@ -17,6 +17,7 @@ interface Mapping {
 export function ForwardingForumsSettings({ serverId }: { serverId: string }) {
   const { toast } = useToast();
   const [mappings, setMappings] = React.useState<Mapping[]>([]);
+  const [forumChannelId, setForumChannelId] = React.useState('');
   const [isLoading, setIsLoading] = React.useState(true);
   const [isSaving, setIsSaving] = React.useState(false);
 
@@ -30,14 +31,15 @@ export function ForwardingForumsSettings({ serverId }: { serverId: string }) {
       const res = await fetch(`/api/settings/forwarding-forums?serverId=${serverId}`);
       if (res.ok) {
         const data = await res.json();
+        setForumChannelId(data.forumChannelId || '');
         const raw = data.mappings || {};
         const labels = data.labels || {};
-        const loaded: Mapping[] = Object.entries(raw).map(([guildId, threadId]) => ({
-          guildId,
+        const loaded: Mapping[] = Object.entries(raw).map(([sourceChannelId, threadId]) => ({
+          sourceChannelId,
           threadId: threadId as string,
-          label: (labels as Record<string, string>)[guildId] || '',
+          label: (labels as Record<string, string>)[sourceChannelId] || '',
         }));
-        setMappings(loaded.length > 0 ? loaded : [{ guildId: '', threadId: '', label: '' }]);
+        setMappings(loaded.length > 0 ? loaded : [{ sourceChannelId: '', threadId: '', label: '' }]);
       }
     } catch {
       toast({ variant: 'destructive', title: 'Failed to load forwarding config' });
@@ -52,15 +54,15 @@ export function ForwardingForumsSettings({ serverId }: { serverId: string }) {
       const mappingsObj: Record<string, string> = {};
       const labelsObj: Record<string, string> = {};
       for (const m of mappings) {
-        if (m.guildId && m.threadId) {
-          mappingsObj[m.guildId] = m.threadId;
-          if (m.label) labelsObj[m.guildId] = m.label;
+        if (m.sourceChannelId && m.threadId) {
+          mappingsObj[m.sourceChannelId] = m.threadId;
+          if (m.label) labelsObj[m.sourceChannelId] = m.label;
         }
       }
       const res = await fetch('/api/settings/forwarding-forums', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ serverId, mappings: mappingsObj, labels: labelsObj }),
+        body: JSON.stringify({ serverId, forumChannelId: forumChannelId.trim(), mappings: mappingsObj, labels: labelsObj }),
       });
       if (!res.ok) throw new Error();
       toast({ title: 'Saved', description: 'Forwarding forum mappings updated.' });
@@ -71,7 +73,7 @@ export function ForwardingForumsSettings({ serverId }: { serverId: string }) {
     }
   };
 
-  const addRow = () => setMappings(prev => [...prev, { guildId: '', threadId: '', label: '' }]);
+  const addRow = () => setMappings(prev => [...prev, { sourceChannelId: '', threadId: '', label: '' }]);
   const removeRow = (i: number) => setMappings(prev => prev.filter((_, idx) => idx !== i));
   const updateRow = (i: number, field: keyof Mapping, value: string) =>
     setMappings(prev => prev.map((m, idx) => (idx === i ? { ...m, [field]: value } : m)));
@@ -94,14 +96,24 @@ export function ForwardingForumsSettings({ serverId }: { serverId: string }) {
           Forum Forwarding Mappings
         </CardTitle>
         <CardDescription>
-          Map each partner&apos;s Discord server (Guild ID) to a forum thread in your server.
-          Messages from that guild get forwarded to the matching thread with Reply / React / Remove buttons.
+          Map each source Discord channel to a forum post in your server.
+          The first message from a channel creates a thread automatically, then later messages keep using the same thread.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="text-xs text-muted-foreground space-y-1">
-          <p><strong>Guild ID:</strong> Right-click the partner&apos;s server icon → Copy Server ID</p>
+          <p><strong>Forum Parent Channel ID:</strong> Right-click the forum channel → Copy Channel ID</p>
+          <p><strong>Source Channel ID:</strong> Right-click the Discord source channel → Copy Channel ID</p>
           <p><strong>Thread ID:</strong> Right-click the forum thread → Copy Channel ID</p>
+        </div>
+
+        <div className="space-y-1">
+          <Label className="text-xs">Forum Parent Channel ID</Label>
+          <Input
+            placeholder="123456789012345678"
+            value={forumChannelId}
+            onChange={e => setForumChannelId(e.target.value)}
+          />
         </div>
 
         <div className="space-y-3">
@@ -116,11 +128,11 @@ export function ForwardingForumsSettings({ serverId }: { serverId: string }) {
                 />
               </div>
               <div className="flex-1 space-y-1">
-                <Label className="text-xs">Guild ID</Label>
+                <Label className="text-xs">Source Channel ID</Label>
                 <Input
                   placeholder="123456789012345678"
-                  value={m.guildId}
-                  onChange={e => updateRow(i, 'guildId', e.target.value)}
+                  value={m.sourceChannelId}
+                  onChange={e => updateRow(i, 'sourceChannelId', e.target.value)}
                 />
               </div>
               <div className="flex-1 space-y-1">
