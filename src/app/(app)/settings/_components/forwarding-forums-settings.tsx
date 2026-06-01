@@ -31,6 +31,7 @@ export function ForwardingForumsSettings() {
   const [sharedThreadId, setSharedThreadId] = React.useState('');
   const [restrictToWhitelist, setRestrictToWhitelist] = React.useState(false);
   const [sourceChannelWhitelist, setSourceChannelWhitelist] = React.useState('');
+  const [showAdvancedOverrides, setShowAdvancedOverrides] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(false);
   const [isSaving, setIsSaving] = React.useState(false);
 
@@ -60,6 +61,7 @@ export function ForwardingForumsSettings() {
         label: (labels as Record<string, string>)[sourceChannelId] || '',
       }));
       setMappings(loaded.length > 0 ? loaded : [emptyMapping()]);
+      setShowAdvancedOverrides(loaded.length > 0);
       toast({ title: 'Rule loaded', description: `Loaded forwarding rule for ${sourceServerId.trim()}` });
     } catch {
       toast({ variant: 'destructive', title: 'Failed to load forwarding rule' });
@@ -130,7 +132,7 @@ export function ForwardingForumsSettings() {
         </CardTitle>
         <CardDescription>
           Set a source server and a destination server explicitly. The rule below defines where messages come from and where they go.
-          If the whitelist is empty, all source channels are allowed.
+          If the whitelist is empty, all source channels are allowed. The source/thread rows below are optional overrides only.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -238,26 +240,37 @@ export function ForwardingForumsSettings() {
           </div>
         )}
 
-        {forwardingMode === 'single-thread' ? (
-          <div className="rounded-md border p-3 text-xs text-muted-foreground">
-            In shared-thread mode, the rows below are optional notes. The shared thread ID above is the actual destination.
+        <div className="flex items-start gap-3 rounded-md border p-4">
+          <Checkbox
+            id="advanced-overrides"
+            checked={showAdvancedOverrides}
+            onCheckedChange={(checked) => setShowAdvancedOverrides(Boolean(checked))}
+          />
+          <div className="space-y-2">
+            <Label htmlFor="advanced-overrides" className="text-sm font-medium">
+              Show advanced source/thread overrides
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              Use this only if you want to pin a specific source channel to an existing destination thread.
+              If you are just using the whitelist plus auto-create, you can leave this off.
+            </p>
           </div>
-        ) : null}
+        </div>
 
-        <div className="space-y-3">
-          {forwardingMode === 'per-source-thread' ? (
-            mappings.map((m, i) => (
+        {showAdvancedOverrides ? (
+          <div className="space-y-3">
+            {mappings.map((m, i) => (
               <div key={i} className="flex items-end gap-2">
                 <div className="flex-1 space-y-1">
-                  <Label className="text-xs">Label</Label>
+                  <Label className="text-xs">Label (optional)</Label>
                   <Input
-                    placeholder="e.g. van_braak"
+                    placeholder="e.g. Space Mountain inbound"
                     value={m.label}
                     onChange={e => updateRow(i, 'label', e.target.value)}
                   />
                 </div>
                 <div className="flex-1 space-y-1">
-                  <Label className="text-xs">Source Channel ID</Label>
+                  <Label className="text-xs">Source Channel ID (optional override)</Label>
                   <Input
                     placeholder="123456789012345678"
                     value={m.sourceChannelId}
@@ -265,7 +278,7 @@ export function ForwardingForumsSettings() {
                   />
                 </div>
                 <div className="flex-1 space-y-1">
-                  <Label className="text-xs">Forum Thread ID</Label>
+                  <Label className="text-xs">Forum Thread ID (optional override)</Label>
                   <Input
                     placeholder="987654321098765432"
                     value={m.threadId}
@@ -276,16 +289,16 @@ export function ForwardingForumsSettings() {
                   <Trash2 className="h-4 w-4 text-destructive" />
                 </Button>
               </div>
-            ))
-          ) : (
-            <div className="rounded-md border p-3 text-xs text-muted-foreground">
-              The source-channel mapping rows are optional notes in shared-thread mode because all allowed source channels use the same destination thread.
-            </div>
-          )}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-md border p-3 text-xs text-muted-foreground">
+            No per-channel overrides are enabled. With a blank whitelist, every allowed source channel will auto-create or reuse its thread according to the selected mode.
+          </div>
+        )}
 
         <div className="flex gap-2 pt-2">
-          {forwardingMode === 'per-source-thread' ? (
+          {showAdvancedOverrides ? (
             <Button variant="outline" size="sm" onClick={addRow}>
               <Plus className="h-4 w-4 mr-1" /> Add Source Channel
             </Button>
