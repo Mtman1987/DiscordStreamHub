@@ -132,10 +132,11 @@ export function ForwardingForumsSettings({ serverId }: { serverId: string }) {
       <CardContent className="space-y-4">
         <div className="text-xs text-muted-foreground space-y-1">
           <p><strong>Destination server:</strong> This page writes to the server you are currently configuring.</p>
-          <p><strong>Source Channel ID:</strong> The channel on the other server that you want mirrored here.</p>
+          <p><strong>Source Channel ID:</strong> A channel on the other server whose messages you want mirrored here.</p>
           <p><strong>Forum Parent Channel ID:</strong> The forum or media channel in the destination server used for per-source auto-threading.</p>
           <p><strong>Shared Thread ID:</strong> A single destination thread to reuse for every allowed source channel.</p>
           <p><strong>Thread ID:</strong> Right-click the forum thread → Copy Channel ID</p>
+          <p><strong>Blank whitelist:</strong> If you leave the whitelist empty, all source channels are allowed.</p>
         </div>
 
         <div className="space-y-2 rounded-md border p-4">
@@ -150,8 +151,8 @@ export function ForwardingForumsSettings({ serverId }: { serverId: string }) {
             </SelectContent>
           </Select>
           <p className="text-xs text-muted-foreground">
-            Use per-source mode when you want each channel from the partner server to get its own thread.
-            Use shared-thread mode when you want every allowed channel to post into the same destination thread.
+            Use per-source mode when you want each source channel from the partner server to get its own thread.
+            Use shared-thread mode when you want every allowed source channel to post into the same destination thread.
           </p>
         </div>
 
@@ -188,7 +189,7 @@ export function ForwardingForumsSettings({ serverId }: { serverId: string }) {
               Limit forwarding to a source whitelist
             </Label>
             <p className="text-xs text-muted-foreground">
-              Leave the list empty to mirror all source channels. When this is enabled, only the IDs you list below will be forwarded.
+              Leave the list empty to mirror all source channels. When this is enabled, only the source channel IDs you list below will be forwarded.
             </p>
           </div>
         </div>
@@ -207,8 +208,8 @@ export function ForwardingForumsSettings({ serverId }: { serverId: string }) {
 
         {forwardingMode === 'single-thread' ? (
           <div className="rounded-md border p-3 text-xs text-muted-foreground">
-            In shared-thread mode the source-channel mapping rows below are optional and only useful as labels.
-            The shared thread ID above is the actual destination for all allowed messages.
+            In shared-thread mode the source-channel mapping rows below are optional and only useful as labels or reminders.
+            The shared thread ID above is the actual destination for all allowed messages from the source channels you allow.
           </div>
         ) : null}
 
