@@ -3,9 +3,9 @@ import { db } from '@/lib/db';
 
 /**
  * GET  /api/settings/forwarding-forums?serverId=xxx
- * POST /api/settings/forwarding-forums  { serverId, mappings: { guildId: threadId } }
+ * POST /api/settings/forwarding-forums  { serverId, forumChannelId, mappings: { sourceChannelId: threadId } }
  *
- * Stores at: servers/{serverId}/config/forwardingForums  { mappings: { ... } }
+ * Stores at: servers/{serverId}/config/forwardingForums  { forumChannelId, mappings: { ... } }
  */
 
 export async function GET(request: NextRequest) {
@@ -23,13 +23,18 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { serverId, mappings, labels } = await request.json();
+    const { serverId, forumChannelId, mappings, labels } = await request.json();
     if (!serverId || !mappings) {
       return NextResponse.json({ error: 'serverId and mappings required' }, { status: 400 });
     }
 
     await db.collection('servers').doc(serverId).collection('config').doc('forwardingForums').set(
-      { mappings, labels: labels || {}, updatedAt: new Date().toISOString() },
+      {
+        forumChannelId: forumChannelId || undefined,
+        mappings,
+        labels: labels || {},
+        updatedAt: new Date().toISOString(),
+      },
       { merge: true },
     );
 

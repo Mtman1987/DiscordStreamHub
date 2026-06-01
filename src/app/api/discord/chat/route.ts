@@ -149,26 +149,6 @@ async function deleteDiscordMessage(channelId: string, messageId: string) {
   return { ok: Boolean(response?.ok), status: response?.status || 0 };
 }
 
-async function createDiscordDmChannel(userId: string) {
-  const botToken = process.env.DISCORD_BOT_TOKEN;
-  if (!botToken) throw new Error('DISCORD_BOT_TOKEN is not configured');
-
-  const response = await fetch('https://discord.com/api/v10/users/@me/channels', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bot ${botToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ recipient_id: userId }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Discord DM channel failed: ${response.status} ${await response.text()}`);
-  }
-
-  return response.json();
-}
-
 function buildHearMeOutControlsPayload(joinUrl?: string) {
   return {
     content: '',
@@ -201,12 +181,8 @@ function buildHearMeOutControlsPayload(joinUrl?: string) {
   };
 }
 
-async function sendHearMeOutControls(channelId: string, userId?: string) {
+async function sendHearMeOutControls(channelId: string) {
   const payload = buildHearMeOutControlsPayload(`${process.env.HEARMEOUT_URL || 'https://hearmeout-main.fly.dev'}/activity`);
-  if (userId) {
-    const dm = await createDiscordDmChannel(userId);
-    if (dm?.id) return sendDiscordChannelMessage(dm.id, payload);
-  }
   return sendDiscordChannelMessage(channelId, payload);
 }
 
@@ -215,6 +191,13 @@ function getHearMeOutFanoutReplies(fanout: any[]) {
   const replies = hmo?.payload?.replies;
   if (Array.isArray(replies)) return replies;
   return hmo?.payload?.reply ? [hmo.payload.reply] : [];
+}
+
+function firstString(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return '';
 }
 
 export async function POST(request: NextRequest) {
@@ -231,13 +214,26 @@ export async function POST(request: NextRequest) {
 
     // Support Kite format (may nest under 'root'), direct format, and old format
     const data = body.root || body;
-    const userId = data.userId;
-    const guildId = data.guildId || data.serverId || process.env.HARDCODED_GUILD_ID;
-    const userName = data.userName || data.displayName || data.username || 'Unknown';
-    const userAvatar = data.userAvatar || data.avatarUrl || '';
+    const user = data.user || data.author || data.member?.user || {};
+    const channel = data.channel || {};
+    const guild = data.guild || data.server || {};
+    const userId = firstString(data.userId, data.user_id, data.discordUserId, data.discord_user_id, user.id);
+    const guildId = firstString(data.guildId, data.guild_id, data.serverId, data.server_id, guild.id, process.env.HARDCODED_GUILD_ID);
+    const userName = firstString(data.userName, data.user_name, data.displayName, data.display_name, data.username, user.username, user.global_name) || 'Unknown';
+    const userAvatar = firstString(data.userAvatar, data.user_avatar, data.avatarUrl, data.avatar_url, user.avatar);
     const message = data.message || data.content || '';
-    const channelId = data.channelId || '';
-    const messageId = data.messageId || '';
+    const channelId = firstString(data.channelId, data.channel_id, data.discordChannelId, data.discord_channel_id, channel.id);
+    const messageId = firstString(data.messageId, data.message_id, data.discordMessageId, data.discord_message_id, data.id);
+    const dispatch = data.dispatch !== false;
+    const isDirectMessage = Boolean(
+      data.isDM ||
+      data.isDirectMessage ||
+      data.is_direct_message ||
+      channel.type === 'DM' ||
+      channel.type === 1 ||
+      channel.type === '1' ||
+      !guild.id
+    );
 
     if (!userId || !guildId) {
       return NextResponse.json({ error: 'userId and guildId required' }, { status: 400 });
@@ -253,17 +249,36 @@ export async function POST(request: NextRequest) {
     }
 
     const msgLower = message.toLowerCase();
+    const isBotAuthor = Boolean(data.author?.bot || data.user?.bot || data.member?.user?.bot);
+
+    if (dispatch && !isDirectMessage && channelId && guildId && messageId && !isBotAuthor) {
+      void fetch(`${request.nextUrl.origin}/api/discord/forward-to-forum`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          guildId,
+          channelId,
+          messageId,
+          userId,
+          userName,
+          userAvatar,
+          message,
+        }),
+      }).catch((error) => {
+        console.warn('[DiscordChat] Forum forward request failed:', error?.message || error);
+      });
+    }
 
     if (/^!(controls?|watch-controls)$/i.test(message.trim()) && channelId) {
       const deletedCommand = await deleteDiscordMessage(channelId, messageId);
       try {
-        await sendHearMeOutControls(channelId, userId);
-        return NextResponse.json({ success: true, commandHandled: 'hearmeout-controls', delivery: userId ? 'dm' : 'channel', deletedCommand });
+        await sendHearMeOutControls(channelId);
+        return NextResponse.json({ success: true, commandHandled: 'hearmeout-controls', delivery: 'channel', deletedCommand });
       } catch (error: any) {
         const fallback = await sendDiscordChannelMessage(channelId, {
           ...buildHearMeOutControlsPayload(`${process.env.HEARMEOUT_URL || 'https://hearmeout-main.fly.dev'}/activity`),
-          content: userId ? `<@${userId}> I could not DM you, so here are the controls.` : '',
-          allowed_mentions: { users: userId ? [userId] : [] },
+          content: `<@${userId}> here are the controls.` ,
+          allowed_mentions: { parse: [], users: userId ? [userId] : [] },
         });
         return NextResponse.json({
           success: true,
@@ -305,21 +320,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, skipped: 'watch-command-handled-by-voice-bot', fanout, discordSends, deletedCommand });
     }
 
-    // Chat Tag: detect @spmt or spmt commands (Discord converts @spmt to <@botId>)
-    const isSpmtCommand = msgLower.startsWith('spmt ') || msgLower.startsWith('@spmt ') || message.startsWith('<@1279582181768957963>');
+    // Chat Tag: detect spmt commands, with legacy mention compatibility.
+    const isSpmtCommand = /^@?spmt\s+/.test(msgLower) || message.startsWith('<@1279582181768957963>');
     if (isSpmtCommand && channelId) {
-      // Normalize the message to always start with @spmt
+      // Normalize the message to the current spmt command form.
       let normalizedMsg = message;
       if (message.startsWith('<@')) {
-        normalizedMsg = '@spmt ' + message.replace(/<@!?\d+>/g, '').trim();
+        normalizedMsg = 'spmt ' + message.replace(/<@!?\d+>/g, '').trim();
       } else if (msgLower.startsWith('spmt ')) {
-        normalizedMsg = '@spmt ' + message.substring(5);
+        normalizedMsg = 'spmt ' + message.substring(5);
+      } else if (/^@?spmt\s+/.test(msgLower)) {
+        normalizedMsg = 'spmt ' + message.substring(6);
       }
       const normalizedLower = normalizedMsg.toLowerCase().trim();
-      if (normalizedLower === '@spmt embed' || normalizedLower === '@spmt panel') {
+      if (normalizedLower === 'spmt embed' || normalizedLower === 'spmt panel') {
         try {
           const { postOrUpdateGameEmbed } = await import('@/lib/chat-tag-service');
-          await postOrUpdateGameEmbed(guildId);
+          await postOrUpdateGameEmbed(guildId, channelId);
           await sendDiscordChannelMessage(channelId, { content: '✅ Chat Tag embed refreshed.' });
         } catch (err) {
           console.error('[DiscordChat] Chat Tag embed refresh failed:', err);
@@ -338,18 +355,19 @@ export async function POST(request: NextRequest) {
           if (twitchName) normalizedMsg = normalizedMsg.replace(match[0], twitchName);
         } catch {}
       }
-      console.log(`[DiscordChat] @spmt command detected from ${userName}: ${normalizedMsg} (channelId: ${channelId})`);
+      console.log(`[DiscordChat] spmt command detected from ${userName}: ${normalizedMsg} (channelId: ${channelId})`);
       try {
         await handleSpmtCommand(normalizedMsg, userId, userName, guildId, channelId, messageId);
       } catch (err: any) {
-        console.error('[DiscordChat] @spmt handler error:', err);
+        console.error('[DiscordChat] spmt handler error:', err);
         await sendDiscordChannelMessage(channelId, {
           content: `❌ Chat Tag command failed: ${err?.message || 'unknown error'}`,
           allowed_mentions: { parse: [] },
         }).catch(() => {});
       }
+      const deletedCommand = await deleteDiscordMessage(channelId, messageId);
       const fanout = await fanoutPromise;
-      return NextResponse.json({ success: true, commandHandled: 'chat-tag', fanout });
+      return NextResponse.json({ success: true, commandHandled: 'chat-tag', channelId, messageId, deletedCommand, fanout });
     }
 
     // Check if user is in our community

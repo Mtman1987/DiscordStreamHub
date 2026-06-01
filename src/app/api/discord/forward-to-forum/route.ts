@@ -50,13 +50,11 @@ async function getChannelName(channelId: string): Promise<string> {
 }
 
 /**
- * Look up the forum thread ID for a given guild.
+ * Look up the forum thread ID for a source channel first, then fall back to guild-level mappings.
  * Stored in: servers/{homeServerId}/config/forwardingForums
- *   { mappings: { [guildId]: threadId } }
- *
- * If no mapping exists, returns null.
+ *   { mappings: { [sourceChannelId]: threadId, [guildId]: threadId } }
  */
-async function getForumThreadId(guildId: string): Promise<string | null> {
+async function getForumThreadId(guildId: string, channelId?: string): Promise<string | null> {
   const homeServerId = process.env.HARDCODED_GUILD_ID || process.env.GUILD_ID;
   if (!homeServerId) return null;
   try {
@@ -68,10 +66,62 @@ async function getForumThreadId(guildId: string): Promise<string | null> {
       .get();
     if (!doc.exists) return null;
     const mappings = doc.data()?.mappings || {};
+    if (channelId && mappings[channelId]) return mappings[channelId];
     return mappings[guildId] || null;
   } catch {
     return null;
   }
+}
+
+async function getForumConfig() {
+  const homeServerId = process.env.HARDCODED_GUILD_ID || process.env.GUILD_ID;
+  if (!homeServerId) return { homeServerId: null as string | null, forumChannelId: null as string | null };
+  try {
+    const doc = await db
+      .collection('servers')
+      .doc(homeServerId)
+      .collection('config')
+      .doc('forwardingForums')
+      .get();
+    const forumChannelId = typeof doc.data()?.forumChannelId === 'string'
+      ? doc.data().forumChannelId.trim()
+      : '';
+    return { homeServerId, forumChannelId: forumChannelId || null };
+  } catch {
+    return { homeServerId, forumChannelId: null };
+  }
+}
+
+function buildThreadName(guildName: string, channelName: string, channelId: string) {
+  const base = [guildName, `#${channelName}`].filter(Boolean).join(' · ');
+  const fallback = channelId ? `channel-${channelId}` : 'discord-forward';
+  return (base || fallback).slice(0, 100);
+}
+
+async function createForumThread(
+  forumChannelId: string,
+  payload: {
+    threadName: string;
+    embed: any;
+    components: any[];
+    message: string;
+  },
+): Promise<any | null> {
+  const created = await discordRequest(`/channels/${forumChannelId}/threads`, {
+    method: 'POST',
+    body: JSON.stringify({
+      name: payload.threadName,
+      auto_archive_duration: 10080,
+      message: {
+        content: payload.message,
+        embeds: [payload.embed],
+        components: payload.components,
+        allowed_mentions: { parse: [] },
+      },
+    }),
+  });
+  if (!created?.id) return null;
+  return created;
 }
 
 export async function POST(request: NextRequest) {
@@ -95,13 +145,6 @@ export async function POST(request: NextRequest) {
 
     if (!guildId || !message) {
       return NextResponse.json({ error: 'guildId and message required' }, { status: 400 });
-    }
-
-    // Resolve where to post
-    const threadId = await getForumThreadId(guildId);
-    if (!threadId) {
-      console.log(`[ForwardForum] No forum thread mapped for guild ${guildId}`);
-      return NextResponse.json({ error: 'No forum thread configured for this guild' }, { status: 404 });
     }
 
     const [guildName, channelName] = await Promise.all([
@@ -156,22 +199,71 @@ export async function POST(request: NextRequest) {
       },
     ];
 
+    const forumConfig = await getForumConfig();
+    const mappedThreadId = await getForumThreadId(guildId, channelId || undefined);
+    let threadId = mappedThreadId;
+    let starterMessageId: string | null = null;
+
+    if (!threadId) {
+      if (!forumConfig.forumChannelId) {
+        console.log(`[ForwardForum] No forum parent channel configured for guild ${guildId}`);
+        return NextResponse.json({ error: 'No forum parent channel configured for this server' }, { status: 404 });
+      }
+
+      const threadName = buildThreadName(guildName, channelName, channelId);
+      const created = await createForumThread(forumConfig.forumChannelId, {
+        threadName,
+        embed,
+        components,
+        message,
+      });
+
+      if (!created?.id) {
+        console.log(`[ForwardForum] Failed to create forum thread for source ${guildId}/${channelId}`);
+        return NextResponse.json({ error: 'Failed to create forum thread' }, { status: 500 });
+      }
+
+      threadId = created.id;
+      starterMessageId = created.message?.id || created.id || null;
+      const homeServerId = forumConfig.homeServerId || process.env.HARDCODED_GUILD_ID || process.env.GUILD_ID || '';
+      const label = channelName || guildName || channelId || guildId;
+      await db
+        .collection('servers')
+        .doc(homeServerId)
+        .collection('config')
+        .doc('forwardingForums')
+        .set({
+          forumChannelId: forumConfig.forumChannelId,
+          mappings: {
+            [channelId || guildId]: threadId,
+          },
+          labels: {
+            [channelId || guildId]: label,
+          },
+          updatedAt: new Date().toISOString(),
+        }, { merge: true });
+    }
+
     // Post to the forum thread
-    const posted = await discordRequest(`/channels/${threadId}/messages`, {
-      method: 'POST',
-      body: JSON.stringify({ embeds: [embed], components }),
-    });
+    const posted = mappedThreadId
+      ? await discordRequest(`/channels/${threadId}/messages`, {
+        method: 'POST',
+        body: JSON.stringify({ embeds: [embed], components }),
+      })
+      : null;
+
+    const forwardedMessageId = posted?.id || starterMessageId || threadId;
 
     // Store a mapping so we can find the forwarded message later (for Remove)
-    if (posted?.id) {
+    if (forwardedMessageId) {
       const homeServerId = process.env.HARDCODED_GUILD_ID || process.env.GUILD_ID || '';
       await db
         .collection('servers')
         .doc(homeServerId)
         .collection('forwardedMessages')
-        .doc(posted.id)
+        .doc(forwardedMessageId)
         .set({
-          forwardedMessageId: posted.id,
+          forwardedMessageId,
           forwardedThreadId: threadId,
           originGuildId: guildId,
           originChannelId: channelId,
@@ -183,7 +275,7 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`[ForwardForum] Forwarded message from ${userName} (${guildName}/#${channelName}) → thread ${threadId}`);
-    return NextResponse.json({ success: true, forwardedMessageId: posted?.id });
+    return NextResponse.json({ success: true, forwardedMessageId });
   } catch (error) {
     console.error('[ForwardForum] Error:', error);
     return NextResponse.json(

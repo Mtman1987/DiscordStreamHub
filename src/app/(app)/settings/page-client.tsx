@@ -157,7 +157,7 @@ export function SettingsClientComponents({ serverId }: { serverId: string }) {
       <TabsContent value="forwarding" className="space-y-4">
         <div className="rounded-lg border bg-card p-4">
           <h3 className="text-lg font-semibold mb-1">Message Forwarding</h3>
-          <p className="text-sm text-muted-foreground mb-4">Route partner Discord messages to forum threads in your server. Each partner&apos;s guild maps to a specific forum thread.</p>
+          <p className="text-sm text-muted-foreground mb-4">Route Discord source channels to forum threads in your server. The first message from a channel creates a thread automatically, then later messages reuse it.</p>
         </div>
         <ForwardingForumsSettings serverId={serverId} />
       </TabsContent>
