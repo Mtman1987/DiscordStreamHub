@@ -12,8 +12,12 @@ export async function generateLeaderboardImage(
     const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
     const page = await browser.newPage();
     await page.setViewport({ width: 1200, height: 1600 });
-    await page.goto(url, { waitUntil: 'networkidle0', timeout: 30000 });
-    await page.waitForSelector('.leaderboard', { timeout: 10000 });
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForSelector('.leaderboard', { timeout: 20000 });
+    await page.waitForFunction(() => {
+      const root = document.querySelector('.leaderboard');
+      return Boolean(root && root.querySelector('.leaderboard-entry'));
+    }, { timeout: 20000 });
     
     const screenshot = await page.screenshot({ type: 'png', fullPage: false });
     await browser.close();

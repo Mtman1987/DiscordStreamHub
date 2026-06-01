@@ -33,16 +33,93 @@ const TWITCH_CLIENT_SECRET = process.env.TWITCH_CLIENT_SECRET || '';
 const POLL_INTERVAL = 3 * 60 * 1000; // 3 minutes between cycles
 const GIFS_PER_STREAMER = 2;
 const HEALTH_PORT = process.env.PORT || 8080;
+const DEFAULT_CREW_MEMBERS = [
+  'Akhiteddy',
+  'differentdecree',
+  'swordsmanEB',
+  'brotherdavid09',
+  'MotherMiranda',
+  'UDHero2K',
+  'Scarletkitty1313',
+];
+const BANNER_VERSION = '2026-06-01-worker-1';
 
 let twitchAccessToken = '';
 
 // ── Health check server so Fly doesn't kill us ──
 http.createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ status: 'ok', worker: 'clip-worker' }));
+  handleHttpRequest(req, res).catch((err) => {
+    console.error('[ClipWorker] HTTP handler error:', err);
+    if (!res.headersSent) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+    }
+    res.end(JSON.stringify({ error: String(err?.message || err) }));
+  });
 }).listen(HEALTH_PORT, '0.0.0.0', () => {
   console.log(`[ClipWorker] Health check on port ${HEALTH_PORT}`);
 });
+
+async function handleHttpRequest(req, res) {
+  const url = new URL(req.url || '/', 'http://127.0.0.1');
+  if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/health' || url.pathname === '/api/health')) {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'ok', worker: 'clip-worker' }));
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/banners/generate') {
+    await handleBannerGenerationRequest(req, res);
+    return;
+  }
+
+  res.writeHead(404, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ error: 'not found' }));
+}
+
+async function handleBannerGenerationRequest(req, res) {
+  const auth = req.headers.authorization || '';
+  if (auth !== `Bearer ${WORKER_SECRET}`) {
+    res.writeHead(401, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Unauthorized' }));
+    return;
+  }
+
+  const body = await readJsonBody(req).catch(() => ({}));
+  const crewMembers = Array.isArray(body?.crewMembers) && body.crewMembers.length > 0
+    ? body.crewMembers.filter((name) => typeof name === 'string' && name.trim())
+    : DEFAULT_CREW_MEMBERS;
+  const commanderName = typeof body?.commanderName === 'string' && body.commanderName.trim()
+    ? body.commanderName.trim()
+    : 'mtman1987';
+
+  console.log(`[ClipWorker] Generating banners for ${crewMembers.length} crew members + commander ${commanderName}`);
+  const commanderUrl = await generateCommanderBanner(commanderName);
+  let successCount = 0;
+  for (const member of crewMembers) {
+    try {
+      await generateCrewBanner(member);
+      successCount += 1;
+    } catch (err) {
+      console.error(`[ClipWorker] Banner generation failed for ${member}:`, err?.message || err);
+    }
+  }
+
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({
+    success: true,
+    commanderUrl,
+    crewCount: crewMembers.length,
+    crewGenerated: successCount,
+    bannerVersion: BANNER_VERSION,
+  }));
+}
+
+async function readJsonBody(req) {
+  const chunks = [];
+  for await (const chunk of req) chunks.push(Buffer.from(chunk));
+  if (chunks.length === 0) return {};
+  return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+}
 
 // ── Twitch Auth ──
 async function getTwitchToken() {
@@ -63,6 +140,103 @@ async function getTwitchToken() {
   const refreshMs = Math.max(60_000, Math.min((Number(data.expires_in || 3600) - 300) * 1000, 2_000_000_000));
   setTimeout(() => { twitchAccessToken = ''; }, refreshMs);
   return twitchAccessToken;
+}
+
+async function fetchBannerTemplate(templatePath) {
+  const url = `${DSH_URL.replace(/\/$/, '')}${templatePath}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch banner template ${templatePath}: ${res.status}`);
+  }
+  return res.text();
+}
+
+async function renderBannerGifFromHtml(html, bannerName) {
+  const tempHtml = path.join(os.tmpdir(), `banner_${bannerName}_${Date.now()}.html`);
+  const tempGif = path.join(os.tmpdir(), `banner_${bannerName}_${Date.now()}.gif`);
+  const palette = path.join(os.tmpdir(), `banner_${bannerName}_${Date.now()}_palette.png`);
+  const fps = 30;
+  const duration = 10;
+  const framePaths = [];
+  let browser;
+
+  try {
+    await fs.writeFile(tempHtml, html);
+    const puppeteer = require('puppeteer-core');
+    browser = await puppeteer.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
+    });
+
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1920, height: 200 });
+    await page.setContent(html, { waitUntil: 'domcontentloaded' });
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
+    const frameCount = Math.floor(duration * fps);
+    for (let i = 0; i < frameCount; i++) {
+      const framePath = path.join(os.tmpdir(), `banner_${bannerName}_frame_${String(i).padStart(3, '0')}.png`);
+      const screenshot = await page.screenshot({ type: 'png' });
+      await fs.writeFile(framePath, screenshot);
+      framePaths.push(framePath);
+      await new Promise((resolve) => setTimeout(resolve, 1000 / fps));
+    }
+
+    await browser.close();
+    browser = null;
+
+    await execAsync(`ffmpeg -y -framerate ${fps} -i "${path.join(os.tmpdir(), `banner_${bannerName}_frame_%03d.png`)}" -vf "palettegen" "${palette}"`);
+    await execAsync(`ffmpeg -y -framerate ${fps} -i "${path.join(os.tmpdir(), `banner_${bannerName}_frame_%03d.png`)}" -i "${palette}" -filter_complex "paletteuse" "${tempGif}"`);
+
+    const gifBuffer = await fs.readFile(tempGif);
+    return gifBuffer;
+  } finally {
+    if (browser) await browser.close().catch(() => {});
+    await fs.unlink(tempHtml).catch(() => {});
+    await fs.unlink(tempGif).catch(() => {});
+    await fs.unlink(palette).catch(() => {});
+    for (const framePath of framePaths) {
+      await fs.unlink(framePath).catch(() => {});
+    }
+  }
+}
+
+async function pushBannerToDSH(gifBuffer, bannerName) {
+  const form = new FormData();
+  form.append('gif', new Blob([gifBuffer], { type: 'image/gif' }), `${bannerName}.gif`);
+  form.append('bannerName', bannerName);
+
+  const res = await fetch(`${DSH_URL.replace(/\/$/, '')}/api/clips/upload`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${WORKER_SECRET}` },
+    body: form,
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Banner upload failed: ${res.status} ${err}`);
+  }
+
+  return res.json();
+}
+
+async function generateCrewBanner(username) {
+  const template = await fetchBannerTemplate('/banner-crew.html');
+  const html = template.replace(/{{USERNAME}}/g, username.toUpperCase());
+  const gifBuffer = await renderBannerGifFromHtml(html, username.toLowerCase());
+  const result = await pushBannerToDSH(gifBuffer, username.toLowerCase());
+  console.log(`[ClipWorker] Generated crew banner for ${username}: ${result.gifUrl}`);
+  return result.gifUrl;
+}
+
+async function generateCommanderBanner(username = 'mtman1987') {
+  const template = await fetchBannerTemplate('/banner-commander.html');
+  const html = template.replace(/{{USERNAME}}/g, username.toUpperCase());
+  const gifBuffer = await renderBannerGifFromHtml(html, username.toLowerCase());
+  const result = await pushBannerToDSH(gifBuffer, username.toLowerCase());
+  console.log(`[ClipWorker] Generated commander banner for ${username}: ${result.gifUrl}`);
+  return result.gifUrl;
 }
 
 // ── Twitch API helpers ──

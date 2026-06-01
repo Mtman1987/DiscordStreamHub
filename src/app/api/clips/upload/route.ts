@@ -34,9 +34,35 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const file = formData.get('gif') as File | null;
     const streamer = formData.get('streamer') as string | null;
+    const bannerName = formData.get('bannerName') as string | null;
 
-    if (!file || !streamer) {
-      return NextResponse.json({ error: 'gif and streamer required' }, { status: 400 });
+    if (!file || (!streamer && !bannerName)) {
+      return NextResponse.json({ error: 'gif and streamer/bannerName required' }, { status: 400 });
+    }
+
+    if (bannerName) {
+      const normalizedBannerName = bannerName.trim().toLowerCase();
+      if (!/^[a-z0-9_-]{2,64}$/.test(normalizedBannerName)) {
+        return NextResponse.json({ error: 'invalid bannerName' }, { status: 400 });
+      }
+
+      const bannersDir = join(STORAGE_PATH, 'banners');
+      if (!existsSync(bannersDir)) {
+        await mkdir(bannersDir, { recursive: true });
+      }
+
+      const buffer = Buffer.from(await file.arrayBuffer());
+      const gifPath = join(bannersDir, `${normalizedBannerName}.gif`);
+      const metaPath = join(bannersDir, `${normalizedBannerName}.gif.meta.json`);
+      await writeFile(gifPath, buffer);
+      await writeFile(metaPath, JSON.stringify({
+        generatedAt: new Date().toISOString(),
+        source: 'clip-worker',
+      }, null, 2));
+
+      const gifUrl = `/api/media/banners/${normalizedBannerName}.gif`;
+      console.log(`[ClipUpload] Saved banner ${normalizedBannerName}.gif (${(buffer.length / 1024).toFixed(0)}KB)`);
+      return NextResponse.json({ success: true, gifUrl, bannerName: normalizedBannerName });
     }
 
     const streamerDir = join(STORAGE_PATH, streamer);

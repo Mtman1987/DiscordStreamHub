@@ -1,6 +1,7 @@
 import tmi from 'tmi.js';
 import { awardPoints } from './points-service';
 import { db } from '@/data/server-init';
+import { getValidBotAccessToken } from './twitch-oauth-service';
 
 class TwitchChatService {
   private client: tmi.Client | null = null;
@@ -18,12 +19,17 @@ class TwitchChatService {
     await this.loadAllowedUsers();
 
     const botConfig = await db.collection('servers').doc(serverId).collection('config').doc('twitchBotOAuth').get();
-    if (!botConfig.exists || !botConfig.data()?.accessToken) {
+    if (!botConfig.exists || (!botConfig.data()?.accessToken && !botConfig.data()?.refreshToken)) {
       console.warn('[TwitchChat] Bot OAuth not configured — chat monitoring disabled. Re-authorize bot in settings.');
       return;
     }
 
-    const { botUsername, accessToken } = botConfig.data()!;
+    const { botUsername } = botConfig.data()!;
+    const validAccessToken = await getValidBotAccessToken(serverId);
+    if (!validAccessToken) {
+      console.warn('[TwitchChat] Bot OAuth could not be refreshed — chat monitoring disabled. Re-authorize bot in settings.');
+      return;
+    }
     const liveUsers = await this.getLiveChannels();
     if (liveUsers.length === 0) {
       console.log('[TwitchChat] No live channels to monitor');
@@ -34,7 +40,7 @@ class TwitchChatService {
       options: { debug: false },
       identity: {
         username: botUsername,
-        password: `oauth:${accessToken}`,
+        password: `oauth:${validAccessToken}`,
       },
       channels: liveUsers,
     });

@@ -4,8 +4,9 @@ import { db } from '@/data/server-init';
 import { getStreamByLogin } from '@/lib/twitch-api-service';
 import { sendShoutout } from '@/lib/discord-sync-service';
 import { getCurrentClipForUser } from '@/lib/clip-rotation-service';
-import { getCrewBannerUrl } from '@/lib/banner-generation-service';
 import { getEmbedTemplates } from '@/lib/embed-templates';
+import { existsSync } from 'fs';
+import { join } from 'path';
 
 interface ShoutoutData {
   serverId: string;
@@ -13,6 +14,30 @@ interface ShoutoutData {
   twitchLogin: string;
   group: 'Crew' | 'Partners' | 'Honored Guests' | 'Everyone Else' | 'Raid Pile';
   stream?: any;
+}
+
+function getPublicBaseUrl(): string {
+  return (
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.PUBLIC_BASE_URL ||
+    process.env.APP_URL ||
+    'https://discord-stream-hub-new.fly.dev'
+  ).replace(/\/$/, '');
+}
+
+function toAbsoluteUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  if (/^https?:\/\//i.test(url)) return url;
+  const base = getPublicBaseUrl();
+  return `${base}${url.startsWith('/') ? '' : '/'}${url}`;
+}
+
+function getStoredBannerUrl(username: string): string | null {
+  const storagePath = process.env.STORAGE_PATH || '/data/clips';
+  const bannerKey = username.toLowerCase();
+  const bannerPath = join(storagePath, 'banners', `${bannerKey}.gif`);
+  if (!existsSync(bannerPath)) return null;
+  return toAbsoluteUrl(`/api/media/banners/${bannerKey}.gif?v=${Date.now()}`);
 }
 
 export async function sendShoutoutToDiscord(data: ShoutoutData): Promise<string | null> {
@@ -78,14 +103,6 @@ async function generateCrewShoutout(twitchLogin: string, stream: any, baseMessag
     clip = await getCurrentClipForUser(serverId, userDoc.docs[0].id);
   }
 
-  const fallbackBannerUrl = process.env.CREW_BANNER_GIF_URL || 'https://via.placeholder.com/1920x120/00D9FF/FFFFFF?text=SPACE+MOUNTAIN+CREW';
-  const bannerUrl = (await getCrewBannerUrl(twitchLogin)) || fallbackBannerUrl;
-
-  const bannerEmbed = {
-    image: { url: bannerUrl },
-    color: 0x00D9FF
-  };
-  
   const embed = {
     author: {
       name: templates.crew.title.replace('{username}', stream.user_name),
@@ -116,14 +133,24 @@ async function generateCrewShoutout(twitchLogin: string, stream: any, baseMessag
     thumbnail: {
       url: userInfo?.profile_image_url || 'https://static-cdn.jtvnw.net/ttv-boxart/twitch-logo.png'
     },
-    image: clip?.gifUrl ? { url: clip.gifUrl } : { url: fallbackBannerUrl },
+    image: clip?.gifUrl ? { url: clip.gifUrl } : undefined,
     footer: {
       text: templates.crew.footer
     },
     timestamp: new Date().toISOString()
   };
 
-  return { embeds: [bannerEmbed, embed] };
+  const bannerUrl = getStoredBannerUrl(twitchLogin);
+  if (bannerUrl) {
+    return {
+      embeds: [
+        { image: { url: bannerUrl }, color: 0x00D9FF },
+        embed,
+      ]
+    };
+  }
+
+  return { embeds: [embed] };
 }
 
 async function generatePartnersShoutout(twitchLogin: string, stream: any, baseMessage: string, serverId: string): Promise<any> {

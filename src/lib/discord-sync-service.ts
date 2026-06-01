@@ -233,7 +233,18 @@ class DiscordSyncService {
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to send message: ${response.statusText}`);
+        const errorText = await response.text().catch(() => response.statusText);
+        console.error('[DiscordSync] sendShoutout failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorText,
+          payloadPreview: {
+            hasEmbeds: Array.isArray(shoutoutData?.embeds) && shoutoutData.embeds.length > 0,
+            embedCount: Array.isArray(shoutoutData?.embeds) ? shoutoutData.embeds.length : 0,
+            hasComponents: Array.isArray(shoutoutData?.components) && shoutoutData.components.length > 0,
+          },
+        });
+        throw new Error(`Failed to send message: ${response.status} ${errorText}`);
       }
 
       const message = await response.json();

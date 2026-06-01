@@ -80,6 +80,7 @@ class TwitchPollingService {
     
     // Start chat monitoring before interval
     try {
+      await this.refreshBotTokenIfNeeded(serverId);
       console.log('[TwitchPolling] Importing chat service...');
       const { twitchChatService } = await import('./twitch-chat-service');
       console.log('[TwitchPolling] Starting chat service...');
@@ -148,6 +149,7 @@ class TwitchPollingService {
       if (!state || !state.isPolling) return;
 
       console.log(`[TwitchPolling] Starting poll cycle for server ${serverId}`);
+      await this.refreshBotTokenIfNeeded(serverId);
 
       // Sync channels and roles only (NOT members - that overwrites group assignments)
       try {
@@ -358,6 +360,15 @@ class TwitchPollingService {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
+  private async refreshBotTokenIfNeeded(serverId: string): Promise<void> {
+    try {
+      const { getValidBotAccessToken } = await import('./twitch-oauth-service');
+      await getValidBotAccessToken(serverId);
+    } catch (error) {
+      console.error(`[TwitchPolling] Bot token refresh check failed for ${serverId}:`, error);
+    }
+  }
+
   private async checkUserStream(serverId: string, user: any, state: PollingState): Promise<void> {
     // This method is no longer used - replaced by pollTwitchStreams batch processing
   }
@@ -438,30 +449,19 @@ class TwitchPollingService {
       const { getCurrentClipForUser } = await import('./clip-rotation-service');
       const clip = await getCurrentClipForUser(serverId, discordUserId);
       const bannerUrl = `https://discord-stream-hub-new.fly.dev/api/media/banners/${twitchLogin.toLowerCase()}.gif?v=${Date.now()}`;
-      const fallbackBannerUrl = process.env.CREW_BANNER_GIF_URL || 'https://via.placeholder.com/1920x120/00D9FF/FFFFFF?text=SPACE+MOUNTAIN+CREW';
       const streamThumbnail = stream.thumbnail_url?.replace('{width}', '1920').replace('{height}', '1080');
-      const crewImageUrl = clip?.gifUrl || streamThumbnail || fallbackBannerUrl;
+      const crewImageUrl = clip?.gifUrl || streamThumbnail || null;
       
       // Check if per-user banner exists on disk
       const { existsSync: bannerExists } = await import('fs');
       const { join: joinPath } = await import('path');
       const CLIP_PATH = process.env.STORAGE_PATH || '/data/clips';
       const bannerFilePath = joinPath(CLIP_PATH, 'banners', `${twitchLogin.toLowerCase()}.gif`);
-      let resolvedBannerUrl: string;
-      if (bannerExists(bannerFilePath)) {
-        resolvedBannerUrl = bannerUrl;
-      } else {
-        resolvedBannerUrl = fallbackBannerUrl;
-        // Auto-generate banner for next cycle (single user, won't OOM)
-        import('./banner-generation-service').then(({ generateCrewBanners }) =>
-          generateCrewBanners([twitchLogin]).catch(err => console.error(`[TwitchPolling] Banner gen failed for ${twitchLogin}:`, err))
-        );
-      }
+      const resolvedBannerUrl = bannerExists(bannerFilePath) ? bannerUrl : null;
       
-      const bannerEmbed = {
-        image: { url: resolvedBannerUrl },
-        color: 0x00D9FF
-      };
+      if (!resolvedBannerUrl) {
+        console.log(`[TwitchPolling] Crew banner missing for ${twitchLogin}; skipping banner embed until worker backfills it`);
+      }
       
       embed = {
         author: {
@@ -479,11 +479,13 @@ class TwitchPollingService {
           { name: '🚀 Crew Status', value: 'Space Mountain Crew', inline: true }
         ],
         thumbnail: { url: userInfo?.profile_image_url || 'https://static-cdn.jtvnw.net/ttv-boxart/twitch-logo.png' },
-        image: { url: crewImageUrl },
+        ...(crewImageUrl ? { image: { url: crewImageUrl } } : {}),
         footer: { text: 'Twitch • Crew Member Shoutout' },
         timestamp: new Date().toISOString()
       };
-      embedsToSend = [bannerEmbed, embed];
+      embedsToSend = resolvedBannerUrl
+        ? [{ image: { url: resolvedBannerUrl }, color: 0x00D9FF }, embed]
+        : [embed];
       componentsToSend = [
         {
           type: 1,
@@ -669,30 +671,64 @@ class TwitchPollingService {
       
       console.log(`[TwitchPolling] Updated shoutout for ${stream.user_login}`);
     } catch (error) {
-      console.log(`[TwitchPolling] Message gone for ${stream.user_login}, self-healing: reposting...`);
-      // Clear old state
-      await db.collection('servers').doc(serverId).collection('users').doc(discordUserId)
-        .collection('shoutoutState').doc('current').delete();
-      // Repost as new shoutout
-      const twitchLogin = stream.user_login;
-      const channelId = await this.getChannelForGroup(serverId, group);
-      if (channelId) {
-        const { sendShoutout } = await import('./discord-sync-service');
-        const messagePayload: any = { embeds: embedsToSend.length > 0 ? embedsToSend : [embed] };
-        if (componentsToSend) messagePayload.components = componentsToSend;
-        const newMessageId = await sendShoutout(serverId, channelId, messagePayload);
-        if (newMessageId) {
-          await this.saveShoutoutState(serverId, discordUserId, {
-            ...shoutoutState,
-            messageId: newMessageId,
-            channelId,
-            lastUpdated: new Date()
-          });
-          console.log(`[TwitchPolling] ✅ Self-healed: reposted shoutout for ${twitchLogin} (new msg: ${newMessageId})`);
-        } else {
-          console.error(`[TwitchPolling] ❌ Self-heal failed: could not repost for ${twitchLogin}`);
+      const errorText = error instanceof Error ? error.message : String(error);
+      const isTooOldEdit = /Maximum number of edits to messages older than 1 hour reached|code["']?\s*:\s*30046|30046/.test(errorText);
+      const isMissingMessage = /404|MESSAGE_NOT_FOUND|Unknown Message/i.test(errorText);
+
+      if (isTooOldEdit) {
+        console.log(`[TwitchPolling] Message too old for ${stream.user_login}, deleting and reposting...`);
+        const { deleteDiscordMessage, sendShoutout } = await import('./discord-sync-service');
+        await deleteDiscordMessage(serverId, shoutoutState.channelId, shoutoutState.messageId).catch(() => {});
+        await db.collection('servers').doc(serverId).collection('users').doc(discordUserId)
+          .collection('shoutoutState').doc('current').delete();
+
+        const channelId = await this.getChannelForGroup(serverId, group);
+        if (channelId) {
+          const messagePayload: any = { embeds: embedsToSend.length > 0 ? embedsToSend : [embed] };
+          if (componentsToSend) messagePayload.components = componentsToSend;
+          const newMessageId = await sendShoutout(serverId, channelId, messagePayload);
+          if (newMessageId) {
+            await this.saveShoutoutState(serverId, discordUserId, {
+              ...shoutoutState,
+              messageId: newMessageId,
+              channelId,
+              lastUpdated: new Date()
+            });
+            console.log(`[TwitchPolling] ✅ Reposted fresh shoutout for ${stream.user_login} (new msg: ${newMessageId})`);
+          } else {
+            console.error(`[TwitchPolling] ❌ Failed to repost fresh shoutout for ${stream.user_login}`);
+          }
         }
+        return;
       }
+
+      if (isMissingMessage) {
+        console.log(`[TwitchPolling] Message missing for ${stream.user_login}, self-healing: reposting...`);
+        await db.collection('servers').doc(serverId).collection('users').doc(discordUserId)
+          .collection('shoutoutState').doc('current').delete();
+        const twitchLogin = stream.user_login;
+        const channelId = await this.getChannelForGroup(serverId, group);
+        if (channelId) {
+          const { sendShoutout } = await import('./discord-sync-service');
+          const messagePayload: any = { embeds: embedsToSend.length > 0 ? embedsToSend : [embed] };
+          if (componentsToSend) messagePayload.components = componentsToSend;
+          const newMessageId = await sendShoutout(serverId, channelId, messagePayload);
+          if (newMessageId) {
+            await this.saveShoutoutState(serverId, discordUserId, {
+              ...shoutoutState,
+              messageId: newMessageId,
+              channelId,
+              lastUpdated: new Date()
+            });
+            console.log(`[TwitchPolling] ✅ Self-healed: reposted shoutout for ${twitchLogin} (new msg: ${newMessageId})`);
+          } else {
+            console.error(`[TwitchPolling] ❌ Self-heal failed: could not repost for ${twitchLogin}`);
+          }
+        }
+        return;
+      }
+
+      console.log(`[TwitchPolling] Message update failed for ${stream.user_login}:`, error);
     }
   }
 

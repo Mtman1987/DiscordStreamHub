@@ -27,6 +27,11 @@ type CleanupOptions = {
   maxDeletesPerRun?: number;
 };
 
+type CleanupChannelInfo = {
+  channelId: string;
+  sources: string[];
+};
+
 const DISCORD_API_BASE = 'https://discord.com/api/v10';
 const RECENT_MESSAGE_LIMIT = 100;
 const DEFAULT_MAX_DELETES_PER_RUN = 20;
@@ -40,38 +45,76 @@ export async function cleanupOrphanedDiscordEmbeds(serverId: string, options: Cl
 
   const botId = await getBotId(botToken);
   const keepMessageIds = await getTrackedMessageIds(serverId);
-  const channelIds = await getCleanupChannelIds(serverId);
+  const channelInfos = await getCleanupChannelInfos(serverId);
   const maxDeletes = Math.max(0, options.maxDeletesPerRun ?? DEFAULT_MAX_DELETES_PER_RUN);
   const result: CleanupResult = {
-    channelsChecked: channelIds.size,
+    channelsChecked: channelInfos.length,
     messagesScanned: 0,
     deleted: 0,
     kept: 0,
   };
+  const skipStats = {
+    nonBot: 0,
+    tracked: 0,
+    notTarget: 0,
+  };
 
-  for (const channelId of channelIds) {
+  for (const channelInfo of channelInfos) {
+    const { channelId, sources } = channelInfo;
+    console.log(`[DiscordCleanup] Scanning channel ${channelId} from ${sources.join(', ')}`);
     const messages = await fetchRecentMessages(botToken, channelId);
+    const channelStats = {
+      scanned: 0,
+      kept: 0,
+      deleted: 0,
+      nonBot: 0,
+      tracked: 0,
+      notTarget: 0,
+    };
     for (const message of messages) {
       result.messagesScanned += 1;
-      if (!isManagedBotMessage(message, botId)) continue;
-      if (keepMessageIds.has(message.id)) {
-        result.kept += 1;
+      channelStats.scanned += 1;
+      const authorId = message.author?.id || 'unknown';
+      if (!isManagedBotMessage(message, botId)) {
+        skipStats.nonBot += 1;
+        channelStats.nonBot += 1;
+        console.log(`[DiscordCleanup] Skip ${message.id} in ${channelId}: non-bot message from ${authorId}`);
         continue;
       }
-      if (!isCleanupTarget(message)) continue;
+      if (keepMessageIds.has(message.id)) {
+        result.kept += 1;
+        channelStats.kept += 1;
+        skipStats.tracked += 1;
+        channelStats.tracked += 1;
+        console.log(`[DiscordCleanup] Keep ${message.id} in ${channelId}: tracked live bot message`);
+        continue;
+      }
+      if (!isCleanupTarget(message)) {
+        skipStats.notTarget += 1;
+        channelStats.notTarget += 1;
+        console.log(`[DiscordCleanup] Skip ${message.id} in ${channelId}: bot message is not an orphan-cleanup target`);
+        continue;
+      }
 
       await deleteDiscordMessage(botToken, channelId, message.id);
       result.deleted += 1;
+      channelStats.deleted += 1;
       if (result.deleted >= maxDeletes) {
+        console.log(
+          `[DiscordCleanup] Channel ${channelId} summary: scanned ${channelStats.scanned}, kept ${channelStats.kept}, deleted ${channelStats.deleted}, nonBot ${channelStats.nonBot}, tracked ${channelStats.tracked}, nonTarget ${channelStats.notTarget}`
+        );
         console.log(`[DiscordCleanup] Delete limit ${maxDeletes} reached; remaining orphan cleanup will continue next run`);
         return result;
       }
       await delay(650);
     }
+    console.log(
+      `[DiscordCleanup] Channel ${channelId} summary: scanned ${channelStats.scanned}, kept ${channelStats.kept}, deleted ${channelStats.deleted}, nonBot ${channelStats.nonBot}, tracked ${channelStats.tracked}, nonTarget ${channelStats.notTarget}`
+    );
   }
 
   console.log(
-    `[DiscordCleanup] Checked ${result.channelsChecked} channels, scanned ${result.messagesScanned} messages, kept ${result.kept}, deleted ${result.deleted} orphaned embeds`
+    `[DiscordCleanup] Checked ${result.channelsChecked} channels, scanned ${result.messagesScanned} messages, kept ${result.kept}, deleted ${result.deleted} orphaned embeds; skipped non-bot=${skipStats.nonBot}, tracked=${skipStats.tracked}, non-target=${skipStats.notTarget}`
   );
   return result;
 }
@@ -114,12 +157,14 @@ async function getTrackedMessageIds(serverId: string): Promise<Set<string>> {
   return keep;
 }
 
-async function getCleanupChannelIds(serverId: string): Promise<Set<string>> {
-  const channels = new Set<string>();
+async function getCleanupChannelInfos(serverId: string): Promise<CleanupChannelInfo[]> {
+  const channels = new Map<string, Set<string>>();
   const groupChannelsDoc = await db.collection('servers').doc(serverId).collection('config').doc('groupChannels').get();
   const groupChannels = groupChannelsDoc.data() || {};
-  for (const value of Object.values(groupChannels)) {
-    if (typeof value === 'string' && value !== serverId && isDiscordSnowflake(value)) channels.add(value);
+  for (const [groupName, value] of Object.entries(groupChannels)) {
+    if (typeof value === 'string' && value !== serverId && isDiscordSnowflake(value)) {
+      addChannelSource(channels, value, `groupChannels.${groupName}`);
+    }
   }
 
   for (const [collectionName, docId] of [
@@ -131,13 +176,24 @@ async function getCleanupChannelIds(serverId: string): Promise<Set<string>> {
     const doc = await db.collection('servers').doc(serverId).collection(collectionName).doc(docId).get();
     const data = doc.data();
     const channelId = data?.channelId;
-    if (typeof channelId === 'string' && channelId !== serverId && isDiscordSnowflake(channelId)) channels.add(channelId);
+    if (typeof channelId === 'string' && channelId !== serverId && isDiscordSnowflake(channelId)) {
+      addChannelSource(channels, channelId, `${collectionName}.${docId}`);
+    }
   }
 
   // Remove the server ID itself if it somehow got in (it's not a channel)
   channels.delete(serverId);
 
-  return channels;
+  return Array.from(channels.entries()).map(([channelId, sourceSet]) => ({
+    channelId,
+    sources: Array.from(sourceSet).sort(),
+  }));
+}
+
+function addChannelSource(channels: Map<string, Set<string>>, channelId: string, source: string): void {
+  const existing = channels.get(channelId) || new Set<string>();
+  existing.add(source);
+  channels.set(channelId, existing);
 }
 
 async function fetchRecentMessages(botToken: string, channelId: string): Promise<DiscordMessage[]> {
