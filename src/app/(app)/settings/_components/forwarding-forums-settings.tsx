@@ -13,6 +13,18 @@ import { Loader2, Plus, Save, Trash2, Forward, RefreshCw } from 'lucide-react';
 
 type ForwardingMode = 'per-source-thread' | 'single-thread';
 
+type SavedRule = {
+  serverId: string;
+  ruleLabel: string;
+  sourceServerId: string;
+  destinationServerId: string;
+  forumChannelId?: string;
+  sharedThreadId?: string;
+  forwardingMode?: ForwardingMode;
+  restrictToWhitelist?: boolean;
+  sourceChannelWhitelist?: string[];
+};
+
 interface Mapping {
   sourceChannelId: string;
   threadId: string;
@@ -33,8 +45,24 @@ export function ForwardingForumsSettings() {
   const [restrictToWhitelist, setRestrictToWhitelist] = React.useState(false);
   const [sourceChannelWhitelist, setSourceChannelWhitelist] = React.useState('');
   const [showAdvancedOverrides, setShowAdvancedOverrides] = React.useState(false);
+  const [savedRules, setSavedRules] = React.useState<SavedRule[]>([]);
   const [isLoading, setIsLoading] = React.useState(false);
   const [isSaving, setIsSaving] = React.useState(false);
+
+  const loadSavedRules = React.useCallback(async () => {
+    try {
+      const res = await fetch('/api/settings/forwarding-forums/list');
+      if (!res.ok) return;
+      const data = await res.json();
+      setSavedRules(Array.isArray(data.rules) ? data.rules : []);
+    } catch {
+      setSavedRules([]);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    void loadSavedRules();
+  }, [loadSavedRules]);
 
   const loadRule = React.useCallback(async () => {
     if (!sourceServerId.trim()) {
@@ -114,6 +142,7 @@ export function ForwardingForumsSettings() {
       });
       if (!res.ok) throw new Error();
       toast({ title: 'Saved', description: 'Forwarding rule updated.' });
+      void loadSavedRules();
     } catch {
       toast({ variant: 'destructive', title: 'Failed to save' });
     } finally {
@@ -125,6 +154,43 @@ export function ForwardingForumsSettings() {
   const removeRow = (i: number) => setMappings(prev => prev.filter((_, idx) => idx !== i));
   const updateRow = (i: number, field: keyof Mapping, value: string) =>
     setMappings(prev => prev.map((m, idx) => (idx === i ? { ...m, [field]: value } : m)));
+  const loadSavedRule = (rule: SavedRule) => {
+    setRuleLabel(rule.ruleLabel || '');
+    setSourceServerId(rule.sourceServerId || '');
+    setDestinationServerId(rule.destinationServerId || '');
+    setForwardingMode(rule.forwardingMode === 'single-thread' ? 'single-thread' : 'per-source-thread');
+    setForumChannelId(rule.forumChannelId || '');
+    setSharedThreadId(rule.sharedThreadId || '');
+    setRestrictToWhitelist(Boolean(rule.restrictToWhitelist));
+    setSourceChannelWhitelist(Array.isArray(rule.sourceChannelWhitelist) ? rule.sourceChannelWhitelist.join('\n') : '');
+    setMappings([emptyMapping()]);
+    setShowAdvancedOverrides(false);
+  };
+  const deleteSavedRule = async (targetSourceServerId: string) => {
+    try {
+      const res = await fetch('/api/settings/forwarding-forums', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourceServerId: targetSourceServerId }),
+      });
+      if (!res.ok) throw new Error();
+      setSavedRules(prev => prev.filter(rule => rule.sourceServerId !== targetSourceServerId));
+      if (sourceServerId.trim() === targetSourceServerId) {
+        setRuleLabel('');
+        setSourceServerId('');
+        setDestinationServerId('');
+        setForumChannelId('');
+        setSharedThreadId('');
+        setSourceChannelWhitelist('');
+        setMappings([emptyMapping()]);
+        setRestrictToWhitelist(false);
+        setShowAdvancedOverrides(false);
+      }
+      toast({ title: 'Deleted', description: 'Forwarding rule removed.' });
+    } catch {
+      toast({ variant: 'destructive', title: 'Failed to delete rule' });
+    }
+  };
 
   return (
     <Card>
@@ -135,7 +201,7 @@ export function ForwardingForumsSettings() {
         </CardTitle>
         <CardDescription>
           Set a source server and a destination server explicitly. The rule below defines where messages come from and where they go.
-          If the whitelist is empty, all source channels are allowed. The source/thread rows below are optional overrides only.
+          If the whitelist is empty, all source channels are allowed. Use the saved rules list below to load or delete existing flows.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -175,7 +241,7 @@ export function ForwardingForumsSettings() {
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={loadRule} disabled={isLoading || !sourceServerId.trim()}>
             {isLoading ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <RefreshCw className="h-4 w-4 mr-1" />}
-            Load Rule
+            Load Existing Rule
           </Button>
         </div>
 
@@ -316,8 +382,42 @@ export function ForwardingForumsSettings() {
           ) : null}
           <Button size="sm" onClick={save} disabled={isSaving}>
             {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
-            Save Rule
-          </Button>
+          Save Rule
+        </Button>
+        </div>
+
+        <div className="rounded-md border p-4 space-y-3">
+          <div className="space-y-1">
+            <Label className="text-xs uppercase tracking-wide text-muted-foreground">Saved Rules</Label>
+            <p className="text-xs text-muted-foreground">
+              These are the forwarding rules already stored in the app. Use Load to edit one or the trash icon to delete it.
+            </p>
+          </div>
+          {savedRules.length === 0 ? (
+            <div className="text-xs text-muted-foreground">No saved forwarding rules yet.</div>
+          ) : (
+            <div className="space-y-2">
+              {savedRules.map(rule => (
+                <div key={rule.sourceServerId} className="flex items-center justify-between gap-3 rounded-md border p-3">
+                  <div className="min-w-0 space-y-1">
+                    <div className="font-medium text-sm truncate">{rule.ruleLabel || `${rule.sourceServerId} → ${rule.destinationServerId}`}</div>
+                    <div className="text-xs text-muted-foreground truncate">
+                      {rule.sourceServerId} → {rule.destinationServerId}
+                      {rule.forwardingMode === 'single-thread' ? ' · shared thread' : ' · per-source threads'}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button variant="outline" size="sm" onClick={() => loadSavedRule(rule)}>
+                      Load
+                    </Button>
+                    <Button variant="ghost" size="icon" onClick={() => deleteSavedRule(rule.sourceServerId)} aria-label={`Delete ${rule.ruleLabel || rule.sourceServerId}`}>
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>

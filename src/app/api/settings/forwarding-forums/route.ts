@@ -94,3 +94,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to save' }, { status: 500 });
   }
 }
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const sourceServerId = String(body.sourceServerId || body.serverId || '').trim();
+    if (!sourceServerId) {
+      return NextResponse.json({ error: 'sourceServerId required' }, { status: 400 });
+    }
+
+    await db.collection('servers').doc(sourceServerId).collection('config').doc('forwardingForums').delete();
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('[ForwardingForums] DELETE error:', error);
+    return NextResponse.json({ error: 'Failed to delete' }, { status: 500 });
+  }
+}
