@@ -131,7 +131,8 @@ export function ForwardingForumsSettings({ serverId }: { serverId: string }) {
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="text-xs text-muted-foreground space-y-1">
-          <p><strong>Destination server:</strong> This page writes to the server you are currently configuring.</p>
+          <p><strong>Active server in this session:</strong> <span className="font-mono">{serverId}</span></p>
+          <p><strong>Destination server:</strong> This page writes to the server whose ID is already loaded into the app session.</p>
           <p><strong>Source Channel ID:</strong> A channel on the other server whose messages you want mirrored here.</p>
           <p><strong>Forum Parent Channel ID:</strong> The forum or media channel in the destination server used for per-source auto-threading.</p>
           <p><strong>Shared Thread ID:</strong> A single destination thread to reuse for every allowed source channel.</p>
