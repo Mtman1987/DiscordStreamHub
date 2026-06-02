@@ -479,6 +479,7 @@ export async function POST(request: NextRequest) {
     const userName = data.userName || data.displayName || data.username || 'Unknown';
     const userAvatar = data.userAvatar || data.avatarUrl || '';
     const message = data.message || data.content || '';
+    const attachments = Array.isArray(data.attachments) ? data.attachments : [];
     const channelId = data.channelId || '';
     const messageId = data.messageId || '';
     const dispatch = data.dispatch !== false;
@@ -489,7 +490,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'userId and guildId required' }, { status: 400 });
     }
 
-    if (!message || message.length === 0) {
+    if ((!message || message.length === 0) && attachments.length === 0) {
       return NextResponse.json({ success: true, skipped: 'empty message' });
     }
 
@@ -512,6 +513,7 @@ export async function POST(request: NextRequest) {
           userName,
           userAvatar,
           message,
+          attachments,
         }),
       }).catch((error) => {
         console.warn('[DiscordChat] Forum forward request failed:', error?.message || error);

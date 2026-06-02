@@ -17,6 +17,7 @@ import {
   GatewayIntentBits,
   GuildMember,
   Message,
+  PartialMessage,
   Partials,
   PermissionsBitField,
   TextBasedChannel,
@@ -118,6 +119,32 @@ async function replyAndMaybeDelete(message: Message, content: string, keep = fal
 async function sendToTextChannel(channel: TextBasedChannel | undefined, content: string) {
   if (!channel || !('send' in channel) || typeof channel.send !== 'function') return;
   await channel.send(content);
+}
+
+async function notifyForwardingMessageDeleted(message: Message | PartialMessage) {
+  if (!DISCORD_BOT_TOKEN) return;
+
+  try {
+    const response = await fetch(`${DSH_BASE_URL}/api/discord/forwarding-events`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-discord-bot-token': DISCORD_BOT_TOKEN,
+      },
+      body: JSON.stringify({
+        type: 'message_delete',
+        guildId: message.guildId,
+        channelId: message.channelId,
+        messageId: message.id,
+      }),
+    });
+
+    if (!response.ok) {
+      console.warn(`[WatchVoice] Forwarding delete sync failed (${response.status}): ${await response.text()}`);
+    }
+  } catch (error) {
+    console.warn('[WatchVoice] Forwarding delete sync failed:', error);
+  }
 }
 
 function sessionIdFor(guildId: string, channelId: string) {
@@ -641,7 +668,7 @@ async function main() {
       GatewayIntentBits.GuildVoiceStates,
       GatewayIntentBits.MessageContent,
     ],
-    partials: [Partials.Channel],
+    partials: [Partials.Channel, Partials.Message],
   });
 
   client.once('clientReady', () => {
@@ -661,6 +688,20 @@ async function main() {
     handleMessage(message).catch((error) => {
       console.error('[WatchVoice] Unhandled message error:', error);
     });
+  });
+
+  client.on('messageDelete', (message) => {
+    notifyForwardingMessageDeleted(message).catch((error) => {
+      console.error('[WatchVoice] Unhandled forwarding delete sync error:', error);
+    });
+  });
+
+  client.on('messageDeleteBulk', (messages) => {
+    for (const message of messages.values()) {
+      notifyForwardingMessageDeleted(message).catch((error) => {
+        console.error('[WatchVoice] Unhandled bulk forwarding delete sync error:', error);
+      });
+    }
   });
 
   const loginTimer = setTimeout(() => {
