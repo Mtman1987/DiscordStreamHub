@@ -67,6 +67,80 @@ type ForwardingForumRule = {
   sourceChannelWhitelist: string[];
 };
 
+type ForwardedAttachment = {
+  url?: string;
+  proxy_url?: string;
+  content_type?: string;
+  filename?: string;
+};
+
+type MediaExtraction = {
+  description?: string;
+  imageUrl?: string;
+  attachmentUrls: string[];
+};
+
+const URL_PATTERN = /https?:\/\/[^\s<>()]+/gi;
+const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
+
+function cleanUrlMatch(url: string) {
+  return url.replace(/[.,!?;:]+$/g, '');
+}
+
+function getUrlPathname(url: string) {
+  try {
+    return new URL(url).pathname.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+function hasImageExtension(url: string) {
+  const pathname = getUrlPathname(url);
+  return Array.from(IMAGE_EXTENSIONS).some(ext => pathname.endsWith(ext));
+}
+
+function isImageAttachment(attachment: ForwardedAttachment) {
+  if (attachment.content_type?.toLowerCase().startsWith('image/')) return true;
+  return Boolean(attachment.url && hasImageExtension(attachment.url));
+}
+
+function normalizeAttachments(value: unknown): ForwardedAttachment[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((attachment: any) => ({
+      url: typeof attachment?.url === 'string' ? attachment.url : undefined,
+      proxy_url: typeof attachment?.proxy_url === 'string' ? attachment.proxy_url : undefined,
+      content_type: typeof attachment?.content_type === 'string' ? attachment.content_type : undefined,
+      filename: typeof attachment?.filename === 'string' ? attachment.filename : undefined,
+    }))
+    .filter(attachment => Boolean(attachment.url || attachment.proxy_url));
+}
+
+function extractForwardedMedia(message: string, attachments: ForwardedAttachment[]): MediaExtraction {
+  const attachmentImage = attachments.find(isImageAttachment);
+  const attachmentUrls = attachments
+    .map(attachment => attachment.url || attachment.proxy_url)
+    .filter((url): url is string => Boolean(url));
+
+  const urls = Array.from(message.matchAll(URL_PATTERN), match => cleanUrlMatch(match[0]));
+  const imageUrl = attachmentImage?.url || attachmentImage?.proxy_url || urls.find(hasImageExtension);
+  const mediaUrlsToRemove = new Set<string>(imageUrl ? [imageUrl] : []);
+
+  let description = message;
+  for (const url of mediaUrlsToRemove) {
+    description = description.replace(url, '').trim();
+  }
+
+  description = description.replace(/\s{2,}/g, ' ').trim();
+
+  return {
+    description: description || undefined,
+    imageUrl,
+    attachmentUrls: attachmentUrls.filter(url => url !== imageUrl),
+  };
+}
+
 async function getForwardedThreadId(sourceServerId: string, channelId?: string): Promise<string | null> {
   try {
     const doc = await db
@@ -108,8 +182,9 @@ async function getForumRule(sourceServerId: string): Promise<ForwardingForumRule
   }
 }
 
-function buildThreadName(guildName: string, channelName: string, channelId: string) {
-  const base = [guildName, `#${channelName}`].filter(Boolean).join(' · ');
+function buildThreadName(channelName: string, channelId: string) {
+  const cleanChannelName = channelName?.replace(/^#+/, '').trim();
+  const base = cleanChannelName ? `#${cleanChannelName}` : '';
   const fallback = channelId ? `channel-${channelId}` : 'discord-forward';
   return (base || fallback).slice(0, 100);
 }
@@ -135,7 +210,6 @@ async function createForumThread(
     threadName: string;
     embed: any;
     components: any[];
-    message: string;
   },
 ): Promise<any | null> {
   const created = await discordRequest(`/channels/${forumChannelId}/threads`, {
@@ -144,9 +218,8 @@ async function createForumThread(
       name: payload.threadName,
       auto_archive_duration: 10080,
       message: {
-        content: payload.message,
         embeds: [payload.embed],
-        components: payload.components,
+        ...(payload.components.length > 0 ? { components: payload.components } : {}),
         allowed_mentions: { parse: [] },
       },
     }),
@@ -161,7 +234,7 @@ function isSourceAllowed(channelId: string, whitelist: string[]) {
 
 export async function POST(request: NextRequest) {
   try {
-    let body;
+    let body: any;
     try {
       body = await request.json();
     } catch {
@@ -177,12 +250,13 @@ export async function POST(request: NextRequest) {
     const message = data.message || data.content || '';
     const channelId = data.channelId || '';
     const messageId = data.messageId || '';
+    const attachments = normalizeAttachments(data.attachments);
 
-    if (!guildId || !message) {
-      return NextResponse.json({ error: 'guildId and message required' }, { status: 400 });
+    if (!guildId || (!message && attachments.length === 0)) {
+      return NextResponse.json({ error: 'guildId and message or attachments required' }, { status: 400 });
     }
 
-    if (!shouldMirrorMessage(message)) {
+    if (message && !shouldMirrorMessage(message)) {
       return NextResponse.json({ success: true, skipped: 'command-message' });
     }
 
@@ -191,9 +265,11 @@ export async function POST(request: NextRequest) {
       channelId ? getChannelName(channelId) : Promise.resolve('unknown'),
     ]);
 
-    // Build the forwarded message embed + action buttons
-    const embed = {
-      description: message,
+    const media = extractForwardedMedia(message, attachments);
+
+    // Build the forwarded message embed. Controls are intentionally omitted so the
+    // forum post stays clean; native replies/reactions can be mirrored by a watcher.
+    const embed: Record<string, any> = {
       color: 0x5865f2,
       author: {
         name: `${userName}`,
@@ -205,38 +281,20 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString(),
     };
 
-    // Encode origin info into button custom_ids so interactions can route back
-    // Format: fwd_{action}_{originGuildId}_{originChannelId}_{originMessageId}
-    const originKey = `${guildId}_${channelId}_${messageId}`;
+    if (media.description) {
+      embed.description = media.description;
+    }
+    if (media.imageUrl) {
+      embed.image = { url: media.imageUrl };
+    }
+    if (media.attachmentUrls.length > 0) {
+      embed.fields = [{
+        name: 'Attachments',
+        value: media.attachmentUrls.map(url => `[Open attachment](${url})`).join('\n').slice(0, 1024),
+      }];
+    }
 
-    const components = [
-      {
-        type: 1, // ActionRow
-        components: [
-          {
-            type: 2, // Button
-            style: 1, // Primary
-            label: 'Reply',
-            custom_id: `fwd_reply_${originKey}`,
-            emoji: { name: '💬' },
-          },
-          {
-            type: 2,
-            style: 2, // Secondary
-            label: 'React',
-            custom_id: `fwd_react_${originKey}`,
-            emoji: { name: '😀' },
-          },
-          {
-            type: 2,
-            style: 4, // Danger
-            label: 'Remove',
-            custom_id: `fwd_remove_${originKey}`,
-            emoji: { name: '🗑️' },
-          },
-        ],
-      },
-    ];
+    const components: any[] = [];
 
     const forumRule = await getForumRule(guildId);
     if (!forumRule) {
@@ -280,12 +338,11 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const threadName = buildThreadName(guildName, channelName, channelId);
+      const threadName = buildThreadName(channelName, channelId);
       const created = await createForumThread(forumRule.forumChannelId, {
         threadName,
         embed,
         components,
-        message,
       });
 
       if (!created?.id) {
@@ -324,32 +381,52 @@ export async function POST(request: NextRequest) {
     const posted = !createdNewThread
       ? await discordRequest(`/channels/${threadId}/messages`, {
         method: 'POST',
-        body: JSON.stringify({ embeds: [embed], components }),
+        body: JSON.stringify({
+          embeds: [embed],
+          ...(components.length > 0 ? { components } : {}),
+          allowed_mentions: { parse: [] },
+        }),
       })
       : null;
 
     const forwardedMessageId = posted?.id || starterMessageId || threadId;
 
-    // Store a mapping so we can find the forwarded message later (for Remove)
+    // Store mappings so delete events can reconcile forwarded/original message state.
     if (forwardedMessageId) {
+      const mapping = {
+        forwardedMessageId,
+        forwardedThreadId: threadId,
+        originGuildId: guildId,
+        originChannelId: channelId,
+        originMessageId: messageId,
+        originUserName: userName,
+        originUserAvatar: userAvatar,
+        sourceServerId: guildId,
+        destinationServerId: forumRule.destinationServerId,
+        forwardingMode,
+        createdAt: new Date().toISOString(),
+      };
+
       await db
         .collection('servers')
         .doc(guildId)
         .collection('forwardedMessages')
         .doc(forwardedMessageId)
-        .set({
-          forwardedMessageId,
-          forwardedThreadId: threadId,
-          originGuildId: guildId,
-          originChannelId: channelId,
-          originMessageId: messageId,
-          originUserName: userName,
-          originUserAvatar: userAvatar,
-          sourceServerId: guildId,
-          destinationServerId: forumRule.destinationServerId,
-          forwardingMode,
-          createdAt: new Date().toISOString(),
+        .set(mapping);
+
+      await db.collection('forwardedMessageIndex').doc(`forwarded_${forwardedMessageId}`).set({
+        ...mapping,
+        indexType: 'forwarded',
+        indexedMessageId: forwardedMessageId,
+      });
+
+      if (messageId) {
+        await db.collection('forwardedMessageIndex').doc(`origin_${messageId}`).set({
+          ...mapping,
+          indexType: 'origin',
+          indexedMessageId: messageId,
         });
+      }
     }
 
     console.log(`[ForwardForum] Forwarded message from ${userName} (${guildName}/#${channelName}) → thread ${threadId}`);
