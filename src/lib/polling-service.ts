@@ -18,28 +18,36 @@ async function pollTwitchData(serverId: string): Promise<void> {
       return;
     }
 
-    const usernames = usersSnapshot.docs.map(doc => doc.data().username?.toLowerCase()).filter(Boolean);
-    if (usernames.length === 0) {
-      console.log('[Polling] No valid usernames found to poll.');
+    const twitchLoginsByDocId = new Map<string, string>();
+    usersSnapshot.docs.forEach((doc: any) => {
+      const twitchLogin = doc.data().twitchLogin?.toLowerCase();
+      if (twitchLogin) {
+        twitchLoginsByDocId.set(doc.id, twitchLogin);
+      }
+    });
+
+    const twitchLogins = Array.from(new Set(twitchLoginsByDocId.values()));
+    if (twitchLogins.length === 0) {
+      console.log('[Polling] No linked Twitch logins found to poll.');
       return;
     }
 
-    const streamStatusMap = await checkMultipleStreamsStatus(usernames);
+    const streamStatusMap = await checkMultipleStreamsStatus(twitchLogins);
     console.log(`[Polling] Got status for ${streamStatusMap.size} users. ${Array.from(streamStatusMap.values()).filter(Boolean).length} are live.`);
 
     const batch = db.batch();
     let updatedCount = 0;
 
-    usersSnapshot.docs.forEach(doc => {
+    usersSnapshot.docs.forEach((doc: any) => {
       const userData = doc.data();
-      const username = userData.username?.toLowerCase();
-      if (!username) return;
+      const twitchLogin = twitchLoginsByDocId.get(doc.id);
+      if (!twitchLogin || !streamStatusMap.has(twitchLogin)) return;
 
-      const isOnline = streamStatusMap.get(username) || false;
+      const isOnline = streamStatusMap.get(twitchLogin) || false;
       if (userData.isOnline !== isOnline) {
         batch.update(doc.ref, { isOnline: isOnline, lastStatusUpdate: new Date() });
         updatedCount++;
-        console.log(`[Polling] Status change for ${username}: ${userData.isOnline} -> ${isOnline}`);
+        console.log(`[Polling] Status change for ${twitchLogin}: ${userData.isOnline} -> ${isOnline}`);
       }
     });
 

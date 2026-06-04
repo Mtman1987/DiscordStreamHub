@@ -188,11 +188,12 @@ class TwitchApiService {
 
   async checkMultipleStreamsStatus(userLogins: string[]): Promise<Map<string, boolean>> {
     const statusMap = new Map<string, boolean>();
-    
+
     try {
       // Filter out invalid Twitch usernames (only alphanumeric and underscores allowed)
-      const validLogins = userLogins.filter(login => /^[a-zA-Z0-9_]{1,25}$/.test(login));
-      const invalidLogins = userLogins.filter(login => !/^[a-zA-Z0-9_]{1,25}$/.test(login));
+      const normalizedLogins = Array.from(new Set(userLogins.map(login => login.toLowerCase())));
+      const validLogins = normalizedLogins.filter(login => /^[a-z0-9_]{1,25}$/.test(login));
+      const invalidLogins = normalizedLogins.filter(login => !/^[a-z0-9_]{1,25}$/.test(login));
       if (invalidLogins.length > 0) {
         console.warn(`[TwitchAPI] Skipping ${invalidLogins.length} invalid usernames:`, invalidLogins.slice(0, 10));
         invalidLogins.forEach(login => statusMap.set(login, false));
@@ -200,39 +201,56 @@ class TwitchApiService {
 
       console.log(`[TwitchAPI] Checking ${validLogins.length} users for live status`);
       console.log(`[TwitchAPI] Sample usernames:`, validLogins.slice(0, 5));
-      
-      // Twitch API allows up to 100 user_login parameters
-      const chunks = [];
-      for (let i = 0; i < validLogins.length; i += 100) {
-        chunks.push(validLogins.slice(i, i + 100));
+
+      const checkChunk = async (chunk: string[]): Promise<number> => {
+        if (chunk.length === 0) return 0;
+
+        const params = new URLSearchParams();
+        chunk.forEach(login => params.append('user_login', login));
+        const endpoint = `streams?${params.toString()}`;
+        console.log(`[TwitchAPI] Calling endpoint for ${chunk.length} users`);
+
+        try {
+          const data = await this.makeApiCall(endpoint);
+          console.log(`[TwitchAPI] Found ${data.data.length} live streams in this chunk`);
+
+          chunk.forEach(login => statusMap.set(login, false));
+
+          data.data.forEach((stream: TwitchStream) => {
+            statusMap.set(stream.user_login.toLowerCase(), true);
+            console.log(`[TwitchAPI] ${stream.user_login} is live: ${stream.game_name}`);
+          });
+
+          return data.data.length;
+        } catch (error) {
+          if (chunk.length === 1) {
+            console.warn(`[TwitchAPI] Skipping rejected username ${chunk[0]} after Twitch API error:`, error);
+            statusMap.set(chunk[0], false);
+            return 0;
+          }
+
+          console.warn(`[TwitchAPI] Chunk of ${chunk.length} users failed; splitting to isolate bad params.`);
+          const midpoint = Math.ceil(chunk.length / 2);
+          const leftOnline = await checkChunk(chunk.slice(0, midpoint));
+          const rightOnline = await checkChunk(chunk.slice(midpoint));
+          return leftOnline + rightOnline;
+        }
+      };
+
+      // Keep chunks below Twitch's documented max so long usernames do not create oversized URLs.
+      const chunks: string[][] = [];
+      for (let i = 0; i < validLogins.length; i += 50) {
+        chunks.push(validLogins.slice(i, i + 50));
       }
 
       let totalOnline = 0;
       for (const chunk of chunks) {
-        const params = new URLSearchParams();
-        chunk.forEach(login => params.append('user_login', login));
-        const endpoint = `streams?${params.toString()}`.replace(/&amp;/g, '&');
-        console.log(`[TwitchAPI] Calling endpoint for ${chunk.length} users`);
-        const data = await this.makeApiCall(endpoint);
-        
-        console.log(`[TwitchAPI] Found ${data.data.length} live streams in this chunk`);
-        
-        // Mark all as offline first
-        chunk.forEach(login => statusMap.set(login, false));
-        
-        // Mark online ones as true
-        data.data.forEach((stream: TwitchStream) => {
-          statusMap.set(stream.user_login, true);
-          totalOnline++;
-          console.log(`[TwitchAPI] ${stream.user_login} is live: ${stream.game_name}`);
-        });
+        totalOnline += await checkChunk(chunk);
       }
-      
+
       console.log(`[TwitchAPI] Total online users found: ${totalOnline}`);
     } catch (error) {
       console.error('Error checking stream status:', error);
-      // Return all as offline on error
-      userLogins.forEach(login => statusMap.set(login, false));
     }
 
     return statusMap;
