@@ -49,6 +49,14 @@ async function getChannelName(channelId: string): Promise<string> {
   }
 }
 
+async function getChannelDetails(channelId: string): Promise<any | null> {
+  try {
+    return await discordRequest(`/channels/${channelId}`);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Look up the forum thread ID for a source channel first, then fall back to guild-level mappings.
  * Stored in: servers/{homeServerId}/config/forwardingForums
@@ -98,6 +106,14 @@ function buildThreadName(guildName: string, channelName: string, channelId: stri
   return (base || fallback).slice(0, 100);
 }
 
+function shouldMirrorMessage(message: string) {
+  const trimmed = message.trim();
+  if (!trimmed) return false;
+  if (/^!/.test(trimmed)) return false;
+  if (/^@?spmt\b/i.test(trimmed)) return false;
+  return true;
+}
+
 async function createForumThread(
   forumChannelId: string,
   payload: {
@@ -145,6 +161,10 @@ export async function POST(request: NextRequest) {
 
     if (!guildId || !message) {
       return NextResponse.json({ error: 'guildId and message required' }, { status: 400 });
+    }
+
+    if (!shouldMirrorMessage(message)) {
+      return NextResponse.json({ success: true, skipped: 'command-message' });
     }
 
     const [guildName, channelName] = await Promise.all([
@@ -208,6 +228,16 @@ export async function POST(request: NextRequest) {
       if (!forumConfig.forumChannelId) {
         console.log(`[ForwardForum] No forum parent channel configured for guild ${guildId}`);
         return NextResponse.json({ error: 'No forum parent channel configured for this server' }, { status: 404 });
+      }
+
+      const forumParent = await getChannelDetails(forumConfig.forumChannelId);
+      const forumParentType = Number(forumParent?.type);
+      if (![15, 16].includes(forumParentType)) {
+        console.log(`[ForwardForum] Configured forum parent ${forumConfig.forumChannelId} is not a forum/media channel (type=${forumParentType || 'unknown'})`);
+        return NextResponse.json(
+          { error: 'Configured forum parent channel must be a forum or media channel' },
+          { status: 400 },
+        );
       }
 
       const threadName = buildThreadName(guildName, channelName, channelId);

@@ -51,25 +51,21 @@ export async function getCrewBannerUrl(username: string): Promise<string | null>
       await mkdir(bannersDir, { recursive: true });
     }
 
-    let needsRefresh = !existsSync(bannerPath);
+    if (!existsSync(bannerPath)) {
+      return null;
+    }
 
-    if (!needsRefresh) {
-      try {
-        const raw = await readFile(metaPath, 'utf-8');
-        const meta = JSON.parse(raw) as { version?: string };
-        needsRefresh = meta.version !== BANNER_VERSION;
-      } catch {
-        needsRefresh = true;
+    try {
+      const raw = await readFile(metaPath, 'utf-8');
+      const meta = JSON.parse(raw) as { version?: string };
+      if (meta.version && meta.version !== BANNER_VERSION) {
+        console.log(`[BannerGen] Banner for ${username} is stale (version ${meta.version}); worker should refresh it`);
       }
+    } catch {
+      console.log(`[BannerGen] Banner meta missing for ${username}; worker should refresh it`);
     }
 
-    if (needsRefresh) {
-      await generateCrewBanners([username]);
-    }
-
-    if (existsSync(bannerPath)) {
-      return bannerUrl;
-    }
+    return bannerUrl;
   } catch (error) {
     console.error(`[BannerGen] Failed to resolve banner for ${username}:`, error);
   }

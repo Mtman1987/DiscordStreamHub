@@ -162,6 +162,16 @@ async function sendDiscordBotReply(channelId: string, content: string, botToken:
     });
     if (!res.ok) {
       console.error(`[ChatTag] bot reply failed (${res.status}): ${await res.text()}`);
+      return;
+    }
+    const message = await res.json().catch(() => null);
+    if (message?.id) {
+      setTimeout(() => {
+        fetch(`https://discord.com/api/v10/channels/${channelId}/messages/${message.id}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bot ${botToken}` },
+        }).catch(() => {});
+      }, CLEANUP_DELAY_MS);
     }
   } catch (error: any) {
     console.error(`[ChatTag] bot reply error: ${error.message}`);
@@ -223,9 +233,9 @@ export async function handleSpmtCommand(
   userMessageId?: string
 ): Promise<void> {
   const msg = message.toLowerCase().trim();
-  if (!msg.startsWith('@spmt ')) return;
+  if (!/^@?spmt\s+/.test(msg)) return;
 
-  const parts = msg.split(/\s+/).slice(1);
+  const parts = msg.replace(/^@?spmt\s+/, '').split(/\s+/).filter(Boolean);
   const cmd = parts[0];
   if (!cmd) return;
 
@@ -256,7 +266,7 @@ export async function handleSpmtCommand(
     if (!joinUsername) {
       // No Twitch link and no target — tell them to specify their Twitch name
       await sendDiscordReply(channelId,
-        `❌ ${displayName}: Your Discord isn't linked to Twitch. Use \`@spmt join <twitch_username>\` to join with your Twitch name.`,
+        `❌ ${displayName}: Your Discord isn't linked to Twitch. Use \`spmt join <twitch_username>\` to join with your Twitch name.`,
         userMessageId
       );
       return;
@@ -352,8 +362,8 @@ export async function handleSpmtCommand(
     } else {
       const taggerName = twitchLogin || displayName;
       const tagMsg = res.doublePoints
-        ? `🔥 ${taggerName} tagged @${target} for DOUBLE POINTS! They are now it! Type "@spmt join" to play!`
-        : `🎯 ${taggerName} tagged @${target}! They are now it! Type "@spmt join" to play!`;
+        ? `🔥 ${taggerName} tagged @${target} for DOUBLE POINTS! They are now it! Type "spmt join" to play!`
+        : `🎯 ${taggerName} tagged @${target}! They are now it! Type "spmt join" to play!`;
       await sendDiscordReply(channelId, tagMsg, userMessageId);
       await postTagApi('/api/discord/announce', {
         tagger: taggerName,
@@ -380,7 +390,7 @@ export async function handleSpmtCommand(
       ? players.find((p: any) => (p.twitchUsername || '').toLowerCase() === twitchLogin.toLowerCase())
       : null;
     if (!player) {
-      await sendDiscordReply(channelId, `❌ ${displayName}: You're not in the game! Use @spmt join`, userMessageId);
+      await sendDiscordReply(channelId, `❌ ${displayName}: You're not in the game! Use spmt join`, userMessageId);
       return;
     }
     const sorted = [...players].sort((a: any, b: any) => (b.score || 0) - (a.score || 0));
@@ -419,7 +429,7 @@ export async function handleSpmtCommand(
   else if (cmd === 'pass') {
     const target = parts[1]?.replace('@', '').toLowerCase();
     if (!target) {
-      await sendDiscordReply(channelId, `❌ Usage: @spmt pass @username`, userMessageId);
+      await sendDiscordReply(channelId, `❌ Usage: spmt pass @username`, userMessageId);
       return;
     }
     const playerId = await findPlayerId();
@@ -457,14 +467,14 @@ export async function handleSpmtCommand(
   else if (cmd === 'help') {
     await sendDiscordReply(channelId,
       `🏷️ **Chat Tag Commands:**\n` +
-      `@spmt join — Join the game\n` +
-      `@spmt tag @user — Tag someone\n` +
-      `@spmt pass @user — Use earned pass (2x pts)\n` +
-      `@spmt status — Who's it?\n` +
-      `@spmt score — Your stats\n` +
-      `@spmt rank — Top 3\n` +
-      `@spmt sleep / wake — Toggle immunity\n` +
-      `@spmt help — This message\n` +
+      `spmt join — Join the game\n` +
+      `spmt tag @user — Tag someone\n` +
+      `spmt pass @user — Use earned pass (2x pts)\n` +
+      `spmt status — Who's it?\n` +
+      `spmt score — Your stats\n` +
+      `spmt rank — Top 3\n` +
+      `spmt sleep / wake — Toggle immunity\n` +
+      `spmt help — This message\n` +
       `Or use the buttons below the game embed! 👇`
     , userMessageId);
   }
@@ -666,7 +676,7 @@ export function buildGameStateEmbed(gameState: any, serverId: string): any {
 }
 
 export function buildScoreEmbed(player: any, rank: number, totalPlayers: number): string {
-  if (!player) return `❌ You're not in the game! Type \`@spmt join\` in chat to play.`;
+  if (!player) return `❌ You're not in the game! Type \`spmt join\` in chat to play.`;
   return (
     `📊 **${player.twitchUsername}**\n\n` +
     `🏅 Rank: **#${rank}** / ${totalPlayers}\n` +
@@ -749,7 +759,7 @@ export function buildAdminEmbed(gameState: any, serverId: string): any {
 
 // ── Persistent embed management ──
 
-export async function postOrUpdateGameEmbed(serverId: string): Promise<void> {
+export async function postOrUpdateGameEmbed(serverId: string, channelId = CHAT_TAG_CHANNEL_ID): Promise<void> {
   const secret = process.env.CHAT_TAG_BOT_SECRET || '1234';
   const gameState = await tagApi(`/api/discord/game-state?secret=${secret}`);
   if (!gameState || gameState.error) {
@@ -763,10 +773,11 @@ export async function postOrUpdateGameEmbed(serverId: string): Promise<void> {
   const configRef = db.collection('servers').doc(serverId).collection('config').doc('chatTag');
   const configDoc = await configRef.get();
   const storedMessageId = configDoc.data()?.embedMessageId;
+  const storedChannelId = configDoc.data()?.channelId || channelId;
 
-  if (storedMessageId) {
+  if (storedMessageId && storedChannelId === channelId) {
     try {
-      await editDiscordMessage(CHAT_TAG_CHANNEL_ID, storedMessageId, embedPayload);
+      await editDiscordMessage(storedChannelId, storedMessageId, embedPayload);
       console.log('[ChatTag] Updated persistent embed');
       return;
     } catch {
@@ -774,9 +785,9 @@ export async function postOrUpdateGameEmbed(serverId: string): Promise<void> {
     }
   }
 
-  const newMessageId = await sendDiscordEmbed(CHAT_TAG_CHANNEL_ID, embedPayload);
+  const newMessageId = await sendDiscordEmbed(channelId, embedPayload);
   if (newMessageId) {
-    await configRef.set({ embedMessageId: newMessageId, channelId: CHAT_TAG_CHANNEL_ID }, { merge: true });
+    await configRef.set({ embedMessageId: newMessageId, channelId }, { merge: true });
     console.log('[ChatTag] Posted new persistent embed:', newMessageId);
   }
 }

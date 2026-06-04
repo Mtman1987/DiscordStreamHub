@@ -294,17 +294,22 @@ body { width: 1200px; height: 900px; background: linear-gradient(135deg, #581c87
 </body></html>`;
 
     const puppeteer = (await import('puppeteer')).default;
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-    });
+    let browser: Awaited<ReturnType<typeof puppeteer.launch>> | null = null;
+    let screenshot: Buffer;
+    try {
+      browser = await puppeteer.launch({
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+      });
 
-    const page = await browser.newPage();
-    await page.setViewport({ width: 1200, height: 900 });
-    await page.setContent(html, { waitUntil: 'networkidle0' });
-    
-    const screenshot = await page.screenshot({ type: 'png' });
-    await browser.close();
+      const page = await browser.newPage();
+      await page.setViewport({ width: 1200, height: 900 });
+      await page.setContent(html, { waitUntil: 'networkidle0' });
+
+      screenshot = Buffer.from(await page.screenshot({ type: 'png' }));
+    } finally {
+      if (browser) await browser.close().catch(() => {});
+    }
 
     const fs = await import('fs/promises');
     const path = await import('path');

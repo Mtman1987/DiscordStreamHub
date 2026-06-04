@@ -5,6 +5,7 @@ import { db } from '@/data/server-init';
 import { Timestamp } from '@/data/server-init';
 import { replyToMessage } from '@/lib/reply-service';
 import { Buffer } from 'node:buffer';
+import { postDiscordMessage } from '@/lib/discord-sync-service';
 
 // Reusable error handler
 function handleError(error: any, defaultMessage: string) {
@@ -19,6 +20,65 @@ function handleSuccess(message: string, path?: string) {
     revalidatePath(path);
   }
   return { status: 'success' as const, message };
+}
+
+function normalizeShoutoutGroupKey(groupKey: string): string {
+  const value = String(groupKey || '').trim();
+  if (!value) return 'default';
+
+  switch (value.toLowerCase()) {
+    case 'crew':
+      return 'Crew';
+    case 'partners':
+      return 'Partners';
+    case 'community':
+      return 'Community';
+    case 'raid-train':
+    case 'raid train':
+      return 'Raid Train';
+    case 'raid-pile':
+    case 'raid pile':
+      return 'Raid Pile';
+    case 'honored-guests':
+    case 'honored guests':
+      return 'Honored Guests';
+    case 'vip':
+      return 'VIP';
+    default:
+      return value
+        .replace(/[-_]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .split(' ')
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+  }
+}
+
+async function persistShoutoutChannel(serverId: string, groupKey: string, channelId: string) {
+  const canonicalGroup = normalizeShoutoutGroupKey(groupKey);
+  const serverRef = db.collection('servers').doc(serverId);
+  const serverSnap = await serverRef.get();
+  const serverData = serverSnap.data() || {};
+  const existingChannels = serverData.shoutoutChannels || {};
+  const nextChannels = {
+    ...existingChannels,
+    [groupKey]: channelId,
+    [canonicalGroup]: channelId,
+  };
+
+  await serverRef.set(
+    {
+      shoutoutChannels: nextChannels,
+    },
+    { merge: true },
+  );
+
+  await serverRef.collection('config').doc('groupChannels').set(
+    {
+      [canonicalGroup]: channelId,
+    },
+    { merge: true },
+  );
 }
 
 /**
@@ -139,6 +199,7 @@ export async function resetCalendarAction(prevState: any, formData: FormData) {
  */
 export async function generateAllShoutoutsAction(prevState: any, formData: FormData) {
   const serverId = formData.get('serverId') as string;
+  const currentPath = (formData.get('currentPath') as string) || '/shoutouts/community';
   if (!serverId) {
     return { status: 'error' as const, results: [], error: 'Server ID is required.' };
   }
@@ -150,11 +211,110 @@ export async function generateAllShoutoutsAction(prevState: any, formData: FormD
       return { status: 'success' as const, results: [{ streamerName: 'N/A', success: true, message: 'No online community members found to generate shoutouts for.' }], error: undefined };
     }
 
-    revalidatePath(`/shoutouts/community`);
+    revalidatePath(currentPath || `/shoutouts/community`);
     return { status: 'success' as const, results, error: undefined };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'An unknown error occurred.';
     return { status: 'error' as const, results: [], error: message };
+  }
+}
+
+export async function postShoutoutAction(prevState: any, formData: FormData) {
+  try {
+    const serverId = String(formData.get('serverId') || '').trim();
+    const channelId = String(formData.get('channelId') || '').trim();
+    const streamerName = String(formData.get('streamerName') || '').trim() || 'Streamer';
+    const currentPath = String(formData.get('currentPath') || '').trim();
+    const rawPayload = String(formData.get('payload') || '').trim();
+
+    if (!serverId) {
+      throw new Error('Server ID is required.');
+    }
+    if (!channelId) {
+      throw new Error('Channel ID is required.');
+    }
+    if (!rawPayload) {
+      throw new Error('Missing shoutout payload.');
+    }
+
+    let payload: any;
+    try {
+      payload = JSON.parse(rawPayload);
+    } catch {
+      throw new Error('Invalid shoutout payload.');
+    }
+
+    const messageId = await postDiscordMessage(serverId, channelId, payload);
+    if (!messageId) {
+      throw new Error('Failed to send shoutout to Discord.');
+    }
+
+    if (currentPath) {
+      revalidatePath(currentPath);
+    }
+
+    return {
+      status: 'success' as const,
+      message: `Posted shoutout for ${streamerName}.`,
+    };
+  } catch (error) {
+    return handleError(error, 'Failed to post shoutout.');
+  }
+}
+
+export async function triggerVipShoutoutsAction(prevState: any, formData: FormData) {
+  try {
+    const serverId = String(formData.get('serverId') || '').trim();
+    const currentPath = String(formData.get('currentPath') || '').trim();
+
+    if (!serverId) {
+      throw new Error('Server ID is required.');
+    }
+
+    const { runTwitchPollNow } = await import('@/lib/twitch-polling-service');
+    await runTwitchPollNow(serverId);
+
+    if (currentPath) {
+      revalidatePath(currentPath);
+    }
+
+    return {
+      status: 'success' as const,
+      message: 'VIP shoutouts refreshed and posted for all live members.',
+    };
+  } catch (error) {
+    return handleError(error, 'Failed to trigger VIP shoutouts.');
+  }
+}
+
+export async function updateShoutoutChannelAction(prevState: any, formData: FormData) {
+  try {
+    const serverId = String(formData.get('serverId') || '').trim();
+    const groupKey = String(formData.get('groupKey') || '').trim();
+    const channelId = String(formData.get('channelId') || '').trim();
+    const currentPath = String(formData.get('currentPath') || '').trim();
+
+    if (!serverId) {
+      throw new Error('Server ID is required.');
+    }
+    if (!groupKey) {
+      throw new Error('Group key is required.');
+    }
+
+    await persistShoutoutChannel(serverId, groupKey, channelId);
+
+    if (currentPath) {
+      revalidatePath(currentPath);
+    }
+
+    return {
+      status: 'success' as const,
+      message: channelId
+        ? `Saved ${groupKey} shoutout channel.`
+        : `Cleared ${groupKey} shoutout channel.`,
+    };
+  } catch (error) {
+    return handleError(error, 'Failed to update shoutout channel.');
   }
 }
 

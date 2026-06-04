@@ -43,7 +43,7 @@ export function DiscordOAuthCard({ serverId }: DiscordOAuthCardProps) {
     const redirectUri = encodeURIComponent('https://discord-stream-hub-new.fly.dev/api/discord/oauth/callback');
     const scope = encodeURIComponent('identify email guilds');
     
-    const authUrl = `https://discord.com/api/oauth2/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}&state=hearmeout`;
+    const authUrl = `https://discord.com/api/oauth2/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}&state=dsh-settings`;
     
     const popup = window.open(authUrl, 'discord-oauth', 'width=500,height=700');
     

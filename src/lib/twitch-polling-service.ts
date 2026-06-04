@@ -13,6 +13,8 @@ interface PollingState {
 
 class TwitchPollingService {
   private pollingStates: Map<string, PollingState> = new Map();
+  private startingStates: Map<string, Promise<void>> = new Map();
+  private activePolls: Set<string> = new Set();
   private readonly POLLING_INTERVAL = 10 * 60 * 1000; // 10 minutes
   private readonly SHOUTOUT_COOLDOWN = 60 * 60 * 1000; // 1 hour
   private readonly TWITCH_RATE_DELAY = 1200; // 1.2s between Twitch API calls (50/min limit)
@@ -59,44 +61,69 @@ class TwitchPollingService {
       return;
     }
 
+    const existingStart = this.startingStates.get(serverId);
+    if (existingStart) {
+      console.log(`[TwitchPolling] Polling startup already in progress for server ${serverId}`);
+      return existingStart;
+    }
+
     console.log(`[TwitchPolling] Starting polling for server ${serverId}`);
 
-    const state: PollingState = {
-      isPolling: true,
-      serverId,
-      lastShoutouts: await this.loadLastShoutouts(serverId)
-    };
+    let resolveStart!: () => void;
+    let rejectStart!: (error: unknown) => void;
+    const startPromise = new Promise<void>((resolve, reject) => {
+      resolveStart = resolve;
+      rejectStart = reject;
+    });
 
-    // Do NOT set interval yet - wait for initialization to complete
-    this.pollingStates.set(serverId, state);
-    await this.savePollingState(serverId, true);
+    this.startingStates.set(serverId, startPromise);
 
-    // Run initial poll synchronously
-    try {
-      await this.pollTwitchStreams(serverId);
-    } catch (error) {
-      console.error('[TwitchPolling] Initial poll failed:', error);
-    }
-    
-    // Start chat monitoring before interval
-    try {
-      console.log('[TwitchPolling] Importing chat service...');
-      const { twitchChatService } = await import('./twitch-chat-service');
-      console.log('[TwitchPolling] Starting chat service...');
-      await twitchChatService.start(serverId);
-      console.log('[TwitchPolling] Chat service started successfully');
-    } catch (error) {
-      console.error('[TwitchPolling] Failed to start chat service:', error);
-    }
-    
-    // Now set the interval after all setup is complete
-    state.intervalId = setInterval(() => {
-      this.pollTwitchStreams(serverId).catch(err => 
-        console.error(`[TwitchPolling] Polling error for ${serverId}:`, err)
-      );
-    }, this.POLLING_INTERVAL);
-    
-    console.log(`[TwitchPolling] Polling started - will run every ${this.POLLING_INTERVAL / 60000} minutes`);
+    (async () => {
+      const state: PollingState = {
+        isPolling: true,
+        serverId,
+        lastShoutouts: await this.loadLastShoutouts(serverId)
+      };
+
+      // Do NOT set interval yet - wait for initialization to complete
+      this.pollingStates.set(serverId, state);
+      await this.savePollingState(serverId, true);
+
+      // Run initial poll synchronously
+      try {
+        await this.pollTwitchStreams(serverId);
+      } catch (error) {
+        console.error('[TwitchPolling] Initial poll failed:', error);
+      }
+      
+      // Start chat monitoring before interval
+      try {
+        console.log('[TwitchPolling] Importing chat service...');
+        const { twitchChatService } = await import('./twitch-chat-service');
+        console.log('[TwitchPolling] Starting chat service...');
+        await twitchChatService.start(serverId);
+        console.log('[TwitchPolling] Chat service started successfully');
+      } catch (error) {
+        console.error('[TwitchPolling] Failed to start chat service:', error);
+      }
+      
+      // Now set the interval after all setup is complete
+      state.intervalId = setInterval(() => {
+        this.pollTwitchStreams(serverId).catch(err => 
+          console.error(`[TwitchPolling] Polling error for ${serverId}:`, err)
+        );
+      }, this.POLLING_INTERVAL);
+      
+      console.log(`[TwitchPolling] Polling started - will run every ${this.POLLING_INTERVAL / 60000} minutes`);
+      resolveStart();
+    })().catch((error) => {
+      this.pollingStates.delete(serverId);
+      rejectStart(error);
+    }).finally(() => {
+      this.startingStates.delete(serverId);
+    });
+
+    return startPromise;
   }
 
   async stopPolling(serverId: string): Promise<void> {
@@ -143,6 +170,12 @@ class TwitchPollingService {
   }
 
   private async pollTwitchStreams(serverId: string): Promise<void> {
+    if (this.activePolls.has(serverId)) {
+      console.log(`[TwitchPolling] Poll already running for server ${serverId}; skipping overlap`);
+      return;
+    }
+
+    this.activePolls.add(serverId);
     try {
       const state = this.pollingStates.get(serverId);
       if (!state || !state.isPolling) return;
@@ -360,6 +393,8 @@ class TwitchPollingService {
       console.log(`[TwitchPolling] Poll cycle completed for server ${serverId}`);
     } catch (error) {
       console.error(`[TwitchPolling] Error polling streams for server ${serverId}:`, error);
+    } finally {
+      this.activePolls.delete(serverId);
     }
   }
 
@@ -450,22 +485,7 @@ class TwitchPollingService {
       const fallbackBannerUrl = process.env.CREW_BANNER_GIF_URL || 'https://via.placeholder.com/1920x120/00D9FF/FFFFFF?text=SPACE+MOUNTAIN+CREW';
       const streamThumbnail = stream.thumbnail_url?.replace('{width}', '1920').replace('{height}', '1080');
       const crewImageUrl = clip?.gifUrl || streamThumbnail || fallbackBannerUrl;
-      
-      // Check if per-user banner exists on disk
-      const { existsSync: bannerExists } = await import('fs');
-      const { join: joinPath } = await import('path');
-      const CLIP_PATH = process.env.STORAGE_PATH || '/data/clips';
-      const bannerFilePath = joinPath(CLIP_PATH, 'banners', `${twitchLogin.toLowerCase()}.gif`);
-      let resolvedBannerUrl: string;
-      if (bannerExists(bannerFilePath)) {
-        resolvedBannerUrl = bannerUrl;
-      } else {
-        resolvedBannerUrl = fallbackBannerUrl;
-        // Auto-generate banner for next cycle (single user, won't OOM)
-        import('./banner-generation-service').then(({ generateCrewBanners }) =>
-          generateCrewBanners([twitchLogin]).catch(err => console.error(`[TwitchPolling] Banner gen failed for ${twitchLogin}:`, err))
-        );
-      }
+      const resolvedBannerUrl = bannerUrl;
       
       const bannerEmbed = {
         image: { url: resolvedBannerUrl },
