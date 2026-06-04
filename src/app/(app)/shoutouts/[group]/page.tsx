@@ -55,6 +55,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { matchesGroup, slugToCanonicalGroup } from '@/lib/group-utils';
 
 
 // Simple row for Raid Train, Raid Pile
@@ -491,17 +492,13 @@ export default function GroupDetailPage() {
   const [channels, setChannels] = React.useState<Array<{id: string, name: string}>>([]);
 
   const group = Array.isArray(params.group) ? params.group[0] : params.group;
-  const isCommunityPage = group === 'community';
-  const isPartnersPage = group === 'partners';
-  const isCrewPage = group === 'crew';
+  const isCommunityPage = matchesGroup(group, 'Community');
+  const isPartnersPage = matchesGroup(group, 'Partners');
+  const isCrewPage = matchesGroup(group, 'Crew');
 
-  const groupName =
-    group === 'crew' ? 'Crew' :
-    group === 'partners' ? 'Partners' :
-    group === 'community' ? 'Community' :
-    group === 'raid-train' ? 'Raid Train' :
-    group === 'raid-pile' ? 'Raid Pile' :
-    'Unknown';
+  const fallbackGroupName =
+    group?.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ') || 'Group';
+  const groupName = slugToCanonicalGroup(group) ?? fallbackGroupName;
 
   console.log('[GroupPage] URL group param:', group, '→ groupName:', groupName);
 
@@ -564,12 +561,10 @@ export default function GroupDetailPage() {
   const { members, onlineUsers, offlineUsers, communityMembers, allRoles } = React.useMemo(() => {
     let mutableUsers = allUsers ? [...allUsers] : [];
 
-    const groupMembers = mutableUsers.filter((u) => {
-      return u.group === groupName;
-    });
+    const groupMembers = mutableUsers.filter((u) => matchesGroup(u.group, groupName));
     const online = groupMembers.filter(u => u.isOnline);
     const offline = groupMembers.filter(u => !u.isOnline);
-    const community = mutableUsers.filter(u => u.group === 'Community');
+    const community = mutableUsers.filter(u => matchesGroup(u.group, 'Community'));
 
     // Extract all unique roles from all users
     const roles = new Set<string>();

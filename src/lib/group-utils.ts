@@ -1,7 +1,17 @@
 type GroupValue = string | number | null | undefined;
-type NormalizedGroup = 'vip' | 'community' | 'raid train' | 'raid pile';
+type NormalizedGroup =
+  | 'crew'
+  | 'partners'
+  | 'honored guests'
+  | 'vip'
+  | 'community'
+  | 'raid train'
+  | 'raid pile';
 
 const CANONICAL_LABELS: Record<NormalizedGroup, string> = {
+  crew: 'Crew',
+  partners: 'Partners',
+  'honored guests': 'Honored Guests',
   vip: 'VIP',
   community: 'Community',
   'raid train': 'Raid Train',
@@ -9,6 +19,9 @@ const CANONICAL_LABELS: Record<NormalizedGroup, string> = {
 };
 
 const GROUP_SLUGS: Record<NormalizedGroup, string> = {
+  crew: 'crew',
+  partners: 'partners',
+  'honored guests': 'honored-guests',
   vip: 'vip',
   community: 'community',
   'raid train': 'raid-train',
@@ -33,10 +46,23 @@ export function normalizeGroupValue(group: GroupValue): NormalizedGroup | null {
     const normalized = normalizeGroupString(group);
     if (!normalized) return null;
 
+    if (normalized.startsWith('crew')) {
+      return 'crew';
+    }
+    if (normalized.startsWith('partner')) {
+      return 'partners';
+    }
+    if (normalized.startsWith('honored guest')) {
+      return 'honored guests';
+    }
     if (normalized.startsWith('vip')) {
       return 'vip';
     }
-    if (normalized.startsWith('community')) {
+    if (
+      normalized.startsWith('community') ||
+      normalized.startsWith('everyone else') ||
+      normalized.startsWith('mountaineer')
+    ) {
       return 'community';
     }
     if (normalized.startsWith('raid train') || normalized.startsWith('train')) {
