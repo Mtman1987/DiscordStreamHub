@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useDataStore } from '@/data';
-import { collection, query, getDocs, doc, deleteDoc } from '@/lib/data-shim';
+import { collection, getDocs, getDoc, doc, deleteDoc } from '@/lib/data-shim';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/page-header';
@@ -46,10 +46,10 @@ export default function ShoutoutsPage() {
       for (const userDoc of usersSnapshot.docs) {
         const userData = userDoc.data();
         const shoutoutStateRef = doc(store, 'servers', serverId, 'users', userDoc.id, 'shoutoutState', 'current');
-        const shoutoutStateSnap = await getDocs(query(collection(store, 'servers', serverId, 'users', userDoc.id, 'shoutoutState')));
+        const shoutoutStateSnap = await getDoc(shoutoutStateRef);
         
-        if (!shoutoutStateSnap.empty) {
-          const shoutoutData = shoutoutStateSnap.docs[0].data();
+        if (shoutoutStateSnap.exists()) {
+          const shoutoutData = shoutoutStateSnap.data();
           activeShoutouts.push({
             discordUserId: userDoc.id,
             username: userData.username || 'Unknown',

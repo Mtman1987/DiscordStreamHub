@@ -9,6 +9,7 @@ export async function generateCalendarImage(
   serverId: string,
   monthOffset: number = 0
 ): Promise<string | null> {
+  let browser: Awaited<ReturnType<typeof puppeteer.launch>> | null = null;
   try {
     const eventsSnapshot = await db.collection('servers').doc(serverId)
       .collection('calendarEvents')
@@ -206,7 +207,7 @@ export async function generateCalendarImage(
       </html>
     `;
     
-    const browser = await puppeteer.launch({
+    browser = await puppeteer.launch({
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
       executablePath: getPuppeteerExecutablePath() || undefined
@@ -218,10 +219,13 @@ export async function generateCalendarImage(
     
     const screenshot = await page.screenshot({ type: 'png' });
     await browser.close();
+    browser = null;
     
     return `data:image/png;base64,${screenshot.toString('base64')}`;
   } catch (error) {
     console.error(`[generateCalendarImage] Error:`, error);
     return null;
+  } finally {
+    if (browser) await browser.close().catch(() => {});
   }
 }

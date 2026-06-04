@@ -20,7 +20,9 @@ else
 fi
 
 # 3. Start DSH (port 3000) in background
-npx next start -H 0.0.0.0 &
+# Pin the port explicitly so Fly always sees the server on the configured
+# internal port, even if the runtime environment injects a different PORT.
+PORT=3000 npx next start -p 3000 -H 0.0.0.0 &
 DSH_PID=$!
 
 # 4. Wait for DSH to be ready, then start polling

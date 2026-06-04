@@ -4,16 +4,24 @@ import { startTwitchPolling } from '@/lib/twitch-polling-service';
 import { getHardcodedGuildId } from '@/lib/runtime-config';
 
 const HARDCODED_SERVER_ID = getHardcodedGuildId() || '1240832965865635881';
+let startupWorkQueued = false;
 
 export async function POST(request: NextRequest) {
   try {
     console.log('[Startup] Initializing automated services...');
 
-    queueStartupWork();
+    let queuedNow = false;
+    if (!startupWorkQueued) {
+      startupWorkQueued = true;
+      queuedNow = true;
+      queueStartupWork();
+    } else {
+      console.log('[Startup] Startup work already queued; skipping duplicate request');
+    }
 
     return NextResponse.json({
       success: true, 
-      message: 'Automated services queued',
+      message: queuedNow ? 'Automated services queued' : 'Automated services already queued',
       serverId: HARDCODED_SERVER_ID
     });
     

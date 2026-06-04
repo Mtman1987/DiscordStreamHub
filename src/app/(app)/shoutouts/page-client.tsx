@@ -22,7 +22,7 @@ type GroupCardProps = {
   groupName: 'VIP' | 'Community' | 'Raid Train' | 'Raid Pile';
   description: string;
   href: string;
-  users: UserProfile[] | undefined;
+  users: UserProfile[] | null | undefined;
   isLoading: boolean;
 };
 
@@ -94,28 +94,28 @@ export default function ShoutoutsPage() {
             groupName="VIP"
             description="Your most valued supporters."
             href="/shoutouts/vip"
-            users={allUsers}
+            users={allUsers ?? undefined}
             isLoading={isLoadingUsers}
           />
           <GroupCard
             groupName="Community"
             description="General members of your community."
             href="/shoutouts/community"
-            users={allUsers}
+            users={allUsers ?? undefined}
             isLoading={isLoadingUsers}
           />
           <GroupCard
             groupName="Raid Train"
             description="Participants in scheduled raid trains."
             href="/shoutouts/raid-train"
-            users={allUsers}
+            users={allUsers ?? undefined}
             isLoading={isLoadingUsers}
           />
           <GroupCard
             groupName="Raid Pile"
             description="Spontaneous group raids."
             href="/shoutouts/raid-pile"
-            users={allUsers}
+            users={allUsers ?? undefined}
             isLoading={isLoadingUsers}
           />
         </div>

@@ -1,5 +1,3 @@
-'use server';
-
 import 'server-only';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';

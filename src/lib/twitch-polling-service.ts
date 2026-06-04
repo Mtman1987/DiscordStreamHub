@@ -14,6 +14,7 @@ interface PollingState {
 
 class TwitchPollingService {
   private pollingStates: Map<string, PollingState> = new Map();
+  private activePolls: Set<string> = new Set();
   private readonly POLLING_INTERVAL = 10 * 60 * 1000; // 10 minutes
   private readonly SHOUTOUT_COOLDOWN = 60 * 60 * 1000; // 1 hour
   private readonly TWITCH_RATE_DELAY = 1200; // 1.2s between Twitch API calls (50/min limit)
@@ -145,6 +146,12 @@ class TwitchPollingService {
   }
 
   private async pollTwitchStreams(serverId: string): Promise<void> {
+    if (this.activePolls.has(serverId)) {
+      console.log(`[TwitchPolling] Poll already running for server ${serverId}; skipping overlap`);
+      return;
+    }
+
+    this.activePolls.add(serverId);
     try {
       const state = this.pollingStates.get(serverId);
       if (!state || !state.isPolling) return;
@@ -354,6 +361,8 @@ class TwitchPollingService {
       console.log(`[TwitchPolling] Poll cycle completed for server ${serverId}`);
     } catch (error) {
       console.error(`[TwitchPolling] Error polling streams for server ${serverId}:`, error);
+    } finally {
+      this.activePolls.delete(serverId);
     }
   }
 

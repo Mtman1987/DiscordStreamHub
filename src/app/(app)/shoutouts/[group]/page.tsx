@@ -34,6 +34,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { generateAllShoutoutsAction, updateUserGroupAction, updateUsersByRoleAction } from '@/lib/actions';
+import type { ShoutoutResult } from '@/lib/community-shoutout-service';
 import { deriveStreamStats, getMediaPreviewUrl } from '@/lib/shoutout-display';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import Image from 'next/image';
@@ -508,9 +509,16 @@ export default function GroupDetailPage() {
   const [isSaving, setIsSaving] = React.useState(false);
   
   // Conditionally declare the hook only for the community page
+  type ShoutoutActionState =
+    | { status: 'success'; results: ShoutoutResult[]; error: undefined }
+    | { status: 'error'; results: ShoutoutResult[]; error: string };
+
   const [generateState, formAction] = isCommunityPage 
-    ? useActionState(generateAllShoutoutsAction, { status: 'idle', results: [], error: undefined })
-    : [{ status: 'idle', results: [], error: undefined }, () => {}];
+    ? useActionState<ShoutoutActionState, FormData>(
+        generateAllShoutoutsAction as (state: ShoutoutActionState, payload: FormData) => Promise<ShoutoutActionState>,
+        { status: 'success', results: [], error: undefined }
+      )
+    : [{ status: 'success', results: [], error: undefined }, () => {}];
 
   React.useEffect(() => {
     const storedServerId = localStorage.getItem('discordServerId');
