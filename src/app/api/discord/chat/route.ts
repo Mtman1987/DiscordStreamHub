@@ -15,6 +15,7 @@ import {
   getSpaceMountainIconUrl as getConfiguredSpaceMountainIconUrl,
   getStreamweaverDiscordChatUrl,
 } from '@/lib/runtime-config';
+import { handleSpmtCommand } from '@/lib/chat-tag-service';
 // watch-request-service moved to hearmeout
 const handleWatchRequestCommand = async (...args: any[]) => null;
 const parseWatchAcceptCommand = (s: string) => null;
@@ -623,9 +624,10 @@ export async function POST(request: NextRequest) {
         const fanout = await fanoutPromise;
         return NextResponse.json({ success: true, commandHandled: 'chat-tag-controls', messageId: sent?.id, deletedCommand, fanout });
       }
-      console.log(`[DiscordChat] Ignoring non-controls @spmt command; Chat Tag owns it: ${normalizedMsg}`);
+      console.log(`[DiscordChat] Handling Chat Tag command locally in source channel: ${normalizedMsg}`);
+      await handleSpmtCommand(normalizedMsg, userId, userName, guildId, channelId, messageId);
       const fanout = await fanoutPromise;
-      return NextResponse.json({ success: true, skipped: 'chat-tag-owned-command', fanout });
+      return NextResponse.json({ success: true, commandHandled: 'chat-tag-command', fanout });
     }
 
     // Check if user is in our community
