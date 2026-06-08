@@ -26,6 +26,10 @@ interface DiscordRole {
 class DiscordSyncService {
   private baseUrl = 'https://discord.com/api/v10';
 
+  private isExpectedEditLifecycleError(errorText: string): boolean {
+    return /Maximum number of edits to messages older than 1 hour reached|code["']?\s*:\s*30046|30046|Unknown Message/i.test(errorText);
+  }
+
   private async getBotToken(serverId: string): Promise<string> {
     if (getDiscordDebugEnvLogsEnabled()) {
       console.log('Available env vars:', Object.keys(process.env).filter(k => k.includes('DISCORD')));
@@ -212,11 +216,19 @@ class DiscordSyncService {
 
       if (!response.ok) {
         const errorText = await response.text().catch(() => response.statusText);
+        if (this.isExpectedEditLifecycleError(errorText)) {
+          console.warn(`Discord edit needs repost for ${messageId} in ${channelId}: ${response.status} ${errorText}`);
+          throw new Error(`Failed to edit message ${messageId} in ${channelId}: ${response.status} ${errorText}`);
+        }
         throw new Error(`Failed to edit message ${messageId} in ${channelId}: ${response.status} ${errorText}`);
       }
 
       console.log(`Edited message ${messageId} in channel ${channelId}`);
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (this.isExpectedEditLifecycleError(message)) {
+        throw error;
+      }
       console.error('Failed to edit message:', error);
       throw error;
     }
