@@ -189,11 +189,10 @@ export class PointsService {
     return PointsService.instance;
   }
 
-  async addPoints(userId: string, username: string, displayName: string, points: number): Promise<{ points: number }> {
-    // For now, we'll use a default server ID. In a real implementation, this should be passed as a parameter
-    const serverId = getHardcodedGuildId() || 'default';
+  async addPoints(userId: string, username: string, displayName: string, points: number, serverId?: string): Promise<{ points: number }> {
+    const actualServerId = serverId || getHardcodedGuildId() || 'default';
 
-    const leaderboardRef = db.collection('servers').doc(serverId).collection('leaderboard').doc(userId);
+    const leaderboardRef = db.collection('servers').doc(actualServerId).collection('leaderboard').doc(userId);
     const currentDoc = await leaderboardRef.get();
     const currentPoints = (currentDoc.exists ? currentDoc.data()?.points : 0) || 0;
     const newPoints = currentPoints + points;
@@ -208,6 +207,23 @@ export class PointsService {
     }, { merge: true });
 
     return { points: newPoints };
+  }
+
+  async setPoints(userId: string, username: string, displayName: string, points: number, serverId?: string): Promise<{ points: number }> {
+    const actualServerId = serverId || getHardcodedGuildId() || 'default';
+    const leaderboardRef = db.collection('servers').doc(actualServerId).collection('leaderboard').doc(userId);
+    const clampedPoints = Math.max(0, Math.trunc(Number(points || 0)));
+
+    await leaderboardRef.set({
+      userProfileId: userId,
+      points: clampedPoints,
+      lastUpdated: new Date().toISOString(),
+      lastEventType: 'admin_message',
+      lastEventSource: 'manual',
+      lastEventMetadata: { username, displayName },
+    }, { merge: true });
+
+    return { points: clampedPoints };
   }
 
   async getUserRank(userId: string, serverId?: string): Promise<{ rank: number; points: number } | null> {
@@ -260,5 +276,56 @@ export class PointsService {
 
     const snapshot = await leaderboardRef.get();
     return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  }
+
+  async addPointsToAll(points: number, serverId?: string): Promise<{ count: number }> {
+    const actualServerId = serverId || getHardcodedGuildId() || 'default';
+    const delta = Math.trunc(Number(points || 0));
+    if (!delta) return { count: 0 };
+
+    const snapshot = await db
+      .collection('servers')
+      .doc(actualServerId)
+      .collection('leaderboard')
+      .get();
+
+    let count = 0;
+    for (const doc of snapshot.docs) {
+      const data = doc.data() || {};
+      const currentPoints = Number(data.points || 0);
+      const nextPoints = Math.max(0, currentPoints + delta);
+      await doc.ref.set({
+        points: nextPoints,
+        lastUpdated: new Date().toISOString(),
+        lastEventType: 'admin_message',
+        lastEventSource: 'manual',
+      }, { merge: true });
+      count += 1;
+    }
+
+    return { count };
+  }
+
+  async setPointsToAll(points: number, serverId?: string): Promise<{ count: number }> {
+    const actualServerId = serverId || getHardcodedGuildId() || 'default';
+    const normalizedPoints = Math.max(0, Math.trunc(Number(points || 0)));
+    const snapshot = await db
+      .collection('servers')
+      .doc(actualServerId)
+      .collection('leaderboard')
+      .get();
+
+    let count = 0;
+    for (const doc of snapshot.docs) {
+      await doc.ref.set({
+        points: normalizedPoints,
+        lastUpdated: new Date().toISOString(),
+        lastEventType: 'admin_message',
+        lastEventSource: 'manual',
+      }, { merge: true });
+      count += 1;
+    }
+
+    return { count };
   }
 }

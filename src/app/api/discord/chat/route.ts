@@ -16,6 +16,7 @@ import {
   getStreamweaverDiscordChatUrl,
 } from '@/lib/runtime-config';
 import { handleSpmtCommand } from '@/lib/chat-tag-service';
+import { recordDiscordMessageActivity } from '@/lib/discord-activity-service';
 // watch-request-service moved to hearmeout
 const handleWatchRequestCommand = async (...args: any[]) => null;
 const parseWatchAcceptCommand = (s: string) => null;
@@ -637,6 +638,18 @@ export async function POST(request: NextRequest) {
       const fanout = await fanoutPromise;
       return NextResponse.json({ success: true, pointsAwarded: false, reason: 'not-a-member', fanout });
     }
+
+    await recordDiscordMessageActivity({
+      serverId: guildId,
+      userId,
+      username: userName,
+      displayName: userName,
+      avatarUrl: userAvatar,
+      channelId,
+      channelName: data.channelName || data.channel?.name || '',
+    }).catch((error) => {
+      console.warn('[DiscordChat] Failed to record Discord activity metrics:', error);
+    });
 
     // Track Discord chat activity in chat-tag (auto-wake, lastSeenChannel)
     const twitchLogin = userDoc.data()?.twitchLogin;
