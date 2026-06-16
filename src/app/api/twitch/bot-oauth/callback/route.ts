@@ -74,17 +74,28 @@ export async function GET(request: NextRequest) {
     // Store token
     if (discordUserId) {
       // Per-user bot token (bot linking card flow)
-      const { storeUserBotToken } = await import('@/lib/token-service');
-      await storeUserBotToken(
+      const expiresAt = Date.now() + (tokenData.expires_in * 1000);
+      await db.collection('servers').doc(serverId).collection('users').doc(discordUserId).set({
+        linkedBotTwitchLogin: twitchLogin || botUser.login,
+        botUsername: botUser.login,
+        botUserId: botUser.id,
+        botAccessToken: tokenData.access_token,
+        botRefreshToken: tokenData.refresh_token,
+        botTokenExpiresAt: expiresAt,
+        botLinkedAt: new Date().toISOString(),
+      }, { merge: true });
+      await db.setAsync('tokens', `discord_user_${discordUserId}_twitch_bot`, {
         serverId,
         discordUserId,
-        tokenData.access_token,
-        tokenData.refresh_token,
-        tokenData.expires_in,
-        botUser.login,
-        botUser.id,
-        twitchLogin || botUser.login
-      );
+        twitchLogin: twitchLogin || botUser.login,
+        botUsername: botUser.login,
+        botUserId: botUser.id,
+        accessToken: tokenData.access_token,
+        refreshToken: tokenData.refresh_token,
+        expiresAt,
+        updatedAt: new Date().toISOString(),
+        source: 'discord-user-bot-oauth',
+      });
     } else {
       // Server-wide bot token (OAuth card flow)
       await db.collection('servers').doc(serverId).collection('config').doc('twitchBotOAuth').set({

@@ -5,6 +5,32 @@ import { getCurrentClipForUser } from './clip-rotation-service';
 import { getStreamByLogin } from './twitch-api-service';
 import { getServerBranding } from './server-branding';
 
+function isRepostableDiscordEditError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /Maximum number of edits to messages older than 1 hour reached|code["']?\s*:\s*30046|30046|404|MESSAGE_NOT_FOUND|Unknown Message/i.test(message);
+}
+
+async function replaceTrackedShoutoutMessage(
+  serverId: string,
+  discordUserId: string,
+  shoutoutState: any,
+  payload: any,
+): Promise<void> {
+  const { deleteDiscordMessage, postDiscordMessage } = await import('./discord-sync-service');
+  await deleteDiscordMessage(serverId, shoutoutState.channelId, shoutoutState.messageId).catch(() => {});
+  const newMessageId = await postDiscordMessage(serverId, shoutoutState.channelId, payload);
+  if (!newMessageId) {
+    throw new Error(`Failed to repost tracked shoutout for ${discordUserId}`);
+  }
+
+  await db.collection('servers').doc(serverId).collection('users').doc(discordUserId)
+    .collection('shoutoutState').doc('current').set({
+      ...shoutoutState,
+      messageId: newMessageId,
+      lastUpdated: new Date(),
+    }, { merge: true });
+}
+
 export async function manageCommunitySpotlight(serverId: string): Promise<void> {
   try {
     console.log('[CommunitySpotlight] Starting spotlight rotation...');
@@ -72,7 +98,14 @@ export async function manageCommunitySpotlight(serverId: string): Promise<void> 
             timestamp: new Date().toISOString()
           };
           
-          await editDiscordMessage(serverId, oldShoutoutState.channelId, oldShoutoutState.messageId, { embeds: [oldEmbed] });
+          const payload = { embeds: [oldEmbed] };
+          try {
+            await editDiscordMessage(serverId, oldShoutoutState.channelId, oldShoutoutState.messageId, payload);
+          } catch (error) {
+            if (!isRepostableDiscordEditError(error)) throw error;
+            console.log(`[CommunitySpotlight] Old spotlight message too old or missing for ${oldSpotlightUserId}, reposting`);
+            await replaceTrackedShoutoutMessage(serverId, oldSpotlightUserId, oldShoutoutState, payload);
+          }
         }
       }
     }
@@ -101,7 +134,14 @@ export async function manageCommunitySpotlight(serverId: string): Promise<void> 
         timestamp: new Date().toISOString()
       };
       
-      await editDiscordMessage(serverId, newShoutoutState.channelId, newShoutoutState.messageId, { embeds: [newEmbed] });
+      const payload = { embeds: [newEmbed] };
+      try {
+        await editDiscordMessage(serverId, newShoutoutState.channelId, newShoutoutState.messageId, payload);
+      } catch (error) {
+        if (!isRepostableDiscordEditError(error)) throw error;
+        console.log(`[CommunitySpotlight] New spotlight message too old or missing for ${newSpotlightMember.discordUserId}, reposting`);
+        await replaceTrackedShoutoutMessage(serverId, newSpotlightMember.discordUserId, newShoutoutState, payload);
+      }
     }
 
     // Save new spotlight state
