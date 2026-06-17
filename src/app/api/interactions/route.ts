@@ -17,11 +17,20 @@ export async function POST(request: NextRequest) {
 
   const publicKey = getDiscordPublicKey();
   if (!publicKey || !signature || !timestamp) {
+    console.error('[Interactions] Invalid request metadata', {
+      hasPublicKey: Boolean(publicKey),
+      hasSignature: Boolean(signature),
+      hasTimestamp: Boolean(timestamp),
+    });
     return NextResponse.json({ error: 'Invalid request' }, { status: 401 });
   }
 
   const isValid = verifyKey(rawBody, signature, timestamp, publicKey);
   if (!isValid) {
+    console.error('[Interactions] Signature verification failed', {
+      bodyLength: rawBody.length,
+      timestamp,
+    });
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
   }
 

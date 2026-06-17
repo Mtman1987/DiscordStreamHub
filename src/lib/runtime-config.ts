@@ -66,17 +66,36 @@ const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
   },
 };
 
-const runtimeConfigPath = join(getDataDir(), 'runtime-config.json');
-
 function getDataDir(): string {
-  return process.env.DATA_DIR || process.env.FLY_VOLUME_PATH || join(process.cwd(), 'data');
+  if (process.env.DATA_DIR) return process.env.DATA_DIR;
+  if (process.env.FLY_VOLUME_PATH) return process.env.FLY_VOLUME_PATH;
+  if (process.env.NODE_ENV === 'production' && existsSync('/data')) return '/data';
+  return join(process.cwd(), 'data');
+}
+
+function getRuntimeConfigPath(): string {
+  return join(getDataDir(), 'runtime-config.json');
+}
+
+function getLegacyRuntimeConfigPath(): string {
+  return join(process.cwd(), 'data', 'runtime-config.json');
 }
 
 function ensureRuntimeConfigFile(): void {
   const dir = getDataDir();
+  const runtimeConfigPath = getRuntimeConfigPath();
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
+
+  if (!existsSync(runtimeConfigPath)) {
+    const legacyPath = getLegacyRuntimeConfigPath();
+    if (legacyPath !== runtimeConfigPath && existsSync(legacyPath)) {
+      writeFileSync(runtimeConfigPath, readFileSync(legacyPath, 'utf8'), 'utf8');
+      return;
+    }
+  }
+
   if (!existsSync(runtimeConfigPath)) {
     writeFileSync(runtimeConfigPath, JSON.stringify(DEFAULT_RUNTIME_CONFIG, null, 2), 'utf8');
   }
@@ -84,6 +103,7 @@ function ensureRuntimeConfigFile(): void {
 
 function readRuntimeConfig(): RuntimeConfig {
   ensureRuntimeConfigFile();
+  const runtimeConfigPath = getRuntimeConfigPath();
   try {
     const raw = readFileSync(runtimeConfigPath, 'utf8');
     const parsed = JSON.parse(raw) as Partial<RuntimeConfig>;
