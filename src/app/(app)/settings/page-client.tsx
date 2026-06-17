@@ -114,9 +114,10 @@ export function SettingsClientComponents({ serverId }: { serverId: string }) {
       <TabsContent value="twitch" className="space-y-4">
         <div className="rounded-lg border bg-card p-4">
           <h3 className="text-lg font-semibold mb-1">Twitch Integration</h3>
-          <p className="text-sm text-muted-foreground mb-4">Connect your personal Twitch account for monitoring.</p>
+          <p className="text-sm text-muted-foreground mb-4">Connect the Twitch accounts used for linking and chat-side integrations.</p>
         </div>
         <TwitchLinkingCard serverId={serverId} />
+        <TwitchOAuthCard serverId={serverId} />
       </TabsContent>
 
       <TabsContent value="embeds" className="space-y-4">
@@ -134,7 +135,6 @@ export function SettingsClientComponents({ serverId }: { serverId: string }) {
         </div>
         <DiscordOAuthCard serverId={serverId} />
         <DiscordSyncSettings serverId={serverId} />
-        <TwitchOAuthCard serverId={serverId} />
         <MemberProcessingCard serverId={serverId} />
         <AdminRoleSettings serverId={serverId} />
       </TabsContent>

@@ -4,6 +4,7 @@ import { db } from '@/lib/db';
 import { getTwitchClientId } from '@/lib/runtime-config';
 
 const botRefreshInflight = new Map<string, Promise<{ accessToken: string; refreshToken: string; expiresAt: number } | null>>();
+const INVALID_REFRESH_RETRY_MS = 12 * 60 * 60 * 1000;
 
 export async function getUserAccessToken(serverId: string): Promise<string | null> {
   try {
@@ -77,7 +78,24 @@ async function refreshTwitchOAuthToken(docPath: string, data: any): Promise<{ ac
   });
 
   if (!response.ok) {
-    console.error('[TwitchOAuth] Refresh failed:', await response.text());
+    const errorText = await response.text();
+    const isInvalidRefreshToken = /invalid refresh token/i.test(errorText);
+    const updatePayload: Record<string, unknown> = {
+      updatedAt: new Date().toISOString(),
+      lastRefreshError: errorText,
+    };
+
+    if (isInvalidRefreshToken) {
+      updatePayload.refreshErrorCode = 'invalid_refresh_token';
+      updatePayload.refreshErrorAt = Date.now();
+      updatePayload.accessToken = '';
+      updatePayload.expiresAt = 0;
+      console.warn('[TwitchOAuth] Refresh token is invalid; suppressing repeated retry spam until reauthorization.');
+    } else {
+      console.error('[TwitchOAuth] Refresh failed:', errorText);
+    }
+
+    await db.collection('servers').doc(docPath).collection('config').doc('twitchBotOAuth').set(updatePayload, { merge: true }).catch(() => {});
     return null;
   }
 
@@ -93,6 +111,9 @@ async function refreshTwitchOAuthToken(docPath: string, data: any): Promise<{ ac
     refreshToken: updated.refreshToken,
     expiresAt: updated.expiresAt,
     updatedAt: new Date().toISOString(),
+    refreshErrorCode: null,
+    refreshErrorAt: null,
+    lastRefreshError: null,
   });
 
   return updated;
@@ -106,10 +127,20 @@ export async function getValidBotAccessToken(serverId: string): Promise<string |
     const data = botDoc.data() || {};
     const accessToken = data.accessToken;
     const expiresAt = Number(data.expiresAt || 0);
+    const refreshErrorCode = String(data.refreshErrorCode || '').trim();
+    const refreshErrorAt = Number(data.refreshErrorAt || 0);
     const fiveMinutes = 5 * 60 * 1000;
 
     if (accessToken && Date.now() < expiresAt - fiveMinutes) {
       return accessToken;
+    }
+
+    if (
+      refreshErrorCode === 'invalid_refresh_token' &&
+      refreshErrorAt > 0 &&
+      Date.now() - refreshErrorAt < INVALID_REFRESH_RETRY_MS
+    ) {
+      return null;
     }
 
     const existingRefresh = botRefreshInflight.get(serverId);

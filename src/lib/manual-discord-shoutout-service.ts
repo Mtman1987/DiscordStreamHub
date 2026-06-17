@@ -23,6 +23,8 @@ type ManualDiscordShoutoutRecord = {
   isLive: boolean;
   trackWhileLive: boolean;
   deleteAt?: string | null;
+  lastConfirmedLiveAt?: string | null;
+  offlineDetectedAt?: string | null;
   needsGif: boolean;
   lastGifRequestAt?: number | null;
   needsBanner: boolean;
@@ -54,6 +56,7 @@ type ResolvedManualTarget = {
 const MANUAL_COLLECTION = 'manualDiscordShoutouts';
 const GIF_REQUEST_COOLDOWN_MS = 12 * 60 * 60 * 1000;
 const OFFLINE_DELETE_MS = 60 * 60 * 1000;
+const LIVE_OFFLINE_GRACE_MS = 20 * 60 * 1000;
 const BANNER_REQUEST_COOLDOWN_MS = 30 * 60 * 1000;
 const WORKER_SECRET = process.env.CLIP_WORKER_SECRET || process.env.BOT_SECRET_KEY || '1234';
 const STREAMWEAVER_SHARED_SECRET = String(process.env.BOT_SECRET_KEY || '').trim();
@@ -380,6 +383,8 @@ export async function registerManualDiscordShoutout(input: RegisterManualDiscord
     isLive,
     trackWhileLive: isLive,
     deleteAt: isLive ? null : new Date(Date.now() + OFFLINE_DELETE_MS).toISOString(),
+    lastConfirmedLiveAt: isLive ? (existing?.lastConfirmedLiveAt || nowIso) : null,
+    offlineDetectedAt: null,
     needsGif: isLive && gifUrls.length === 0,
     lastGifRequestAt: existing?.lastGifRequestAt || null,
     needsBanner: isLive && !hasBanner,
@@ -440,13 +445,32 @@ async function updateManualRecord(serverId: string, entry: ManualDiscordShoutout
   const aiShoutout = shouldRefreshAiShoutout(entry)
     ? await getAiShoutout(entry.twitchLogin)
     : entry.aiShoutout;
+  const nowIso = new Date().toISOString();
   const nextEntry: ManualDiscordShoutoutRecord = {
     ...entry,
     aiShoutout,
   };
   const { payload, isLive, hasGif, hasBanner, nextGifIndex } = await buildManualPayload(nextEntry);
   if (!isLive) {
-    await deleteManualRecord(serverId, nextEntry);
+    const offlineDetectedAt = nextEntry.offlineDetectedAt || nowIso;
+    const offlineDetectedAtMs = new Date(offlineDetectedAt).getTime();
+    const offlineForMs = offlineDetectedAtMs > 0 ? Date.now() - offlineDetectedAtMs : 0;
+    if (offlineForMs < LIVE_OFFLINE_GRACE_MS) {
+      await upsertManualRecord(serverId, {
+        ...nextEntry,
+        offlineDetectedAt,
+        updatedAt: nowIso,
+      });
+      console.warn(
+        `[ManualDiscordShoutout] Delaying delete for ${entry.twitchLogin}; offline grace ${Math.floor(offlineForMs / 1000)}s/${Math.floor(LIVE_OFFLINE_GRACE_MS / 1000)}s`
+      );
+      return;
+    }
+
+    await deleteManualRecord(serverId, {
+      ...nextEntry,
+      offlineDetectedAt,
+    });
     return;
   }
 
@@ -455,10 +479,12 @@ async function updateManualRecord(serverId: string, entry: ManualDiscordShoutout
     isLive: true,
     trackWhileLive: true,
     deleteAt: null,
+    lastConfirmedLiveAt: nowIso,
+    offlineDetectedAt: null,
     currentGifIndex: nextGifIndex,
     needsGif: entry.needsGif && !hasGif,
     needsBanner: entry.needsBanner && !hasBanner,
-    updatedAt: new Date().toISOString(),
+    updatedAt: nowIso,
   };
 
   try {

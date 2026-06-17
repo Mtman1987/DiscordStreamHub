@@ -105,6 +105,9 @@ export async function GET(request: NextRequest) {
         refreshToken: tokenData.refresh_token,
         expiresAt: Date.now() + (tokenData.expires_in * 1000),
         updatedAt: new Date().toISOString(),
+        refreshErrorCode: null,
+        refreshErrorAt: null,
+        lastRefreshError: null,
       });
       // Also save to users collection for status check
       const uid = `twitch_${serverId}`;
