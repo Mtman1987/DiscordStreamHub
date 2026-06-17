@@ -108,12 +108,13 @@ async function handleBannerGenerationRequest(req, res) {
   const crewMembers = Array.isArray(body?.crewMembers) && body.crewMembers.length > 0
     ? body.crewMembers.filter((name) => typeof name === 'string' && name.trim())
     : DEFAULT_CREW_MEMBERS;
+  const skipCommander = Boolean(body?.skipCommander);
   const commanderName = typeof body?.commanderName === 'string' && body.commanderName.trim()
     ? body.commanderName.trim()
     : 'mtman1987';
 
-  console.log(`[ClipWorker] Generating banners for ${crewMembers.length} crew members + commander ${commanderName}`);
-  const commanderUrl = await generateCommanderBanner(commanderName);
+  console.log(`[ClipWorker] Generating banners for ${crewMembers.length} crew members${skipCommander ? '' : ` + commander ${commanderName}`}`);
+  const commanderUrl = skipCommander ? null : await generateCommanderBanner(commanderName);
   let successCount = 0;
   for (const member of crewMembers) {
     try {

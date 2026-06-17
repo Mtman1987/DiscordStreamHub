@@ -295,6 +295,13 @@ class TwitchPollingService {
         await isOnlineBatch.commit();
       }
 
+      try {
+        const { refreshManualDiscordShoutouts } = await import('./manual-discord-shoutout-service');
+        await refreshManualDiscordShoutouts(serverId);
+      } catch (manualError) {
+        console.error(`[TwitchPolling] Manual Discord shoutout refresh error:`, manualError);
+      }
+
       // Rotate community spotlight
       try {
         // Clip fetching is handled by the separate clip-worker app.

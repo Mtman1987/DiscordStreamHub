@@ -23,9 +23,24 @@ export async function POST(request: NextRequest) {
       const { markCooldown, serverId, discordUserId } = await request.json();
       if (markCooldown && serverId && discordUserId) {
         const { db } = await import('@/lib/db');
-        await db.collection('servers').doc(serverId)
-          .collection('users').doc(discordUserId)
-          .update({ lastClipFetch: Date.now() });
+        const now = Date.now();
+        const normalizedId = String(discordUserId);
+        if (normalizedId.startsWith('manual:')) {
+          const manualId = normalizedId.slice('manual:'.length).trim();
+          if (manualId) {
+            await db.collection('servers').doc(serverId)
+              .collection('manualDiscordShoutouts').doc(manualId)
+              .set({
+                lastGifRequestAt: now,
+                needsGif: false,
+                updatedAt: new Date().toISOString(),
+              }, { merge: true });
+          }
+        } else {
+          await db.collection('servers').doc(serverId)
+            .collection('users').doc(normalizedId)
+            .update({ lastClipFetch: now });
+        }
         return NextResponse.json({ success: true, cooldownSet: true });
       }
       return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
@@ -66,7 +81,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, gifUrl, bannerName: normalizedBannerName });
     }
 
-    const streamerDir = join(STORAGE_PATH, streamer);
+    const streamerName = String(streamer || '').trim();
+    const streamerDir = join(STORAGE_PATH, streamerName);
     if (!existsSync(streamerDir)) {
       await mkdir(streamerDir, { recursive: true });
     }
@@ -86,8 +102,8 @@ export async function POST(request: NextRequest) {
     const gifPath = join(streamerDir, `${timestamp}.gif`);
     await writeFile(gifPath, buffer);
 
-    const gifUrl = `/api/media/${streamer}/${timestamp}.gif`;
-    console.log(`[ClipUpload] Saved ${streamer}/${timestamp}.gif (${(buffer.length / 1024).toFixed(0)}KB)`);
+    const gifUrl = `/api/media/${streamerName}/${timestamp}.gif`;
+    console.log(`[ClipUpload] Saved ${streamerName}/${timestamp}.gif (${(buffer.length / 1024).toFixed(0)}KB)`);
 
     return NextResponse.json({ success: true, gifUrl });
   } catch (error) {

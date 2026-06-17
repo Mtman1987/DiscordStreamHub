@@ -22,6 +22,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const usersSnap = await db.collection('servers').doc(serverId).collection('users').get();
+    const manualSnap = await db.collection('servers').doc(serverId).collection('manualDiscordShoutouts').get();
     const now = Date.now();
     const needed: Array<{
       discordUserId: string;
@@ -68,8 +69,37 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Sort: Crew/Partners first, then by fewest existing GIFs
-    const priority = ['Crew', 'Partners', 'Honored Guests', 'Everyone Else'];
+    for (const doc of manualSnap.docs) {
+      const data = doc.data();
+      const twitchLogin = String(data?.twitchLogin || '').trim().toLowerCase();
+      if (!twitchLogin || !data?.needsGif || !data?.trackWhileLive || !data?.isLive) continue;
+
+      const streamerDir = join(STORAGE_PATH, twitchLogin);
+      let existingGifs = 0;
+      if (existsSync(streamerDir)) {
+        const files = await readdir(streamerDir);
+        existingGifs = files.filter(f => f.endsWith('.gif')).length;
+      }
+      if (existingGifs > 0) continue;
+
+      const lastClipFetch = Number(data?.lastGifRequestAt || 0) || null;
+      const cooldownRemaining = lastClipFetch ? Math.max(0, COOLDOWN_MS - (now - lastClipFetch)) : 0;
+
+      if (cooldownRemaining === 0) {
+        needed.push({
+          discordUserId: `manual:${doc.id}`,
+          twitchLogin,
+          group: 'Manual',
+          existingGifs,
+          isLive: true,
+          lastClipFetch,
+          cooldownRemaining,
+        });
+      }
+    }
+
+    // Sort: manual requests first, then Crew/Partners, then by fewest existing GIFs.
+    const priority = ['Manual', 'Crew', 'Partners', 'Honored Guests', 'Everyone Else'];
     needed.sort((a, b) => {
       const pa = priority.indexOf(a.group);
       const pb = priority.indexOf(b.group);
