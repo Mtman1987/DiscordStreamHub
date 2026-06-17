@@ -12,7 +12,6 @@ import {
   getHardcodedGuildId,
   getSpaceMountainIconUrl as getConfiguredSpaceMountainIconUrl,
 } from '@/lib/runtime-config';
-import { handleSpmtCommand } from '@/lib/chat-tag-service';
 import { recordDiscordMessageActivity } from '@/lib/discord-activity-service';
 // watch-request-service moved to hearmeout
 const handleWatchRequestCommand = async (...args: any[]) => null;
@@ -475,10 +474,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, skipped: 'watch-command-routed-externally', deletedCommand });
     }
 
-    // Chat Tag: detect @spmt or spmt commands (Discord converts @spmt to <@botId>)
+    // DSH owns button-posting flows. Regular Chat Tag commands are handled directly by
+    // the Chat Tag app, so we only keep the controls-button trigger here.
     const isSpmtCommand = msgLower.startsWith('spmt ') || msgLower.startsWith('@spmt ') || message.startsWith('<@1279582181768957963>');
     if (isSpmtCommand && channelId) {
-      // Normalize the message to always start with @spmt
       let normalizedMsg = message;
       if (message.startsWith('<@')) {
         normalizedMsg = '@spmt ' + message.replace(/<@!?\d+>/g, '').trim();
@@ -492,9 +491,6 @@ export async function POST(request: NextRequest) {
         console.log(`[DiscordChat] Sent Chat Tag controls button: ${sent?.id || 'unknown-message-id'}`);
         return NextResponse.json({ success: true, commandHandled: 'chat-tag-controls', messageId: sent?.id, deletedCommand });
       }
-      console.log(`[DiscordChat] Handling Chat Tag command locally in source channel: ${normalizedMsg}`);
-      await handleSpmtCommand(normalizedMsg, userId, userName, guildId, channelId, messageId);
-      return NextResponse.json({ success: true, commandHandled: 'chat-tag-command' });
     }
 
     // Check if user is in our community
