@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { readdir } from 'fs/promises';
+import { readdir, stat } from 'fs/promises';
 import { existsSync } from 'fs';
+import { join } from 'path';
 import { getHardcodedGuildId, getStoragePath } from '@/lib/runtime-config';
 
 const STORAGE_PATH = getStoragePath();
@@ -9,7 +10,43 @@ const STALE_DAYS = 30;
 const WORKER_SECRET = process.env.CLIP_WORKER_SECRET || process.env.BOT_SECRET_KEY || '1234';
 
 // Folders that aren't streamer clips
-const SKIP_FOLDERS = new Set(['banners', 'leaderboard', 'admin-calendar', 'admin-leaderboard', 'twitch', 'calendar']);
+const SKIP_FOLDERS = new Set([
+  'admin-calendar',
+  'admin-leaderboard',
+  'banners',
+  'calendar',
+  'embeds',
+  'leaderboard',
+  'leaderboard-images',
+  'twitch',
+]);
+
+function normalizeLogin(value: string): string {
+  return String(value || '').trim().toLowerCase();
+}
+
+async function getNewestFolderActivityMs(folderName: string): Promise<number> {
+  const folderPath = join(STORAGE_PATH, folderName);
+  let newestMs = 0;
+
+  try {
+    const folderStat = await stat(folderPath);
+    newestMs = Math.max(newestMs, folderStat.mtimeMs || 0);
+  } catch {}
+
+  try {
+    const files = await readdir(folderPath, { withFileTypes: true });
+    for (const file of files) {
+      if (!file.isFile()) continue;
+      try {
+        const fileStat = await stat(join(folderPath, file.name));
+        newestMs = Math.max(newestMs, fileStat.mtimeMs || 0);
+      } catch {}
+    }
+  } catch {}
+
+  return newestMs;
+}
 
 export async function GET(request: NextRequest) {
   const auth = request.headers.get('authorization');
@@ -29,31 +66,42 @@ export async function GET(request: NextRequest) {
 
     const folders = await readdir(STORAGE_PATH, { withFileTypes: true });
     const streamerFolders = folders.filter(f => f.isDirectory() && !SKIP_FOLDERS.has(f.name));
+    const usersSnap = await db.collection('servers').doc(serverId).collection('users').get();
+    const usersByLogin = new Map<string, any>(
+      usersSnap.docs
+        .map((doc: any) => [normalizeLogin(doc.data()?.twitchLogin || ''), doc] as const)
+        .filter(([login]: readonly [string, any]) => Boolean(login))
+    );
 
     const cutoff = Date.now() - (STALE_DAYS * 24 * 60 * 60 * 1000);
-    const stale: Array<{ twitchLogin: string; lastLive: string | null }> = [];
+    const stale: Array<{ twitchLogin: string; lastLive: string | null; reason: string; newestFile: string | null }> = [];
 
     for (const folder of streamerFolders) {
       const login = folder.name;
+      const normalizedLogin = normalizeLogin(login);
+      const folderActivityMs = await getNewestFolderActivityMs(login);
 
       // Find user by twitchLogin
-      const userSnap = await db.collection('servers').doc(serverId)
-        .collection('users')
-        .where('twitchLogin', '==', login)
-        .limit(1)
-        .get();
+      const userDoc = usersByLogin.get(normalizedLogin) || null;
 
-      if (userSnap.empty) {
-        // No user record at all — stale
-        stale.push({ twitchLogin: login, lastLive: null });
+      if (!userDoc) {
+        // No user record — only stale if the folder itself has been inactive for the full retention window.
+        if (folderActivityMs > 0 && folderActivityMs < cutoff) {
+          stale.push({
+            twitchLogin: login,
+            lastLive: new Date(folderActivityMs).toISOString(),
+            reason: 'no-linked-user',
+            newestFile: new Date(folderActivityMs).toISOString(),
+          });
+        }
         continue;
       }
 
-      const userData = userSnap.docs[0].data();
+      const userData = userDoc.data();
 
       // Check if they have an active shoutout (currently live)
       const stateDoc = await db.collection('servers').doc(serverId)
-        .collection('users').doc(userSnap.docs[0].id)
+        .collection('users').doc(userDoc.id)
         .collection('shoutoutState').doc('current').get();
 
       if (stateDoc.exists && stateDoc.data()?.isLive) {
@@ -64,6 +112,7 @@ export async function GET(request: NextRequest) {
       // lastClipFetch (set by clip worker), lastStatusUpdate (set by polling), or isOnline
       let lastActiveMs = 0;
       const candidates = [
+        folderActivityMs,
         userData.lastClipFetch,
         userData.lastStatusUpdate,
         userData.lastUpdated,
@@ -88,6 +137,8 @@ export async function GET(request: NextRequest) {
         stale.push({
           twitchLogin: login,
           lastLive: new Date(lastActiveMs).toISOString(),
+          reason: 'inactive-retention-expired',
+          newestFile: folderActivityMs > 0 ? new Date(folderActivityMs).toISOString() : null,
         });
       }
     }
