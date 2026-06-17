@@ -80,7 +80,7 @@ class TwitchApiService {
     this.tokenExpiry = Date.now() + (data.expires_in * 1000) - 60000; // 1 minute buffer
     console.log('[TwitchAPI] Access token acquired successfully');
 
-    return this.accessToken;
+    return data.access_token;
   }
 
   private async makeApiCall(endpoint: string): Promise<any> {
@@ -151,6 +151,35 @@ class TwitchApiService {
       console.error(`Error fetching clips for user ${userId}:`, error);
       return [];
     }
+  }
+
+  async getStreamsByLogins(userLogins: string[]): Promise<Map<string, TwitchStream>> {
+    const streamMap = new Map<string, TwitchStream>();
+
+    try {
+      const normalizedLogins = Array.from(new Set(
+        userLogins
+          .map(login => String(login || '').trim().toLowerCase())
+          .filter(login => /^[a-z0-9_]{1,25}$/.test(login))
+      ));
+
+      for (let i = 0; i < normalizedLogins.length; i += 50) {
+        const chunk = normalizedLogins.slice(i, i + 50);
+        if (chunk.length === 0) continue;
+
+        const params = new URLSearchParams();
+        chunk.forEach(login => params.append('user_login', login));
+        const data = await this.makeApiCall(`streams?${params.toString()}`);
+
+        for (const stream of (data.data || []) as TwitchStream[]) {
+          streamMap.set(stream.user_login.toLowerCase(), stream);
+        }
+      }
+    } catch (error) {
+      console.error('[TwitchAPI] Error fetching streams by logins:', error);
+    }
+
+    return streamMap;
   }
 
   async getRandomClipFromOnlineUsers(userLogins: string[]): Promise<TwitchClip | null> {
@@ -273,6 +302,10 @@ export async function getStreamByLogin(login: string): Promise<TwitchStream | nu
 
 export async function getClipsForUser(userId: string, limit: number = 5): Promise<TwitchClip[]> {
   return twitchApiService.getClipsForUser(userId, limit);
+}
+
+export async function getStreamsByLogins(userLogins: string[]): Promise<Map<string, TwitchStream>> {
+  return twitchApiService.getStreamsByLogins(userLogins);
 }
 
 export async function getRandomClipFromOnlineUsers(userLogins: string[]): Promise<TwitchClip | null> {

@@ -3,8 +3,9 @@
 import { db } from '@/data/server-init';
 import { getStreamByLogin } from '@/lib/twitch-api-service';
 import { sendShoutout } from '@/lib/discord-sync-service';
-import { getCurrentClipForUser } from '@/lib/clip-rotation-service';
 import { getEmbedTemplates } from '@/lib/embed-templates';
+import { getNextGifCdnUrl } from '@/lib/gif-rotation-service';
+import { maybeRequestLiveBanner } from '@/lib/live-banner-request-service';
 import { getAppUrl, getDiscordInviteUrl, getStoragePath } from '@/lib/runtime-config';
 import { existsSync } from 'fs';
 import { join } from 'path';
@@ -96,8 +97,13 @@ async function generateCrewShoutout(twitchLogin: string, stream: any, baseMessag
 
   let clip = null;
   if (!userDoc.empty) {
-    clip = await getCurrentClipForUser(serverId, userDoc.docs[0].id);
+    clip = await getNextGifCdnUrl(serverId, userDoc.docs[0].id, twitchLogin);
   }
+  const bannerUrl = getStoredBannerUrl(twitchLogin);
+  if (!bannerUrl && !userDoc.empty) {
+    await maybeRequestLiveBanner(serverId, userDoc.docs[0].id, twitchLogin);
+  }
+  const streamPreviewUrl = stream?.thumbnail_url?.replace('{width}', '1920').replace('{height}', '1080');
 
   const embed = {
     author: {
@@ -129,14 +135,13 @@ async function generateCrewShoutout(twitchLogin: string, stream: any, baseMessag
     thumbnail: {
       url: userInfo?.profile_image_url || 'https://static-cdn.jtvnw.net/ttv-boxart/twitch-logo.png'
     },
-    image: clip?.gifUrl ? { url: clip.gifUrl } : undefined,
+    ...(clip || streamPreviewUrl ? { image: { url: clip || streamPreviewUrl } } : {}),
     footer: {
       text: templates.crew.footer
     },
     timestamp: new Date().toISOString()
   };
 
-  const bannerUrl = getStoredBannerUrl(twitchLogin);
   if (bannerUrl) {
     return {
       embeds: [
@@ -153,7 +158,6 @@ async function generatePartnersShoutout(twitchLogin: string, stream: any, baseMe
   const { getUserByLogin } = await import('./twitch-api-service');
   const userInfo = await getUserByLogin(twitchLogin);
   const templates = await getEmbedTemplates(serverId);
-  const fallbackGifUrl = 'https://via.placeholder.com/1920x120/00D9FF/FFFFFF?text=SPACE+MOUNTAIN+CREW';
   
   const userDoc = await db.collection('servers').doc(serverId).collection('users')
     .where('twitchLogin', '==', twitchLogin).limit(1).get();
@@ -162,8 +166,7 @@ async function generatePartnersShoutout(twitchLogin: string, stream: any, baseMe
   let partnerDiscordLink = getDiscordInviteUrl() || 'https://discord.gg/spacemountain';
   
   if (!userDoc.empty) {
-    const { getCurrentClipForUser } = await import('./clip-rotation-service');
-    clip = await getCurrentClipForUser(serverId, userDoc.docs[0].id);
+    clip = await getNextGifCdnUrl(serverId, userDoc.docs[0].id, twitchLogin);
     const userData = userDoc.docs[0].data();
     if (userData.partnerDiscordLink) {
       partnerDiscordLink = userData.partnerDiscordLink;
@@ -200,7 +203,7 @@ async function generatePartnersShoutout(twitchLogin: string, stream: any, baseMe
     thumbnail: {
       url: userInfo?.profile_image_url || 'https://static-cdn.jtvnw.net/ttv-boxart/twitch-logo.png'
     },
-    image: clip?.gifUrl ? { url: clip.gifUrl } : { url: fallbackGifUrl },
+    image: { url: clip || stream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080') },
     footer: {
       text: templates.partners.footer
     },

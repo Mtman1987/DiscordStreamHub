@@ -9,6 +9,25 @@ const STORAGE_PATH = getStoragePath();
 const COOLDOWN_MS = 12 * 60 * 60 * 1000; // 12 hours
 const WORKER_SECRET = process.env.CLIP_WORKER_SECRET || process.env.BOT_SECRET_KEY || '1234';
 
+function normalizeLogin(value: string): string {
+  return String(value || '').trim().toLowerCase();
+}
+
+function toTimestampMs(value: unknown): number {
+  if (!value) return 0;
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  if (typeof value === 'object' && value && 'seconds' in (value as Record<string, unknown>)) {
+    const seconds = Number((value as Record<string, unknown>).seconds || 0);
+    return Number.isFinite(seconds) ? seconds * 1000 : 0;
+  }
+  return 0;
+}
+
 export async function GET(request: NextRequest) {
   const auth = request.headers.get('authorization');
   if (auth !== `Bearer ${WORKER_SECRET}`) {
@@ -37,29 +56,38 @@ export async function GET(request: NextRequest) {
     for (const doc of usersSnap.docs) {
       const data = doc.data();
       if (!data.twitchLogin) continue;
+      const twitchLogin = normalizeLogin(data.twitchLogin);
+      if (!twitchLogin) continue;
 
       // Check if live (has active shoutout state)
       const stateDoc = await db.collection('servers').doc(serverId)
         .collection('users').doc(doc.id)
         .collection('shoutoutState').doc('current').get();
-      const isLive = stateDoc.exists && stateDoc.data()?.isLive;
+      const stateData = stateDoc.exists ? (stateDoc.data() || {}) : {};
+      const isLive = Boolean(stateData?.isLive);
 
       // Count existing GIFs
-      const streamerDir = join(STORAGE_PATH, data.twitchLogin);
+      const streamerDir = join(STORAGE_PATH, twitchLogin);
       let existingGifs = 0;
       if (existsSync(streamerDir)) {
         const files = await readdir(streamerDir);
         existingGifs = files.filter(f => f.endsWith('.gif')).length;
       }
 
-      const lastClipFetch = data.lastClipFetch || null;
+      const lastClipFetch = Number(data.lastClipFetch || 0) || null;
       const cooldownRemaining = lastClipFetch ? Math.max(0, COOLDOWN_MS - (now - lastClipFetch)) : 0;
+      const streamStartedAtMs = toTimestampMs(stateData?.streamStartedAt);
+      const newLiveSession = streamStartedAtMs > 0 && (!lastClipFetch || lastClipFetch < streamStartedAtMs);
+      const shouldFetch = isLive && (
+        newLiveSession ||
+        (!lastClipFetch && existingGifs === 0)
+      );
 
-      // Only include if live AND off cooldown
-      if (isLive && cooldownRemaining === 0) {
+      // Only fetch clips once per live session, or when a live user has no GIFs yet.
+      if (shouldFetch) {
         needed.push({
           discordUserId: doc.id,
-          twitchLogin: data.twitchLogin,
+          twitchLogin,
           group: data.group || 'Everyone Else',
           existingGifs,
           isLive,
@@ -84,8 +112,9 @@ export async function GET(request: NextRequest) {
 
       const lastClipFetch = Number(data?.lastGifRequestAt || 0) || null;
       const cooldownRemaining = lastClipFetch ? Math.max(0, COOLDOWN_MS - (now - lastClipFetch)) : 0;
-
-      if (cooldownRemaining === 0) {
+      const liveSessionStartedAtMs = toTimestampMs(data?.createdAt || data?.updatedAt);
+      const newLiveSession = liveSessionStartedAtMs > 0 && (!lastClipFetch || lastClipFetch < liveSessionStartedAtMs);
+      if (newLiveSession || (!lastClipFetch && existingGifs === 0)) {
         needed.push({
           discordUserId: `manual:${doc.id}`,
           twitchLogin,

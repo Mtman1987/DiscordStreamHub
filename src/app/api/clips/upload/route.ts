@@ -8,6 +8,10 @@ const STORAGE_PATH = getStoragePath();
 const MAX_GIFS_PER_STREAMER = 5;
 const WORKER_SECRET = process.env.CLIP_WORKER_SECRET || process.env.BOT_SECRET_KEY || '1234';
 
+function normalizeStreamerName(value: string): string {
+  return String(value || '').trim().toLowerCase();
+}
+
 export async function POST(request: NextRequest) {
   try {
     // Auth check
@@ -81,7 +85,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, gifUrl, bannerName: normalizedBannerName });
     }
 
-    const streamerName = String(streamer || '').trim();
+    const streamerName = normalizeStreamerName(streamer || '');
+    if (!streamerName) {
+      return NextResponse.json({ error: 'invalid streamer' }, { status: 400 });
+    }
     const streamerDir = join(STORAGE_PATH, streamerName);
     if (!existsSync(streamerDir)) {
       await mkdir(streamerDir, { recursive: true });
@@ -120,11 +127,12 @@ export async function DELETE(request: NextRequest) {
     }
 
     const { streamer } = await request.json();
-    if (!streamer) {
+    const normalizedStreamer = normalizeStreamerName(streamer);
+    if (!normalizedStreamer) {
       return NextResponse.json({ error: 'streamer required' }, { status: 400 });
     }
 
-    const streamerDir = join(STORAGE_PATH, streamer);
+    const streamerDir = join(STORAGE_PATH, normalizedStreamer);
     if (!existsSync(streamerDir)) {
       return NextResponse.json({ success: true, message: 'Folder does not exist' });
     }
@@ -139,7 +147,7 @@ export async function DELETE(request: NextRequest) {
     const { rmdir } = await import('fs/promises');
     await rmdir(streamerDir).catch(() => {});
 
-    console.log(`[ClipUpload] Deleted stale folder: ${streamer} (${files.length} files)`);
+    console.log(`[ClipUpload] Deleted stale folder: ${normalizedStreamer} (${files.length} files)`);
     return NextResponse.json({ success: true, deleted: files.length });
   } catch (error) {
     console.error('[ClipUpload] DELETE error:', error);

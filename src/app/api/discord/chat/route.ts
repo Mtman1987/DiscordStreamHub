@@ -381,7 +381,8 @@ export async function POST(request: NextRequest) {
     const msgLower = message.toLowerCase();
 
     if (dispatch && !isDirectMessage && channelId && guildId && messageId && !isBotAuthor) {
-      void fetch(`${request.nextUrl.origin}/api/discord/forward-to-forum`, {
+      const appOrigin = getPublicBaseUrl(request.nextUrl.origin);
+      void fetch(`${appOrigin}/api/discord/forward-to-forum`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -394,6 +395,7 @@ export async function POST(request: NextRequest) {
           message,
           attachments,
         }),
+        signal: timeoutSignal(8000),
       }).catch((error) => {
         console.warn('[DiscordChat] Forum forward request failed:', error?.message || error);
       });

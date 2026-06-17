@@ -4,7 +4,7 @@ import { db } from '@/lib/db';
 import { getClipsForUser } from './twitch-api-service';
 import { readdir, readFile, unlink, writeFile } from 'fs/promises';
 import { join } from 'path';
-import { getStoragePath } from './runtime-config';
+import { getAppUrl, getStoragePath } from './runtime-config';
 
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const GIF_STORAGE_CHANNEL = '1341552730971443293';
@@ -98,12 +98,15 @@ async function fetchAndConvertClip(clipId: string): Promise<Buffer | null> {
 
 export async function getNextGifCdnUrl(serverId: string, discordUserId: string, twitchLogin: string): Promise<string | null> {
   try {
-    console.log(`[GifRotation] Getting GIF URL for ${twitchLogin}...`);
+    const normalizedLogin = String(twitchLogin || '').trim().toLowerCase();
+    if (!normalizedLogin) return null;
+
+    console.log(`[GifRotation] Getting GIF URL for ${normalizedLogin}...`);
     const gifDoc = await db.collection('servers').doc(serverId).collection('users').doc(discordUserId)
       .collection('gifRotation').doc('storage').get();
 
     const STORAGE_PATH = getStoragePath();
-    const mediaPath = join(STORAGE_PATH, twitchLogin);
+    const mediaPath = join(STORAGE_PATH, normalizedLogin);
     console.log(`[GifRotation] Reading directory: ${mediaPath}`);
     
     const { existsSync } = await import('fs');
@@ -112,16 +115,16 @@ export async function getNextGifCdnUrl(serverId: string, discordUserId: string, 
     if (!existsSync(mediaPath)) {
       console.log(`[GifRotation] Directory doesn't exist, creating: ${mediaPath}`);
       await mkdir(mediaPath, { recursive: true });
-      console.log(`[GifRotation] No GIFs available for ${twitchLogin} (new directory)`);
+      console.log(`[GifRotation] No GIFs available for ${normalizedLogin} (new directory)`);
       return null;
     }
     
     const files = await readdir(mediaPath);
     const gifFiles = files.filter(f => f.endsWith('.gif')).sort();
-    console.log(`[GifRotation] Found ${gifFiles.length} GIFs for ${twitchLogin}`);
+    console.log(`[GifRotation] Found ${gifFiles.length} GIFs for ${normalizedLogin}`);
 
     if (gifFiles.length === 0) {
-      console.log(`[GifRotation] No GIFs available for ${twitchLogin}`);
+      console.log(`[GifRotation] No GIFs available for ${normalizedLogin}`);
       return null;
     }
 
@@ -130,7 +133,7 @@ export async function getNextGifCdnUrl(serverId: string, discordUserId: string, 
     const gifFile = gifFiles[nextIndex];
     console.log(`[GifRotation] Using GIF: ${gifFile}`);
 
-    const gifUrl = `https://discord-stream-hub-new.fly.dev/api/media/${twitchLogin}/${gifFile}`;
+    const gifUrl = `${getAppUrl().replace(/\/$/, '')}/api/media/${normalizedLogin}/${gifFile}`;
     console.log(`[GifRotation] ✅ GIF URL: ${gifUrl}`);
     
     await gifDoc.ref.set({ currentIndex: nextIndex }, { merge: true });

@@ -3,7 +3,9 @@
 import { db } from '@/lib/db';
 import { getStreamByLogin } from '@/lib/twitch-api-service';
 import { sendShoutoutToDiscord, getUserGroup } from '@/lib/shoutout-service';
-import { getAppUrl, getChatTagApiBase, getCrewBannerGifUrl, getStoragePath } from '@/lib/runtime-config';
+import { getAppUrl, getStoragePath } from '@/lib/runtime-config';
+import { getStreamsByLogins } from '@/lib/twitch-api-service';
+import { maybeRequestLiveBanner } from '@/lib/live-banner-request-service';
 
 interface PollingState {
   isPolling: boolean;
@@ -209,41 +211,9 @@ class TwitchPollingService {
 
       console.log(`[TwitchPolling] Checking ${linkedUsers.length} linked users`);
 
-      // Get live statuses via chat-tag's Twitch API (batched, fast)
-      const CHAT_TAG_URL = getChatTagApiBase();
       const logins = linkedUsers.map(u => u.twitchLogin);
-      let liveUsers: any[] = [];
-      try {
-        const liveRes = await fetch(`${CHAT_TAG_URL}/api/twitch/live`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ usernames: logins }),
-        });
-        if (liveRes.ok) {
-          const liveData = await liveRes.json();
-          liveUsers = liveData.liveUsers || [];
-          console.log(`[TwitchPolling] Chat-tag returned ${liveUsers.length} live users`);
-        } else {
-          console.error(`[TwitchPolling] Chat-tag live API returned ${liveRes.status}: ${await liveRes.text()}`);
-        }
-      } catch (e) {
-        console.error('[TwitchPolling] Failed to fetch live data from chat-tag:', e);
-      }
-
-      // Build a map of twitchLogin -> stream data
-      const liveByLogin = new Map<string, any>();
-      for (const u of liveUsers) {
-        const login = (u.username || u.login || '').toLowerCase();
-        if (!login) continue;
-        liveByLogin.set(login, {
-          user_name: u.displayName || u.display_name || login,
-          user_login: login,
-          title: u.title || '',
-          game_name: u.gameName || u.game_name || 'Unknown',
-          viewer_count: u.viewerCount || u.viewer_count || 0,
-          thumbnail_url: u.thumbnailUrl || u.thumbnail_url || '',
-        });
-      }
+      const liveByLogin = await getStreamsByLogins(logins);
+      console.log(`[TwitchPolling] Helix returned ${liveByLogin.size} live users`);
 
       const streamStatuses = new Map<string, any>();
       for (const user of linkedUsers) {
@@ -427,7 +397,7 @@ class TwitchPollingService {
         group,
         lastUpdated: new Date(),
         currentClipIndex: 0,
-        streamStartedAt: new Date()
+        streamStartedAt: stream?.started_at || new Date()
       });
       
       // If posting to community channel, repost pinned spotlight embed to keep it at bottom
@@ -463,21 +433,22 @@ class TwitchPollingService {
       await this.saveShoutoutState(serverId, discordUserId, { ...shoutoutState, currentClipIndex: newIndex });
       
       // Then get clip with new index
-      const { getCurrentClipForUser } = await import('./clip-rotation-service');
-      const clip = await getCurrentClipForUser(serverId, discordUserId);
+      const { getNextGifCdnUrl } = await import('./gif-rotation-service');
+      const clip = await getNextGifCdnUrl(serverId, discordUserId, twitchLogin);
       const bannerUrl = `${getAppUrl()}/api/media/banners/${twitchLogin.toLowerCase()}.gif?v=${Date.now()}`;
       const streamThumbnail = stream.thumbnail_url?.replace('{width}', '1920').replace('{height}', '1080');
-      const crewImageUrl = clip?.gifUrl || streamThumbnail || null;
+      const crewImageUrl = clip || streamThumbnail || null;
       
       // Check if per-user banner exists on disk
       const { existsSync: bannerExists } = await import('fs');
       const { join: joinPath } = await import('path');
-            const CLIP_PATH = getStoragePath();
+      const CLIP_PATH = getStoragePath();
       const bannerFilePath = joinPath(CLIP_PATH, 'banners', `${twitchLogin.toLowerCase()}.gif`);
       const resolvedBannerUrl = bannerExists(bannerFilePath) ? bannerUrl : null;
       
       if (!resolvedBannerUrl) {
         console.log(`[TwitchPolling] Crew banner missing for ${twitchLogin}; skipping banner embed until worker backfills it`);
+        await maybeRequestLiveBanner(serverId, discordUserId, twitchLogin);
       }
       
       embed = {
@@ -536,7 +507,6 @@ class TwitchPollingService {
       const userInfo = await getUserByLogin(twitchLogin);
       const userDoc = await db.collection('servers').doc(serverId).collection('users').doc(discordUserId).get();
       const partnerDiscordLink = userDoc.data()?.partnerDiscordLink || 'https://discord.gg/spacemountain';
-      const fallbackGifUrl = getCrewBannerGifUrl();
       
       // Increment clip index FIRST
       const newIndex = (shoutoutState.currentClipIndex || 0) + 1;
@@ -794,7 +764,7 @@ class TwitchPollingService {
       const usersSnapshot = await db.collection('servers').doc(serverId).collection('users').get();
       const linkedUsers: Array<{ twitchLogin: string; discordUserId: string }> = [];
 
-      usersSnapshot.forEach(doc => {
+      usersSnapshot.forEach((doc: any) => {
         const data = doc.data();
         if (data.twitchLogin) {
           linkedUsers.push({
@@ -1051,7 +1021,7 @@ class TwitchPollingService {
           .get();
         
         const linkedUsers = usersSnapshot.docs
-          .map(doc => ({ id: doc.id, ...doc.data() }))
+          .map((doc: any) => ({ id: doc.id, ...doc.data() }))
           .filter((u: any) => u.group === 'Honored Guests' || u.group === 'Everyone Else' || u.group === 'Community');
         
         showcaseUser = linkedUsers.length > 0 
@@ -1133,22 +1103,13 @@ class TwitchPollingService {
     let orphansFound = 0;
     let cleaned = 0;
     
-    // Batch-check who's actually live via chat-tag
-    const CHAT_TAG_URL = getChatTagApiBase();
-    const allLogins = usersSnap.docs.map(d => d.data().twitchLogin).filter(Boolean);
+    const allLogins = usersSnap.docs.map((d: any) => d.data().twitchLogin).filter(Boolean);
     const liveLogins = new Set<string>();
     
     try {
-      const liveRes = await fetch(`${CHAT_TAG_URL}/api/twitch/live`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ usernames: allLogins }),
-      });
-      if (liveRes.ok) {
-        const liveData = await liveRes.json();
-        for (const u of (liveData.liveUsers || [])) {
-          liveLogins.add((u.username || u.login || '').toLowerCase());
-        }
+      const liveByLogin = await getStreamsByLogins(allLogins);
+      for (const login of liveByLogin.keys()) {
+        liveLogins.add(login);
       }
     } catch (e) {
       console.error('[TwitchPolling] Sweep: failed to fetch live data, skipping sweep');

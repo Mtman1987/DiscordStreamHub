@@ -3,6 +3,8 @@
 import { db } from '@/lib/db';
 import { getTwitchClientId } from '@/lib/runtime-config';
 
+const botRefreshInflight = new Map<string, Promise<{ accessToken: string; refreshToken: string; expiresAt: number } | null>>();
+
 export async function getUserAccessToken(serverId: string): Promise<string | null> {
   try {
     const oauthDoc = await db.collection('servers').doc(serverId).collection('config').doc('twitchOAuth').get();
@@ -110,7 +112,17 @@ export async function getValidBotAccessToken(serverId: string): Promise<string |
       return accessToken;
     }
 
-    const refreshed = await refreshTwitchOAuthToken(serverId, data);
+    const existingRefresh = botRefreshInflight.get(serverId);
+    if (existingRefresh) {
+      const refreshed = await existingRefresh;
+      return refreshed?.accessToken || null;
+    }
+
+    const refreshPromise = refreshTwitchOAuthToken(serverId, data);
+    botRefreshInflight.set(serverId, refreshPromise);
+    const refreshed = await refreshPromise.finally(() => {
+      botRefreshInflight.delete(serverId);
+    });
     return refreshed?.accessToken || null;
   } catch (error) {
     console.error('[TwitchOAuth] Error getting bot access token:', error);
