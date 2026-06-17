@@ -8,12 +8,9 @@ import {
   getChatTagWebhookName,
   getDiscordActivityApplicationId,
   getDiscordActivityVoiceChannelId,
-  getDiscordChatFanoutEnabled,
   getDiscordChatHandleWatchEnabled,
-  getHearMeOutDiscordChatUrl,
   getHardcodedGuildId,
   getSpaceMountainIconUrl as getConfiguredSpaceMountainIconUrl,
-  getStreamweaverDiscordChatUrl,
 } from '@/lib/runtime-config';
 import { handleSpmtCommand } from '@/lib/chat-tag-service';
 import { recordDiscordMessageActivity } from '@/lib/discord-activity-service';
@@ -31,49 +28,10 @@ const CHAT_TAG_WEBHOOK_NAME = getChatTagWebhookName();
 const CHAT_TAG_AVATAR_URL = getChatTagAvatarUrl();
 const DISCORD_ACTIVITY_APPLICATION_ID = getDiscordActivityApplicationId();
 
-type FanoutTarget = {
-  name: string;
-  url: string;
-};
-
-function isWatchOrControlCommand(message: string) {
-  return /^!(wr|watch)(?:\s|$)/i.test(message)
-    || /^!(add|accept|controls?|watch-controls|invite)$/i.test(message.trim());
-}
-
 function timeoutSignal(milliseconds: number) {
   const controller = new AbortController();
   setTimeout(() => controller.abort(), milliseconds);
   return controller.signal;
-}
-
-function discordChatUrl(baseUrl: string, override?: string) {
-  if (override) return override;
-  return `${baseUrl.replace(/\/$/, '')}/api/discord/chat`;
-}
-
-function shouldFanoutDiscordChat() {
-  return getDiscordChatFanoutEnabled();
-}
-
-function getFanoutTargets(): FanoutTarget[] {
-  const targets = [
-    {
-      name: 'hearmeout',
-      url: discordChatUrl(getHearMeOutDiscordChatUrl() || 'https://hearmeout-main.fly.dev'),
-    },
-    {
-      name: 'streamweaver',
-      url: discordChatUrl(getStreamweaverDiscordChatUrl() || 'https://streamweaver-new.fly.dev'),
-    },
-  ];
-
-  const seen = new Set<string>();
-  return targets.filter((target) => {
-    if (!target.url || seen.has(target.url)) return false;
-    seen.add(target.url);
-    return true;
-  });
 }
 
 function markDiscordMessageSeen(guildId: string, channelId: string, messageId: string) {
@@ -90,45 +48,6 @@ function markDiscordMessageSeen(guildId: string, channelId: string, messageId: s
   if (processedDiscordMessages.has(key)) return true;
   processedDiscordMessages.set(key, now);
   return false;
-}
-
-async function postDiscordChat(target: FanoutTarget, body: any) {
-  try {
-    const response = await fetch(target.url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-chat-origin': 'dsh-fanout',
-      },
-      body: JSON.stringify(body),
-      signal: timeoutSignal(15_000),
-    });
-    const payload = await response.json().catch(() => null);
-    return {
-      name: target.name,
-      ok: response.ok,
-      status: response.status,
-      payload,
-    };
-  } catch (error: any) {
-    return {
-      name: target.name,
-      ok: false,
-      status: 0,
-      payload: { success: false, error: error?.message || 'fanout failed' },
-    };
-  }
-}
-
-async function fanoutDiscordChat(body: any, message: string) {
-  if (!shouldFanoutDiscordChat()) {
-    return [];
-  }
-
-  const targets = isWatchOrControlCommand(message)
-    ? getFanoutTargets().filter((target) => target.name === 'hearmeout')
-    : getFanoutTargets();
-  return Promise.all(targets.map((target) => postDiscordChat(target, body)));
 }
 
 async function sendDiscordChannelMessage(channelId: string, payload: any) {
@@ -383,28 +302,6 @@ function extractWatchTitle(payload: any) {
   return contentTitle || undefined;
 }
 
-function normalizeHearMeOutReply(reply: any, origin?: string, activityInviteUrl?: string) {
-  if (!reply || typeof reply === 'string') return reply;
-
-  const payload = { ...reply };
-  const joinUrl = findDiscordActivityInviteUrl(payload) || activityInviteUrl;
-  const watchTitle = extractWatchTitle(payload);
-  const authorIcon = getSpaceMountainIconUrl(origin);
-  const originalEmbed = payload.embeds?.[0] || {};
-
-  payload.embeds = [{
-    ...originalEmbed,
-    title: 'HearMeOut',
-    ...(joinUrl ? { url: joinUrl } : {}),
-    ...(watchTitle ? { author: { name: watchTitle, ...(authorIcon ? { icon_url: authorIcon } : {}) } } : {}),
-  }];
-
-  const compactButtons = compactHearMeOutControls(payload.components || []);
-  payload.components = compactButtons.length ? [{ type: 1, components: compactButtons }] : [];
-  payload.allowed_mentions = payload.allowed_mentions || { parse: [] };
-  return payload;
-}
-
 function buildHearMeOutControlsPayload(options: { activityInviteUrl?: string; includeJoinPreview?: boolean; origin?: string } = {}) {
   const { activityInviteUrl, includeJoinPreview = false, origin } = options;
   const authorIcon = getSpaceMountainIconUrl(origin);
@@ -441,25 +338,6 @@ async function sendHearMeOutControls(channelId: string, userId?: string, origin?
     if (dm?.id) return sendDiscordChannelMessage(dm.id, payload);
   }
   return sendDiscordChannelMessage(channelId, payload);
-}
-
-function getHearMeOutFanoutReplies(fanout: any[]) {
-  const hmo = fanout.find((target) => target?.name === 'hearmeout');
-  const replies = hmo?.payload?.replies;
-  if (Array.isArray(replies)) return replies;
-  return hmo?.payload?.reply ? [hmo.payload.reply] : [];
-}
-
-async function createDiscordActivityInviteForPayload(data: any) {
-  const voiceChannelId = getActivityVoiceChannelId(data);
-  if (!voiceChannelId) return undefined;
-
-  try {
-    return await createDiscordActivityInvite(voiceChannelId);
-  } catch (error) {
-    console.warn('[DiscordChat] Could not create Discord Activity invite:', error);
-    return undefined;
-  }
 }
 
 export async function POST(request: NextRequest) {
@@ -576,8 +454,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const fanoutPromise = fanoutDiscordChat(body, message);
-
     const watchCommand = parseWatchCommand(message) || parseWatchAcceptCommand(message);
     const isForwardedWatchCommand = /^!(wr|watch)(?:\s|$)/i.test(message) || /^!(add|accept)$/i.test(message.trim());
     if ((watchCommand || isForwardedWatchCommand) && channelId) {
@@ -592,19 +468,11 @@ export async function POST(request: NextRequest) {
           userMessageId: messageId,
           publicBaseUrl: request.nextUrl.origin,
         });
-        const fanout = await fanoutPromise;
-        return NextResponse.json({ success: true, commandHandled: 'watch-request', fanout });
+        return NextResponse.json({ success: true, commandHandled: 'watch-request' });
       }
       console.log(`[DiscordChat] Watch request command skipped because DISCORD_CHAT_HANDLE_WATCH is not true: ${message}`);
-      const fanout = await fanoutPromise;
-      const replies = getHearMeOutFanoutReplies(fanout);
-      const activityInviteUrl = await createDiscordActivityInviteForPayload(data);
-      const discordSends = await Promise.all(replies.map((reply) => sendDiscordChannelMessage(
-        channelId,
-        typeof reply === 'string' ? { content: reply, allowed_mentions: { parse: [] } } : normalizeHearMeOutReply(reply, request.nextUrl.origin, activityInviteUrl)
-      )));
       const deletedCommand = await deleteDiscordMessage(channelId, messageId);
-      return NextResponse.json({ success: true, skipped: 'watch-command-handled-by-voice-bot', fanout, discordSends, deletedCommand });
+      return NextResponse.json({ success: true, skipped: 'watch-command-routed-externally', deletedCommand });
     }
 
     // Chat Tag: detect @spmt or spmt commands (Discord converts @spmt to <@botId>)
@@ -622,21 +490,18 @@ export async function POST(request: NextRequest) {
         const sent = await sendChatTagControlsButton(channelId, guildId);
         const deletedCommand = await deleteDiscordMessage(channelId, messageId);
         console.log(`[DiscordChat] Sent Chat Tag controls button: ${sent?.id || 'unknown-message-id'}`);
-        const fanout = await fanoutPromise;
-        return NextResponse.json({ success: true, commandHandled: 'chat-tag-controls', messageId: sent?.id, deletedCommand, fanout });
+        return NextResponse.json({ success: true, commandHandled: 'chat-tag-controls', messageId: sent?.id, deletedCommand });
       }
       console.log(`[DiscordChat] Handling Chat Tag command locally in source channel: ${normalizedMsg}`);
       await handleSpmtCommand(normalizedMsg, userId, userName, guildId, channelId, messageId);
-      const fanout = await fanoutPromise;
-      return NextResponse.json({ success: true, commandHandled: 'chat-tag-command', fanout });
+      return NextResponse.json({ success: true, commandHandled: 'chat-tag-command' });
     }
 
     // Check if user is in our community
     const userDoc = await db.collection('servers').doc(guildId).collection('users').doc(userId).get();
     if (!userDoc.exists) {
       console.log(`[DiscordChat] ${userName} (${userId}) not in community DB, skipping points`);
-      const fanout = await fanoutPromise;
-      return NextResponse.json({ success: true, pointsAwarded: false, reason: 'not-a-member', fanout });
+      return NextResponse.json({ success: true, pointsAwarded: false, reason: 'not-a-member' });
     }
 
     await recordDiscordMessageActivity({
@@ -674,8 +539,7 @@ export async function POST(request: NextRequest) {
     const now = Date.now();
     const lastAwarded = discordChatCooldowns.get(userId);
     if (lastAwarded && now - lastAwarded < COOLDOWN_MS) {
-      const fanout = await fanoutPromise;
-      return NextResponse.json({ success: true, pointsAwarded: false, reason: 'cooldown', fanout });
+      return NextResponse.json({ success: true, pointsAwarded: false, reason: 'cooldown' });
     }
     discordChatCooldowns.set(userId, now);
 
@@ -690,12 +554,10 @@ export async function POST(request: NextRequest) {
         metadata: { username: userName, channelId, avatarUrl: userAvatar }
       });
       console.log(`[DiscordChat] Awarded ${result.pointsAwarded} pts to ${userName}`);
-      const fanout = await fanoutPromise;
-      return NextResponse.json({ success: true, pointsAwarded: true, points: result.pointsAwarded, fanout });
+      return NextResponse.json({ success: true, pointsAwarded: true, points: result.pointsAwarded });
     } catch (pointsError) {
       console.error('[DiscordChat] awardPoints failed:', pointsError);
-      const fanout = await fanoutPromise;
-      return NextResponse.json({ success: true, pointsAwarded: false, reason: 'award-error', fanout });
+      return NextResponse.json({ success: true, pointsAwarded: false, reason: 'award-error' });
     }
   } catch (error) {
     console.error('[DiscordChat] Error:', error);

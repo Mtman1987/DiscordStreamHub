@@ -36,8 +36,6 @@ export async function GET() {
       chatTagWebhookName: getRuntimePublicText('chatTagWebhookName'),
       chatTagAvatarUrl: getRuntimePublicText('chatTagAvatarUrl'),
       spaceMountainIconUrl: getRuntimePublicText('spaceMountainIconUrl'),
-      hearmeoutDiscordChatUrl: getRuntimePublicText('hearmeoutDiscordChatUrl'),
-      streamweaverDiscordChatUrl: getRuntimePublicText('streamweaverDiscordChatUrl'),
       discordPublicKey: getRuntimePublicText('discordPublicKey'),
       storagePath: getRuntimePublicText('storagePath'),
       puppeteerExecutablePath: getRuntimePublicText('puppeteerExecutablePath'),
@@ -61,7 +59,6 @@ export async function GET() {
       raidPileMinSize: getRuntimePublicNumber('raidPileMinSize'),
     },
     publicFlags: {
-      discordChatFanout: getRuntimePublicFlag('discordChatFanout'),
       discordChatHandleWatch: getRuntimePublicFlag('discordChatHandleWatch'),
       discordDebugEnvLogs: getRuntimePublicFlag('discordDebugEnvLogs'),
     },

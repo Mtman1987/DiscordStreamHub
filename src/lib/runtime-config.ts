@@ -38,8 +38,6 @@ const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
     chatTagWebhookName: 'Chat Tag',
     chatTagAvatarUrl: '',
     spaceMountainIconUrl: '',
-    hearmeoutDiscordChatUrl: '',
-    streamweaverDiscordChatUrl: '',
     discordPublicKey: '',
     storagePath: '/data/clips',
     puppeteerExecutablePath: '',
@@ -63,7 +61,6 @@ const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
     raidPileMinSize: 10,
   },
   publicFlags: {
-    discordChatFanout: true,
     discordChatHandleWatch: true,
     discordDebugEnvLogs: false,
   },
@@ -192,7 +189,6 @@ export function getRuntimePublicNumber(key: keyof RuntimeConfig['publicNumbers']
 export function getRuntimePublicFlag(key: keyof RuntimeConfig['publicFlags']): boolean {
   const config = readRuntimeConfig();
   const envKeyMap: Record<string, string[]> = {
-    discordChatFanout: ['DISCORD_CHAT_FANOUT'],
     discordChatHandleWatch: ['DISCORD_CHAT_HANDLE_WATCH'],
     discordDebugEnvLogs: ['DISCORD_DEBUG_ENV_LOGS'],
   };
@@ -215,8 +211,6 @@ export function getRuntimePublicText(key: keyof RuntimeConfig['publicText']): st
       chatTagWebhookName: ['CHAT_TAG_WEBHOOK_NAME'],
       chatTagAvatarUrl: ['CHAT_TAG_AVATAR_URL', 'DISCORD_CHAT_TAG_AVATAR_URL'],
       spaceMountainIconUrl: ['SPACE_MOUNTAIN_ICON_URL', 'DISCORD_AUTHOR_ICON_URL'],
-      hearmeoutDiscordChatUrl: ['HEARMEOUT_DISCORD_CHAT_URL'],
-      streamweaverDiscordChatUrl: ['STREAMWEAVER_DISCORD_CHAT_URL'],
       discordPublicKey: ['DISCORD_PUBLIC_KEY'],
       storagePath: ['STORAGE_PATH'],
       puppeteerExecutablePath: ['PUPPETEER_EXECUTABLE_PATH'],
@@ -286,10 +280,6 @@ export function getDiscordActivityVoiceChannelId(): string {
   return getRuntimePublicId('discordActivityVoiceChannelId');
 }
 
-export function getDiscordChatFanoutEnabled(): boolean {
-  return getRuntimePublicFlag('discordChatFanout');
-}
-
 export function getDiscordChatHandleWatchEnabled(): boolean {
   return getRuntimePublicFlag('discordChatHandleWatch');
 }
@@ -308,14 +298,6 @@ export function getChatTagAvatarUrl(): string {
 
 export function getSpaceMountainIconUrl(): string {
   return getRuntimePublicText('spaceMountainIconUrl');
-}
-
-export function getHearMeOutDiscordChatUrl(): string {
-  return getRuntimePublicText('hearmeoutDiscordChatUrl');
-}
-
-export function getStreamweaverDiscordChatUrl(): string {
-  return getRuntimePublicText('streamweaverDiscordChatUrl');
 }
 
 export function getDiscordPublicKey(): string {

@@ -252,8 +252,12 @@ export async function POST(request: NextRequest) {
     const messageId = data.messageId || '';
     const attachments = normalizeAttachments(data.attachments);
 
-    if (!guildId || (!message && attachments.length === 0)) {
-      return NextResponse.json({ error: 'guildId and message or attachments required' }, { status: 400 });
+    if (!guildId) {
+      return NextResponse.json({ error: 'guildId required' }, { status: 400 });
+    }
+
+    if (!message && attachments.length === 0) {
+      return NextResponse.json({ success: true, skipped: 'empty-message' });
     }
 
     if (message && !shouldMirrorMessage(message)) {
