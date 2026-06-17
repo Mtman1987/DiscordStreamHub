@@ -23,6 +23,7 @@ export function TwitchOAuthCard({ serverId }: TwitchOAuthCardProps) {
   const [lastError, setLastError] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
   const [clientId, setClientId] = React.useState<string>('');
+  const [appUrl, setAppUrl] = React.useState<string>('');
   const reportedSearchState = React.useRef<string | null>(null);
 
   const checkOAuthStatus = React.useCallback(async () => {
@@ -56,6 +57,7 @@ export function TwitchOAuthCard({ serverId }: TwitchOAuthCardProps) {
   React.useEffect(() => {
     getRuntimeConfigClient().then((config) => {
       setClientId(config?.publicIds?.twitchClientId || '');
+      setAppUrl(config?.publicUrls?.appUrl || '');
     }).catch(() => setClientId(''));
   }, []);
 
@@ -94,7 +96,8 @@ export function TwitchOAuthCard({ serverId }: TwitchOAuthCardProps) {
 
   const handleTwitchOAuth = () => {
     setIsLoading(true);
-    const redirectUri = encodeURIComponent(`${window.location.origin}/api/twitch/bot-oauth/callback`);
+    const redirectBase = (appUrl || window.location.origin).replace(/\/$/, '');
+    const redirectUri = encodeURIComponent(`${redirectBase}/api/twitch/oauth/callback`);
     const scope = encodeURIComponent('chat:read chat:edit');
 
     if (!clientId) {
@@ -107,7 +110,7 @@ export function TwitchOAuthCard({ serverId }: TwitchOAuthCardProps) {
       return;
     }
     
-    const authUrl = `https://id.twitch.tv/oauth2/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}&state=${serverId}&force_verify=true`;
+    const authUrl = `https://id.twitch.tv/oauth2/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}&state=${encodeURIComponent(`bot|${serverId}`)}&force_verify=true`;
     window.location.href = authUrl;
   };
 

@@ -19,14 +19,48 @@ class TwitchOAuthExchangeError extends Error {
 
 function parseOAuthState(state: string | null) {
   const fallbackServerId = getHardcodedGuildId() || '1240832965865635881';
-  if (!state) return { serverId: fallbackServerId, isHearMeOut: false, isChatTag: false };
+  if (!state) {
+    return {
+      serverId: fallbackServerId,
+      isHearMeOut: false,
+      isChatTag: false,
+      isBotOAuth: false,
+      discordUserId: null as string | null,
+      twitchLogin: null as string | null,
+    };
+  }
 
   const parts = state.split('|');
+  if (parts[0] === 'bot') {
+    return {
+      serverId: parts[1] || fallbackServerId,
+      isHearMeOut: false,
+      isChatTag: false,
+      isBotOAuth: true,
+      discordUserId: null as string | null,
+      twitchLogin: null as string | null,
+    };
+  }
+
+  if (parts[0] === 'botlink') {
+    return {
+      serverId: parts[1] || fallbackServerId,
+      isHearMeOut: false,
+      isChatTag: false,
+      isBotOAuth: true,
+      discordUserId: parts[2] || null,
+      twitchLogin: parts[3] || null,
+    };
+  }
+
   if (parts[0] === 'hearmeout') {
     return {
       serverId: parts[1] || fallbackServerId,
       isHearMeOut: true,
       isChatTag: false,
+      isBotOAuth: false,
+      discordUserId: null as string | null,
+      twitchLogin: null as string | null,
     };
   }
 
@@ -35,10 +69,20 @@ function parseOAuthState(state: string | null) {
       serverId: parts[1] || fallbackServerId,
       isHearMeOut: false,
       isChatTag: true,
+      isBotOAuth: false,
+      discordUserId: null as string | null,
+      twitchLogin: null as string | null,
     };
   }
 
-  return { serverId: state, isHearMeOut: state.includes('hearmeout'), isChatTag: state.includes('chat-tag') };
+  return {
+    serverId: state,
+    isHearMeOut: state.includes('hearmeout'),
+    isChatTag: state.includes('chat-tag'),
+    isBotOAuth: false,
+    discordUserId: null as string | null,
+    twitchLogin: null as string | null,
+  };
 }
 
 function popupCallbackResponse(publicUrl: string, payload: Record<string, string>) {
@@ -124,7 +168,7 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const { serverId, isHearMeOut, isChatTag } = parseOAuthState(state);
+  const { serverId, isHearMeOut, isChatTag, isBotOAuth, discordUserId, twitchLogin } = parseOAuthState(state);
 
   try {
     const redirectUri = `${publicUrl}/api/twitch/oauth/callback`;
@@ -178,6 +222,64 @@ export async function GET(request: NextRequest) {
       twitchUser = userData.data?.[0] || null;
     } else {
       console.error('[TwitchOAuth] Failed to fetch Twitch user:', userResponse.status, await userResponse.text());
+    }
+
+    if (isBotOAuth) {
+      const expiresAt = Date.now() + (tokenData.expires_in * 1000);
+      if (discordUserId) {
+        await db.collection('servers').doc(serverId).collection('users').doc(discordUserId).set({
+          linkedBotTwitchLogin: twitchLogin || twitchUser?.login || '',
+          botUsername: twitchUser?.login || '',
+          botUserId: twitchUser?.id || '',
+          botAccessToken: tokenData.access_token,
+          botRefreshToken: tokenData.refresh_token,
+          botTokenExpiresAt: expiresAt,
+          botLinkedAt: new Date().toISOString(),
+        }, { merge: true });
+        await db.setAsync('tokens', `discord_user_${discordUserId}_twitch_bot`, {
+          serverId,
+          discordUserId,
+          twitchLogin: twitchLogin || twitchUser?.login || '',
+          botUsername: twitchUser?.login || '',
+          botUserId: twitchUser?.id || '',
+          accessToken: tokenData.access_token,
+          refreshToken: tokenData.refresh_token,
+          expiresAt,
+          updatedAt: new Date().toISOString(),
+          source: 'discord-user-bot-oauth',
+        });
+      } else {
+        await db.collection('servers').doc(serverId).collection('config').doc('twitchBotOAuth').set({
+          botUsername: twitchUser?.login || '',
+          botUserId: twitchUser?.id || '',
+          accessToken: tokenData.access_token,
+          refreshToken: tokenData.refresh_token,
+          expiresAt,
+          updatedAt: new Date().toISOString(),
+          refreshErrorCode: null,
+          refreshErrorAt: null,
+          lastRefreshError: null,
+        });
+        const uid = `twitch_${serverId}`;
+        await db.setAsync('users', uid, {
+          id: twitchUser?.id || uid,
+          username: twitchUser?.login || twitchUser?.display_name || 'Twitch Bot',
+          displayName: twitchUser?.display_name || twitchUser?.login || 'Twitch Bot',
+          photoURL: twitchUser?.profile_image_url || '',
+          accessToken: tokenData.access_token,
+          refreshToken: tokenData.refresh_token,
+          expiresAt,
+          scope: tokenData.scope,
+          updatedAt: new Date().toISOString(),
+          source: 'twitch',
+          serverId,
+        });
+      }
+
+      return popupCallbackResponse(publicUrl, {
+        oauth: 'success',
+        provider: 'twitch',
+      });
     }
 
     const uid = `twitch_${serverId}`;
