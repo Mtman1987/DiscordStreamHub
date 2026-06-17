@@ -1,6 +1,6 @@
 import { db } from '@/lib/db';
 import { getClipWorkerUrl, getAppUrl, getStoragePath, getStreamweaverUrl } from '@/lib/runtime-config';
-import { getStreamByLogin, getUserByLogin } from '@/lib/twitch-api-service';
+import { getClipsForUser, getStreamByLogin, getUserByLogin } from '@/lib/twitch-api-service';
 import { deleteDiscordMessage, editDiscordMessage, postDiscordMessage, sendShoutout } from '@/lib/discord-sync-service';
 import { existsSync } from 'fs';
 import { readdir } from 'fs/promises';
@@ -56,6 +56,7 @@ const GIF_REQUEST_COOLDOWN_MS = 12 * 60 * 60 * 1000;
 const OFFLINE_DELETE_MS = 60 * 60 * 1000;
 const BANNER_REQUEST_COOLDOWN_MS = 30 * 60 * 1000;
 const WORKER_SECRET = process.env.CLIP_WORKER_SECRET || process.env.BOT_SECRET_KEY || '1234';
+const STREAMWEAVER_SHARED_SECRET = String(process.env.BOT_SECRET_KEY || '').trim();
 
 function manualCollection(serverId: string) {
   return db.collection('servers').doc(serverId).collection(MANUAL_COLLECTION);
@@ -109,6 +110,14 @@ async function getLinkedUserByTwitchLogin(serverId: string, twitchLogin: string)
   return { id: match.id, ...(match.data() || {}) };
 }
 
+function getDefaultAiShoutout(twitchLogin: string): string {
+  return `Go check out ${twitchLogin} on Twitch.`;
+}
+
+function shouldRefreshAiShoutout(entry: ManualDiscordShoutoutRecord): boolean {
+  return String(entry.aiShoutout || '').trim() === getDefaultAiShoutout(entry.twitchLogin);
+}
+
 async function resolveManualTarget(input: RegisterManualDiscordShoutoutInput): Promise<ResolvedManualTarget> {
   const targetDiscordUserId = String(input.targetDiscordUserId || '').trim();
   if (targetDiscordUserId) {
@@ -150,20 +159,27 @@ async function resolveManualTarget(input: RegisterManualDiscordShoutoutInput): P
 
 async function getAiShoutout(twitchLogin: string): Promise<string> {
   try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (STREAMWEAVER_SHARED_SECRET) {
+      headers.Authorization = `Bearer ${STREAMWEAVER_SHARED_SECRET}`;
+    }
+
     const response = await fetch(`${getStreamweaverUrl().replace(/\/$/, '')}/api/ai/shoutout`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ username: twitchLogin }),
       cache: 'no-store',
     });
     if (!response.ok) {
-      return `Go check out ${twitchLogin} on Twitch.`;
+      return getDefaultAiShoutout(twitchLogin);
     }
     const data = await response.json().catch(() => null);
     const shoutout = String(data?.shoutout || data?.data?.shoutout || '').trim();
-    return shoutout || `Go check out ${twitchLogin} on Twitch.`;
+    return shoutout || getDefaultAiShoutout(twitchLogin);
   } catch {
-    return `Go check out ${twitchLogin} on Twitch.`;
+    return getDefaultAiShoutout(twitchLogin);
   }
 }
 
@@ -198,7 +214,12 @@ async function buildManualPayload(entry: ManualDiscordShoutoutRecord): Promise<{
   const previewUrl = stream?.thumbnail_url
     ? stream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080')
     : null;
-  const imageUrl = gifUrl || previewUrl || null;
+  const clipThumbnailUrl = (!gifUrl && !previewUrl && twitchUser?.id)
+    ? await getClipsForUser(twitchUser.id, 3)
+      .then((clips) => clips.find((clip) => String(clip?.thumbnail_url || '').trim())?.thumbnail_url || null)
+      .catch(() => null)
+    : null;
+  const imageUrl = gifUrl || previewUrl || clipThumbnailUrl || twitchUser?.profile_image_url || null;
 
   const embeds: any[] = [];
   if (bannerUrl) {
@@ -416,14 +437,21 @@ async function deleteManualRecord(serverId: string, entry: ManualDiscordShoutout
 }
 
 async function updateManualRecord(serverId: string, entry: ManualDiscordShoutoutRecord): Promise<void> {
-  const { payload, isLive, hasGif, hasBanner, nextGifIndex } = await buildManualPayload(entry);
+  const aiShoutout = shouldRefreshAiShoutout(entry)
+    ? await getAiShoutout(entry.twitchLogin)
+    : entry.aiShoutout;
+  const nextEntry: ManualDiscordShoutoutRecord = {
+    ...entry,
+    aiShoutout,
+  };
+  const { payload, isLive, hasGif, hasBanner, nextGifIndex } = await buildManualPayload(nextEntry);
   if (!isLive) {
-    await deleteManualRecord(serverId, entry);
+    await deleteManualRecord(serverId, nextEntry);
     return;
   }
 
   const nextRecord: ManualDiscordShoutoutRecord = {
-    ...entry,
+    ...nextEntry,
     isLive: true,
     trackWhileLive: true,
     deleteAt: null,
