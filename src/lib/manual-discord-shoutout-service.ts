@@ -1,7 +1,8 @@
 import { db } from '@/lib/db';
-import { getClipWorkerUrl, getAppUrl, getStoragePath, getStreamweaverUrl } from '@/lib/runtime-config';
+import { getAppUrl, getStoragePath, getStreamweaverUrl } from '@/lib/runtime-config';
 import { getClipsForUser, getStreamByLogin, getUserByLogin } from '@/lib/twitch-api-service';
 import { deleteDiscordMessage, editDiscordMessage, postDiscordMessage, sendShoutout } from '@/lib/discord-sync-service';
+import { requestLiveBannerFromWorker } from '@/lib/live-banner-request-service';
 import { existsSync } from 'fs';
 import { readdir } from 'fs/promises';
 import { join } from 'path';
@@ -58,7 +59,6 @@ const GIF_REQUEST_COOLDOWN_MS = 12 * 60 * 60 * 1000;
 const OFFLINE_DELETE_MS = 60 * 60 * 1000;
 const LIVE_OFFLINE_GRACE_MS = 20 * 60 * 1000;
 const BANNER_REQUEST_COOLDOWN_MS = 30 * 60 * 1000;
-const WORKER_SECRET = process.env.CLIP_WORKER_SECRET || process.env.BOT_SECRET_KEY || '1234';
 const STREAMWEAVER_SHARED_SECRET = String(process.env.BOT_SECRET_KEY || '').trim();
 
 function manualCollection(serverId: string) {
@@ -224,6 +224,10 @@ async function buildManualPayload(entry: ManualDiscordShoutoutRecord): Promise<{
     : null;
   const imageUrl = gifUrl || previewUrl || clipThumbnailUrl || twitchUser?.profile_image_url || null;
 
+  console.log(
+    `[ManualDiscordShoutout] Payload for ${entry.twitchLogin}: live=${isLive} gifs=${gifUrls.length} currentGifIndex=${currentGifIndex} banner=${hasBanner ? 'yes' : 'no'}`
+  );
+
   const embeds: any[] = [];
   if (bannerUrl) {
     embeds.push({
@@ -308,36 +312,22 @@ async function buildManualPayload(entry: ManualDiscordShoutoutRecord): Promise<{
   };
 }
 
-async function triggerBannerGeneration(twitchLogin: string): Promise<boolean> {
-  try {
-    const response = await fetch(`${getClipWorkerUrl().replace(/\/$/, '')}/api/banners/generate`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${WORKER_SECRET}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        crewMembers: [twitchLogin],
-        skipCommander: true,
-      }),
-      cache: 'no-store',
-    });
-    return response.ok;
-  } catch (error) {
-    console.warn('[ManualDiscordShoutout] Banner generation request failed:', error);
-    return false;
-  }
-}
-
 async function maybeRequestBanner(serverId: string, entry: ManualDiscordShoutoutRecord, hasBanner: boolean): Promise<void> {
   if (hasBanner || !entry.trackWhileLive || !entry.needsBanner) return;
+  if (getStoredBannerUrl(entry.twitchLogin)) return;
   const now = Date.now();
   if (entry.bannerRequestedAt && now - entry.bannerRequestedAt < BANNER_REQUEST_COOLDOWN_MS) return;
+
+  const accepted = await requestLiveBannerFromWorker(entry.twitchLogin);
+  if (!accepted) {
+    console.warn(`[ManualDiscordShoutout] Banner request not accepted for ${entry.twitchLogin}`);
+    return;
+  }
+
   await manualCollection(serverId).doc(entry.id).set({
     bannerRequestedAt: now,
     updatedAt: new Date().toISOString(),
   }, { merge: true });
-  void triggerBannerGeneration(entry.twitchLogin).catch(() => {});
 }
 
 async function upsertManualRecord(serverId: string, entry: ManualDiscordShoutoutRecord): Promise<void> {
