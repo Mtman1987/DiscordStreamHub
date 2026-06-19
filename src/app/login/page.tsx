@@ -12,7 +12,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { BotMessageSquare, LogIn, Trash2 } from 'lucide-react';
+import { LogIn, Trash2 } from 'lucide-react';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { Separator } from '@/components/ui/separator';
 
@@ -45,11 +46,17 @@ export default function LoginPage() {
       <Card className="w-full max-w-md">
         <form onSubmit={handleLogin}>
           <CardHeader className="text-center">
-            <div className="mx-auto mb-4">
-                <BotMessageSquare className="h-12 w-12 text-primary" />
+            <div className="relative mx-auto mb-4 h-32 w-52">
+              <Image
+                src="/brand/discord-stream-hub-logo.png"
+                alt="Discord Stream Hub"
+                fill
+                priority
+                className="object-contain"
+              />
             </div>
             <CardTitle className="font-headline text-2xl">
-              Welcome to Cosmic Raid
+              Welcome to Discord Stream Hub
             </CardTitle>
             <CardDescription>
               Enter your details to access your community dashboard.
