@@ -9,6 +9,7 @@ interface CurrentUser {
   displayName: string;
   avatarUrl?: string;
   isAdmin: boolean;
+  isOwner: boolean;
   group?: string;
   roles?: string[];
   twitchLogin?: string;
@@ -46,6 +47,7 @@ export function useCurrentUser() {
           displayName: localDisplayName,
           avatarUrl: localAvatar,
           isAdmin: true,
+          isOwner: true,
           group: 'Crew',
         };
 
@@ -65,12 +67,17 @@ export function useCurrentUser() {
           const adminRoles: string[] = Array.isArray(serverData?.data?.adminRoles) ? serverData.data.adminRoles : [];
           const roleNames: string[] = data.data.roleNames || [];
           const adminRoleSet = new Set(adminRoles.map(role => String(role).toLowerCase()));
+          const ownerId = String(serverData?.data?.ownerId || '').trim();
+
+          const isOwner =
+            userId === hardcodedAdminId ||
+            userId === ownerId ||
+            userRoles.includes(ownerRoleId);
 
           const isAdmin = 
             data.data.isAdmin === true ||
             data.data.group === 'Crew' ||
-            userId === hardcodedAdminId ||
-            userRoles.includes(ownerRoleId) ||
+            isOwner ||
             userRoles.some(role => adminRoleSet.has(String(role).toLowerCase())) ||
             roleNames.some(role => adminRoleSet.has(String(role).toLowerCase()));
 
@@ -80,6 +87,7 @@ export function useCurrentUser() {
             displayName: data.data.displayName || data.data.username || localDisplayName,
             avatarUrl: data.data.avatarUrl || localAvatar,
             isAdmin,
+            isOwner,
             group: data.data.group,
             roles: userRoles,
             twitchLogin: data.data.twitchLogin,
@@ -96,6 +104,7 @@ export function useCurrentUser() {
             displayName: localDisplayName,
             avatarUrl: localAvatar,
             isAdmin: localStorage.getItem('isAdmin') === 'true',
+            isOwner: false,
             group: localStorage.getItem('isAdmin') === 'true' ? 'Crew' : undefined,
           };
           _cache = { key: cacheKey, user: localUser, fetched: true };
@@ -109,5 +118,5 @@ export function useCurrentUser() {
       .finally(() => setIsLoading(false));
   }, []);
 
-  return { user, isLoading, isAdmin: user?.isAdmin ?? false };
+  return { user, isLoading, isAdmin: user?.isAdmin ?? false, isOwner: user?.isOwner ?? false };
 }

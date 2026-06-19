@@ -1,6 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 
+function appendTemplateAttachment(embed: any, attachmentUrl?: string) {
+  const url = String(attachmentUrl || '').trim();
+  if (!url) return embed;
+
+  if (/\.(png|jpe?g|gif|webp)(\?.*)?$/i.test(url)) {
+    embed.image = { url };
+  } else {
+    embed.fields = [
+      ...(embed.fields || []),
+      {
+        name: 'Additional Information',
+        value: `[Open attachment or resource](${url})`,
+        inline: false,
+      },
+    ];
+  }
+
+  return embed;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { serverId, userId, type, status } = await req.json();
@@ -44,6 +64,7 @@ export async function POST(req: NextRequest) {
 
     if (status === 'approved') {
       const customMsg = type === 'mod' ? customTemplates.modApproved : customTemplates.partnerApproved;
+      const attachmentUrl = type === 'mod' ? customTemplates.modApprovedAttachmentUrl : customTemplates.partnerApprovedAttachmentUrl;
       if (type === 'mod') {
         embed = {
           title: '🎉 Mod Application Approved!',
@@ -64,6 +85,7 @@ export async function POST(req: NextRequest) {
           footer: { text: `Welcome to the ${serverName} team!` },
           timestamp: new Date().toISOString()
         };
+        appendTemplateAttachment(embed, attachmentUrl);
       } else {
         embed = {
           title: '🤝 Partnership Approved!',
@@ -89,10 +111,12 @@ export async function POST(req: NextRequest) {
           footer: { text: `Welcome to the ${serverName} family!` },
           timestamp: new Date().toISOString()
         };
+        appendTemplateAttachment(embed, attachmentUrl);
       }
     } else {
       // Rejected
       const customMsg = type === 'mod' ? customTemplates.modRejected : customTemplates.partnerRejected;
+      const attachmentUrl = type === 'mod' ? customTemplates.modRejectedAttachmentUrl : customTemplates.partnerRejectedAttachmentUrl;
       embed = {
         title: '💜 Application Update',
         description: customMsg || `Thank you for your interest in ${type === 'mod' ? 'joining the mod team' : 'partnering with us'} at **${serverName}**.`,
@@ -119,6 +143,7 @@ export async function POST(req: NextRequest) {
         footer: { text: `Thank you for being part of ${serverName}` },
         timestamp: new Date().toISOString()
       };
+      appendTemplateAttachment(embed, attachmentUrl);
     }
 
     // Send DM
