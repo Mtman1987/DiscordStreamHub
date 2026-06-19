@@ -78,9 +78,13 @@ async function convertClipToGifInternal(
     
     const urlData = await getClipVideoUrl(clipUrl);
     if (urlData) {
-      mp4Url = urlData.url;
-      authToken = urlData.token;
-      authSignature = urlData.signature;
+      if (typeof urlData === 'string') {
+        mp4Url = urlData;
+      } else {
+        mp4Url = urlData.url;
+        authToken = urlData.token;
+        authSignature = urlData.signature;
+      }
       console.log(`[GifConversion] Got URL from GraphQL`);
     }
     

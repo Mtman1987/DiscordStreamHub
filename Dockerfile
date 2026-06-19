@@ -28,7 +28,7 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci --legacy-peer-deps
+RUN npm ci --legacy-peer-deps --no-audit --no-fund
 
 COPY . .
 
@@ -50,7 +50,7 @@ RUN NEXT_PUBLIC_TWITCH_CLIENT_ID=$NEXT_PUBLIC_TWITCH_CLIENT_ID \
     NEXT_PUBLIC_HARDCODED_GUILD_ID=$NEXT_PUBLIC_HARDCODED_GUILD_ID \
     NEXT_PUBLIC_HARDCODED_ADMIN_DISCORD_ID=$NEXT_PUBLIC_HARDCODED_ADMIN_DISCORD_ID \
     NEXT_PUBLIC_HARDCODED_ADMIN_TWITCH_ID=$NEXT_PUBLIC_HARDCODED_ADMIN_TWITCH_ID \
-    npx next build
+    npm run build
 
 EXPOSE 3000 3001
 

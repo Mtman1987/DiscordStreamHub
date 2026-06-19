@@ -556,7 +556,7 @@ export async function handleSpmtCommand(
   }
 
   else if (cmd === 'rules') {
-    await sendDiscordReply(channelId, `📜 Tag someone with "spmt tag @user" in their chat. If you're it, tag someone else! "spmt sleep" = go immune. "spmt pass @user" = earned double-points tag. Full guide: https://chat-tag-new.fly.dev/about`, userMessageId);
+    await sendDiscordReply(channelId, `📜 Tag someone with "spmt tag @user" in their chat. If you're it, tag someone else! "spmt sleep" = go immune. "spmt pass @user" = earned double-points tag. Full guide: ${CHAT_TAG_API}/about`, userMessageId);
   }
 
   else if (cmd === 'newcard') {

@@ -107,8 +107,6 @@ function ParsedMessageContent({ content, mentions }: { content: string; mentions
   return <div className="text-sm whitespace-pre-wrap">{parts}</div>;
 }
 
-const TWITCH_PARENT = 'discord-stream-hub-new.fly.dev';
-
 export default function ForwardingPage() {
   const { toast } = useToast();
   const [serverId, setServerId] = React.useState<string | null>(null);
@@ -132,10 +130,12 @@ export default function ForwardingPage() {
   const [showVideo, setShowVideo] = React.useState(false);
   const [isMuted, setIsMuted] = React.useState(true);
   const [isEmbedded, setIsEmbedded] = React.useState(false);
+  const [twitchParent, setTwitchParent] = React.useState('localhost');
 
   const speech = useSpeechToText();
 
   React.useEffect(() => {
+    setTwitchParent(window.location.hostname);
     const params = new URLSearchParams(window.location.search);
     const embedded = params.get('embed') === '1';
     const fromQuery = params.get('serverId');
@@ -247,8 +247,8 @@ export default function ForwardingPage() {
     }
   };
 
-  const twitchPlayerUrl = selectedTwitchChannel ? `https://player.twitch.tv/?channel=${selectedTwitchChannel}&parent=${TWITCH_PARENT}&muted=false` : '';
-  const twitchChatUrl = selectedTwitchChannel ? `https://www.twitch.tv/embed/${selectedTwitchChannel}/chat?parent=${TWITCH_PARENT}&darkpopout` : '';
+  const twitchPlayerUrl = selectedTwitchChannel ? `https://player.twitch.tv/?channel=${selectedTwitchChannel}&parent=${encodeURIComponent(twitchParent)}&muted=false` : '';
+  const twitchChatUrl = selectedTwitchChannel ? `https://www.twitch.tv/embed/${selectedTwitchChannel}/chat?parent=${encodeURIComponent(twitchParent)}&darkpopout` : '';
 
   const panelCount = (showDiscord ? 1 : 0) + (showTwitch ? 1 : 0);
 

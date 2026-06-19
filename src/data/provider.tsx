@@ -154,6 +154,7 @@ export const useUser = (): UserHookResult => {
 type MemoData <T> = T & {__memo?: boolean};
 
 export function useMemoData<T>(factory: () => T, deps: DependencyList): T {
+  // eslint-disable-next-line react-hooks/exhaustive-deps, react-hooks/use-memo
   const memoized = useMemo(factory, deps);
   
   if(typeof memoized === 'object' && memoized !== null) {

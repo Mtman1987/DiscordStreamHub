@@ -19,7 +19,11 @@ type MissionPayload = {
   missionTime?: string;
 };
 
-function invalidResponse(message: string, statusCode = 400) {
+type CalendarActionResult =
+  | { success: false; error: string; statusCode: number }
+  | { success: true; message: string };
+
+function invalidResponse(message: string, statusCode = 400): CalendarActionResult {
   return { success: false, error: message, statusCode };
 }
 
@@ -49,7 +53,7 @@ function buildLocalDateTime(dateStr: string, timeStr?: string) {
   return new Date(year, month - 1, day, hours, minutes, 0, 0);
 }
 
-export async function submitCaptainLog(payload: CaptainLogPayload) {
+export async function submitCaptainLog(payload: CaptainLogPayload): Promise<CalendarActionResult> {
   const { serverId, userId, selectedDate } = payload;
   if (!serverId || !userId || !selectedDate) {
     return invalidResponse('Missing required fields');
@@ -72,7 +76,7 @@ export async function submitCaptainLog(payload: CaptainLogPayload) {
   const eventsRef = db.collection('servers').doc(serverId).collection('calendarEvents');
   const sameDaySnapshot = await eventsRef.where('dayKey', '==', dayKey).limit(25).get();
 
-  const dayAlreadyClaimed = sameDaySnapshot.docs.some((doc) => doc.data()?.type === 'captains-log');
+  const dayAlreadyClaimed = sameDaySnapshot.docs.some((doc: { data: () => any }) => doc.data()?.type === 'captains-log');
 
   if (dayAlreadyClaimed) {
     return invalidResponse('That day is already claimed.', 409);
@@ -112,7 +116,7 @@ export async function submitCaptainLog(payload: CaptainLogPayload) {
   };
 }
 
-export async function submitMission(payload: MissionPayload) {
+export async function submitMission(payload: MissionPayload): Promise<CalendarActionResult> {
   const { serverId, userId, missionName, missionDescription, missionDate, missionTime } = payload;
   if (!serverId || !userId || !missionName || !missionDescription || !missionDate) {
     return invalidResponse('Missing required fields');

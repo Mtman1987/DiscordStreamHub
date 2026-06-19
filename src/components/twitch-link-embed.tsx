@@ -150,7 +150,7 @@ function TwitchLinkForm() {
 
         <div className="text-center space-y-2">
           <p className="text-sm text-gray-500">
-            By linking your account, you'll receive shoutouts in Discord when you start streaming.
+            {"By linking your account, you'll receive shoutouts in Discord when you start streaming."}
           </p>
           <p className="text-xs text-gray-400">
             Make sure your Twitch username is spelled correctly.

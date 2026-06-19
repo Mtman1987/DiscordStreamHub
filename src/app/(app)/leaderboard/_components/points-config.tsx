@@ -142,7 +142,7 @@ export function PointsConfigCard({ serverId }: { serverId: string }) {
                         <Input id="admin-event-points" name="adminEventPoints" type="number" defaultValue={settings?.adminEventPoints ?? 10} required />
                     </div>
                      <div className="space-y-2">
-                        <Label htmlFor="admin-log-points">Add Captain's Log</Label>
+                        <Label htmlFor="admin-log-points">{"Add Captain's Log"}</Label>
                         <Input id="admin-log-points" name="adminLogPoints" type="number" defaultValue={settings?.adminLogPoints ?? 5} required />
                     </div>
                  </div>

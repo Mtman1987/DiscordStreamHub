@@ -28,7 +28,7 @@ function signHearMeOutRedirect(userId: string, exp: string): string | null {
 }
 
 function hearMeOutRedirect(payload: Record<string, string>) {
-  const url = new URL('/api/auth/discord/callback', getHearMeOutUrl() || 'https://hearmeout-main.fly.dev');
+  const url = new URL('/api/auth/discord/callback', getHearMeOutUrl());
   for (const [key, value] of Object.entries(payload)) {
     url.searchParams.set(key, value);
   }

@@ -259,7 +259,7 @@ export class RaidPileService {
     const querySnapshot = await db.collection('raidPiles').orderBy('createdAt').get();
     
     const piles: RaidPile[] = [];
-    querySnapshot.forEach(doc => {
+    querySnapshot.docs.forEach((doc: { data: () => RaidPile }) => {
       piles.push(doc.data() as RaidPile);
     });
     

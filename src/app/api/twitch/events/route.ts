@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { type, serverId: providedServerId, twitchLogin, twitchId, username, channel, viewers, bits, recipient } = body;
-    const serverId = providedServerId || getHardcodedGuildId() || '1240832965865635881';
+    const serverId = providedServerId || getHardcodedGuildId();
 
     if (!type || !twitchLogin) {
       return NextResponse.json({ error: 'type and twitchLogin required' }, { status: 400 });

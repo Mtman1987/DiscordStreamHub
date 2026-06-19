@@ -11,6 +11,7 @@ import {
 import { useCollection, useDataStore } from '@/data';
 import { collection, where, orderBy, query } from '@/lib/data-shim';
 import { CalendarEvent } from '@/lib/types';
+import { timestampToDate } from '@/lib/date-utils';
 
 function HeadlessCalendar() {
   const params = useParams();
@@ -51,13 +52,14 @@ function HeadlessCalendar() {
       return { calendarEvents: [], monthCaptains: [], todaysCaptain: null, missionEvents: [] as CalendarEvent[] };
     }
     const eventsForMonth = allEvents.filter((event) => {
-      if (!event.eventDateTime) return false;
-      const date = event.eventDateTime.toDate();
+      const date = timestampToDate(event.eventDateTime);
+      if (!date) return false;
       return date >= viewStart && date <= viewEnd;
     });
 
     const captainLogs = eventsForMonth.filter((event) => {
-      return event.type === 'captains-log' && event.eventDateTime && isSameMonth(event.eventDateTime.toDate(), month);
+      const eventDate = timestampToDate(event.eventDateTime);
+      return event.type === 'captains-log' && !!eventDate && isSameMonth(eventDate, month);
     });
 
     const captainsMap = captainLogs.reduce<Record<string, any>>((acc, log) => {
@@ -77,12 +79,18 @@ function HeadlessCalendar() {
     const sortedCaptains = Object.values(captainsMap).sort((a, b) => b.count - a.count);
 
     const todaysCaptain = allEvents.find(
-      (event) => event.type === 'captains-log' && event.eventDateTime && isSameDay(event.eventDateTime.toDate(), today)
+      (event) => {
+        const eventDate = timestampToDate(event.eventDateTime);
+        return event.type === 'captains-log' && !!eventDate && isSameDay(eventDate, today);
+      }
     ) || null;
 
     const upcomingMissions = allEvents
-      .filter((event) => event.type !== 'captains-log' && event.eventDateTime)
-      .filter((event) => event.eventDateTime!.toDate() >= today);
+      .filter((event) => event.type !== 'captains-log')
+      .filter((event) => {
+        const eventDate = timestampToDate(event.eventDateTime);
+        return !!eventDate && eventDate >= today;
+      });
 
     return {
       calendarEvents: eventsForMonth,

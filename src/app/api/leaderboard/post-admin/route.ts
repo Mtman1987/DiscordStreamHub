@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
       .get();
 
     const leaderboardData = await Promise.all(
-      leaderboardSnapshot.docs.map(async (doc, index) => {
+      leaderboardSnapshot.docs.map(async (doc: { data: () => any }, index: number) => {
         const data = doc.data();
         const userDoc = await db.collection('servers').doc(serverId).collection('users').doc(data.userProfileId).get();
         const userData = userDoc.data();
@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
       title: '⭐ Admin Leaderboard - Top 10',
       description: 'Top contributors through calendar events, captain\'s logs, and admin activities!',
       color: 0xffa500,
-      fields: leaderboardData.map((entry) => ({
+      fields: leaderboardData.map((entry: { rank: number; username: string; points: number }) => ({
         name: `${entry.rank === 1 ? '🥇' : entry.rank === 2 ? '🥈' : entry.rank === 3 ? '🥉' : `#${entry.rank}`} ${entry.username}`,
         value: `${entry.points.toLocaleString()} admin points`,
         inline: false,

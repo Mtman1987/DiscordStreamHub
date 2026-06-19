@@ -1,15 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(request: NextRequest) {
-  // Only run in local Electron mode
-  if (!process.env.ELECTRON_MODE) {
-    return NextResponse.json({ error: 'Not available in hosted mode' }, { status: 404 });
-  }
-
   try {
     const { username, contentType } = await request.json();
     
-    // Use local Puppeteer/FFmpeg services
+    // Uses the Fly image's Chromium/FFmpeg stack and writes output to the mounted volume.
     const { convertClipToGif } = await import('@/lib/gif-conversion-service');
     const { getTwitchUserClips } = await import('@/lib/twitch-api-service');
     

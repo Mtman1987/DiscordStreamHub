@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db, storage } from '@/data/server-init';
+import { db } from '@/data/server-init';
 import { getUserByLogin, getClipsForUser } from '@/lib/twitch-api-service';
 import { convertClipToGif } from '@/lib/gif-conversion-service';
 
@@ -14,12 +14,12 @@ export async function POST(request: NextRequest) {
     
     const usersSnapshot = await db.collection('servers').doc(serverId).collection('users').get();
     const vipUsers = usersSnapshot.docs
-      .map(doc => ({
+      .map((doc: { id: string; data: () => any }) => ({
         discordUserId: doc.id,
         twitchLogin: doc.data().twitchLogin,
         group: doc.data().group
       }))
-      .filter(u => u.twitchLogin && (u.group === 'Crew' || u.group === 'Partners' || u.group === 'Vip'));
+      .filter((u: { twitchLogin?: string; group?: string }) => u.twitchLogin && (u.group === 'Crew' || u.group === 'Partners' || u.group === 'Vip'));
 
     console.log(`[Cleanup] Found ${vipUsers.length} VIP users`);
 
@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
       if (!twitchUser) continue;
 
       const clips = await getClipsForUser(twitchUser.id, 50);
-      const existingIds = new Set(remainingSnapshot.docs.map(d => d.id));
+      const existingIds = new Set(remainingSnapshot.docs.map((d: { id: string }) => d.id));
 
       let successCount = 0;
       for (const clip of clips) {

@@ -20,7 +20,7 @@ export interface DiscordServer {
 }
 
 export interface UserProfile {
-  id: string; // Firestore document ID
+  id: string; // app database document ID
   discordUserId: string;
   username: string;
   avatarUrl: string;
@@ -40,7 +40,7 @@ export interface UserProfile {
 }
 
 export interface CalendarEvent {
-  id: string; // Firestore document ID
+  id: string; // app database document ID
   eventName: string;
   eventDateTime: TimestampLike;
   description: string;
@@ -51,7 +51,7 @@ export interface CalendarEvent {
 }
 
 export interface LeaderboardEntry {
-  id: string; // Firestore document ID
+  id: string; // app database document ID
   userProfileId: string;
   points: number;
   lastUpdated: string;
@@ -75,7 +75,7 @@ export interface LeaderboardSettings {
 }
 
 export interface DiscordMessage {
-    id: string; // Firestore document ID
+    id: string; // app database document ID
     channelId: string;
     userProfileId: string;
     messageContent: string;

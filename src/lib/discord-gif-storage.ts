@@ -72,7 +72,7 @@ export async function getStoredGifs(serverId: string, userId: string): Promise<S
     .limit(10)
     .get();
 
-  return snapshot.docs.map(doc => doc.data() as StoredGif);
+  return snapshot.docs.map((doc: { data: () => any }) => doc.data() as StoredGif);
 }
 
 export async function getCurrentGifForUser(serverId: string, userId: string): Promise<StoredGif | null> {

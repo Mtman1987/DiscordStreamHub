@@ -33,6 +33,7 @@ const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
     hardcodedAdminTwitchId: '94371378',
     chatTagChannelId: '1463633163673927732',
     discordShoutoutChannelId: '',
+    gifStorageChannelId: '1341552730971443293',
   },
   publicText: {
     chatTagWebhookName: 'Chat Tag',
@@ -69,6 +70,7 @@ const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
 function getDataDir(): string {
   if (process.env.DATA_DIR) return process.env.DATA_DIR;
   if (process.env.FLY_VOLUME_PATH) return process.env.FLY_VOLUME_PATH;
+  if (process.env.NEXT_PHASE === 'phase-production-build') return join(process.cwd(), 'data');
   if (process.env.NODE_ENV === 'production' && existsSync('/data')) return '/data';
   return join(process.cwd(), 'data');
 }
@@ -102,9 +104,9 @@ function ensureRuntimeConfigFile(): void {
 }
 
 function readRuntimeConfig(): RuntimeConfig {
-  ensureRuntimeConfigFile();
-  const runtimeConfigPath = getRuntimeConfigPath();
   try {
+    ensureRuntimeConfigFile();
+    const runtimeConfigPath = getRuntimeConfigPath();
     const raw = readFileSync(runtimeConfigPath, 'utf8');
     const parsed = JSON.parse(raw) as Partial<RuntimeConfig>;
     return {
@@ -178,6 +180,7 @@ export function getRuntimePublicId(key: keyof RuntimeConfig['publicIds']): strin
       hardcodedAdminTwitchId: ['NEXT_PUBLIC_HARDCODED_ADMIN_TWITCH_ID', 'HARDCODED_ADMIN_TWITCH_ID'],
       chatTagChannelId: ['CHAT_TAG_CHANNEL_ID', 'DISCORD_CHAT_TAG_CHANNEL_ID', 'DISCORD_TAG_CHANNEL_ID'],
       discordShoutoutChannelId: ['DISCORD_SHOUTOUT_CHANNEL_ID'],
+      gifStorageChannelId: ['GIF_STORAGE_CHANNEL_ID', 'DISCORD_GIF_STORAGE_CHANNEL_ID'],
     }[key] || [],
     config.publicIds[key] || DEFAULT_RUNTIME_CONFIG.publicIds[key] || ''
   );
@@ -350,6 +353,10 @@ export function getChatTagChannelId(): string {
 
 export function getDiscordShoutoutChannelId(): string {
   return getRuntimePublicId('discordShoutoutChannelId');
+}
+
+export function getGifStorageChannelId(): string {
+  return getRuntimePublicId('gifStorageChannelId');
 }
 
 export function getPointsTwitchFollow(): number {

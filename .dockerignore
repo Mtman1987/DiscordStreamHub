@@ -18,7 +18,6 @@ DEPLOY_MANUAL.md
 docs
 scripts
 !scripts/
-!scripts/start.sh
 !scripts/watch-voice-bot.ts
 !scripts/register-activity-command.ts
 twitch-video-url-finder-master
@@ -29,5 +28,6 @@ clip-worker/
 DSH-ISSUES-LIST.txt
 *.bat
 *.sh
+!scripts/start.sh
 full_app_code.txt
 app tree.txt

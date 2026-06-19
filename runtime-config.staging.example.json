@@ -1,0 +1,57 @@
+{
+  "publicUrls": {
+    "appUrl": "https://discord-stream-hub-staging.fly.dev",
+    "baseUrl": "https://discord-stream-hub-staging.fly.dev",
+    "chatTagApiBase": "https://chat-tag-staging.fly.dev",
+    "chatTagBotUrl": "https://chat-tag-bot-staging.fly.dev",
+    "hearmeoutUrl": "https://hearmeout-staging.fly.dev",
+    "streamweaverUrl": "https://streamweaver-staging.fly.dev",
+    "discordInviteUrl": "https://discord.gg/YOUR_STAGING_INVITE",
+    "clipWorkerUrl": "https://dsh-clip-worker-staging.fly.dev",
+    "crewBannerGifUrl": "https://via.placeholder.com/1920x120/00D9FF/FFFFFF?text=STAGING"
+  },
+  "publicIds": {
+    "twitchClientId": "STAGING_TWITCH_CLIENT_ID",
+    "discordClientId": "STAGING_DISCORD_CLIENT_ID",
+    "discordActivityApplicationId": "STAGING_DISCORD_ACTIVITY_APPLICATION_ID",
+    "discordActivityVoiceChannelId": "",
+    "raidPileChannelId": "STAGING_RAID_PILE_CHANNEL_ID",
+    "hardcodedGuildId": "STAGING_DISCORD_TEST_GUILD_ID",
+    "hardcodedAdminDiscordId": "STAGING_ADMIN_DISCORD_ID",
+    "hardcodedAdminTwitchId": "STAGING_ADMIN_TWITCH_ID",
+    "chatTagChannelId": "STAGING_CHAT_TAG_CHANNEL_ID",
+    "discordShoutoutChannelId": "STAGING_SHOUTOUT_CHANNEL_ID",
+    "gifStorageChannelId": "STAGING_GIF_STORAGE_CHANNEL_ID"
+  },
+  "publicText": {
+    "chatTagWebhookName": "Chat Tag Staging",
+    "chatTagAvatarUrl": "",
+    "spaceMountainIconUrl": "",
+    "discordPublicKey": "STAGING_DISCORD_PUBLIC_KEY",
+    "storagePath": "/data/clips",
+    "puppeteerExecutablePath": "/usr/bin/chromium",
+    "databaseFilePath": "/data/app.db"
+  },
+  "publicNumbers": {
+    "pointsTwitchFollow": 25,
+    "pointsTwitchSub": 100,
+    "pointsTwitchBits": 1,
+    "pointsTwitchRaid": 50,
+    "pointsTwitchHost": 30,
+    "pointsStreamAttendance": 10,
+    "pointsDiscordMessage": 1,
+    "pointsDiscordReaction": 2,
+    "pointsDiscordVoiceMinute": 5,
+    "pointsDiscordHelpReaction": 10,
+    "pointsCommunityHelp": 50,
+    "pointsDailyBonus": 20,
+    "raidPilePointsReward": 25,
+    "raidPileMaxSize": 40,
+    "raidPileMinSize": 10
+  },
+  "publicFlags": {
+    "discordChatHandleWatch": false,
+    "discordDebugEnvLogs": false
+  }
+}
+

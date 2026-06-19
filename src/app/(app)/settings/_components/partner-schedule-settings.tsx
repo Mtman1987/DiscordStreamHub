@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,11 +29,7 @@ export function PartnerScheduleSettings({ serverId }: { serverId: string }) {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
 
-  useEffect(() => {
-    loadData();
-  }, [serverId]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const partnersRes = await fetch(`/api/discord/members?serverId=${serverId}`);
       
@@ -50,7 +46,11 @@ export function PartnerScheduleSettings({ serverId }: { serverId: string }) {
     } catch (error) {
       console.error('Failed to load data:', error);
     }
-  };
+  }, [serverId]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const handleSendSetup = async () => {
     if (!selectedPartner || !selectedThread) return;
@@ -148,8 +148,8 @@ export function PartnerScheduleSettings({ serverId }: { serverId: string }) {
           <p><strong>How it works:</strong></p>
           <ol className="list-decimal list-inside space-y-1 ml-2">
             <li>Select a partner and their forum thread</li>
-            <li>Click "Send Setup Embed" - posts a button in their thread</li>
-            <li>Partner clicks "🔗 Connect Twitch Schedule"</li>
+            <li>Click &quot;Send Setup Embed&quot; - posts a button in their thread</li>
+            <li>Partner clicks &quot;🔗 Connect Twitch Schedule&quot;</li>
             <li>They authorize with Twitch (schedule scope)</li>
             <li>Calendar auto-posts with 🔄 Refresh and ➕ Add Event buttons</li>
           </ol>

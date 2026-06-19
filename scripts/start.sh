@@ -22,26 +22,31 @@ fi
 # 3. Start DSH (port 3000) in background
 # Pin the port explicitly so Fly always sees the server on the configured
 # internal port, even if the runtime environment injects a different PORT.
-PORT=3000 npx next start -p 3000 -H 0.0.0.0 &
+PORT=3000 npm run start -- -p 3000 -H 0.0.0.0 &
 DSH_PID=$!
 
-# 4. Wait for DSH to be ready, then start polling
-(
-  echo "[Startup] Waiting for DSH to be ready..."
-  sleep 20
-  for i in 1 2 3 4 5 6; do
-    HEALTH=$(curl -s http://localhost:3000/api/health 2>/dev/null)
-    if echo "$HEALTH" | grep -q '"status":"ok"'; then
-      echo "[Startup] DSH is ready, starting polling..."
-      curl -s -X POST http://localhost:3000/api/startup
-      echo "[Startup] Polling started!"
-      exit 0
-    fi
-    echo "[Startup] Not ready yet, retrying in 10s..."
-    sleep 10
-  done
-  echo "[Startup] WARNING: Could not start polling after 80s"
-) &
+# 4. Wait for DSH to be ready, then start polling unless staging explicitly
+# disables external side effects.
+if [ "$DISABLE_STARTUP_SERVICES" = "true" ]; then
+  echo "[Startup] DISABLE_STARTUP_SERVICES=true; skipping auto startup services"
+else
+  (
+    echo "[Startup] Waiting for DSH to be ready..."
+    sleep 20
+    for i in 1 2 3 4 5 6; do
+      HEALTH=$(curl -s http://localhost:3000/api/health 2>/dev/null)
+      if echo "$HEALTH" | grep -q '"status":"ok"'; then
+        echo "[Startup] DSH is ready, starting polling..."
+        curl -s -X POST http://localhost:3000/api/startup
+        echo "[Startup] Polling started!"
+        exit 0
+      fi
+      echo "[Startup] Not ready yet, retrying in 10s..."
+      sleep 10
+    done
+    echo "[Startup] WARNING: Could not start polling after 80s"
+  ) &
+fi
 
 # 5. Optional legacy Discord watch command bot.
 # External bots can send the same command payloads to /api/discord/chat, so keep

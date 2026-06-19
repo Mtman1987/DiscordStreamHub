@@ -18,13 +18,14 @@ import {
 } from '@/components/ui/card';
 import type { CalendarEvent } from '@/lib/types';
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, isSameDay, isSameMonth } from 'date-fns';
-import { BookUser, Star } from 'lucide-react';
+import { Star } from 'lucide-react';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Calendar } from '@/components/ui/calendar';
-import { DayContent, DayProps } from 'react-day-picker';
+import { DayProps } from 'react-day-picker';
 import { cn } from '@/lib/utils';
 import { buttonVariants } from '@/components/ui/button';
+import { timestampToDate } from '@/lib/date-utils';
 
 const CalendarContext = React.createContext<{ allEvents: CalendarEvent[] }>({ allEvents: [] });
 const useCalendarContext = () => React.useContext(CalendarContext);
@@ -37,24 +38,22 @@ function CustomDay(props: DayProps) {
 
     // Only render decorations for the current display month to avoid clutter.
     if (!isSameMonth(date, displayMonth)) {
-        return <DayContent {...props} />;
+        return <>{format(date, 'd')}</>;
     }
 
     const captainsLog = allEvents.find(e => 
       e.type === 'captains-log' && 
-      e.eventDateTime && 
-      isSameDay(e.eventDateTime.toDate(), date)
+      isSameDay(timestampToDate(e.eventDateTime) ?? new Date(0), date)
     );
 
     const hasOtherEvents = allEvents.some(e => 
       e.type !== 'captains-log' &&
-      e.eventDateTime &&
-      isSameDay(e.eventDateTime.toDate(), date)
+      isSameDay(timestampToDate(e.eventDateTime) ?? new Date(0), date)
     );
 
     return (
         <div className="relative h-full w-full">
-            <DayContent {...props} />
+            {format(date, 'd')}
             {hasOtherEvents && <Star className="absolute top-0.5 right-0.5 h-6 w-6 fill-yellow-400 text-yellow-500 z-20" />}
             {captainsLog && (
                 <TooltipProvider>
@@ -66,7 +65,7 @@ function CustomDay(props: DayProps) {
                             </Avatar>
                         </TooltipTrigger>
                         <TooltipContent>
-                            <p>Captain's Log by {captainsLog.username}</p>
+                            <p>{"Captain's Log"} by {captainsLog.username}</p>
                         </TooltipContent>
                     </Tooltip>
                 </TooltipProvider>
@@ -102,8 +101,7 @@ export function CalendarDisplay({ serverId, forScreenshot = false }: { serverId:
     // Get all of this month's Captain's Logs for the left-hand footer avatar list.
     const monthCaptainLogs = allEvents.filter(e => 
         e.type === 'captains-log' &&
-        e.eventDateTime &&
-        isSameMonth(e.eventDateTime.toDate(), month)
+        isSameMonth(timestampToDate(e.eventDateTime) ?? new Date(0), month)
     );
 
     // Group logs by user to count them.

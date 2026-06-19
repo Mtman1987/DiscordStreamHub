@@ -130,7 +130,7 @@ export function DiscordOAuthCard({ serverId }: DiscordOAuthCardProps) {
           <Alert>
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
-              Discord OAuth is not connected. Hear Me Out won't be able to access Discord features.
+              {"Discord OAuth is not connected. Hear Me Out won't be able to access Discord features."}
             </AlertDescription>
           </Alert>
         )}

@@ -125,7 +125,8 @@ async function upsertVipSpotlightForUser(serverId: string, userId: string, userD
           gifUrl: cardResult.gifUrl,
           mp4Url: cardResult.mp4Url,
           streamTitle: stream.title,
-          gameName: stream.game_name || 'Just Chatting'
+          gameName: stream.game_name || 'Just Chatting',
+          createdAt: new Date()
         };
 
         await manageUserClips(serverId, userLookup, {

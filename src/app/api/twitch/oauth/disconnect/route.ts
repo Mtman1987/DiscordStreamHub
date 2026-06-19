@@ -6,7 +6,7 @@ export async function POST(request: NextRequest) {
   try {
     await new Promise(resolve => setTimeout(resolve, 100));
     const body = await request.json().catch(() => ({}));
-    const serverId = body.serverId || getHardcodedGuildId() || '1240832965865635881';
+    const serverId = body.serverId || getHardcodedGuildId();
 
     await db.collection('servers').doc(serverId).collection('config').doc('twitchBotOAuth').delete().catch(() => {});
     db.delete('users', `twitch_${serverId}`);

@@ -72,8 +72,8 @@ export async function POST(request: NextRequest) {
     const snapshot = await db.collection('servers').doc(serverId).collection('users').get();
     const entries = snapshot.docs
       .map((doc: any) => toEntry(doc.id, doc.data() || {}))
-      .filter((entry) => entry.activityScore > 0)
-      .sort((a, b) => b.activityScore - a.activityScore || b.messageCount - a.messageCount || b.voiceMinutes - a.voiceMinutes)
+      .filter((entry: ReturnType<typeof toEntry>) => entry.activityScore > 0)
+      .sort((a: ReturnType<typeof toEntry>, b: ReturnType<typeof toEntry>) => b.activityScore - a.activityScore || b.messageCount - a.messageCount || b.voiceMinutes - a.voiceMinutes)
       .slice(0, limit);
 
     return NextResponse.json(entries);

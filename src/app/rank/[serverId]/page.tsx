@@ -4,11 +4,7 @@ import RankClientPage from './page-client';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-export default function RankPage({
-  params,
-}: {
-  params: { serverId: string };
-}) {
+export default function RankPage() {
   unstable_noStore();
-  return <RankClientPage params={params} />;
+  return <RankClientPage />;
 }

@@ -156,13 +156,13 @@ export class SQLiteService {
     }
 
     let docs = this.db.prepare('SELECT doc_id, data FROM docs WHERE collection_path = ?').all(collection)
-      .map(row => ({
+      .map((row: any) => ({
         id: row.doc_id,
         ...JSON.parse(row.data)
       }));
 
     if (options.whereField && options.whereValue !== undefined) {
-      docs = docs.filter(doc => {
+      docs = docs.filter((doc: any) => {
         const value = doc[options.whereField!];
         const op = options.whereOp || '==';
         switch (op) {
@@ -178,7 +178,7 @@ export class SQLiteService {
     }
 
     if (options.orderBy) {
-      docs.sort((a, b) => {
+      docs.sort((a: any, b: any) => {
         const aVal = a[options.orderBy!];
         const bVal = b[options.orderBy!];
         if (aVal == null && bVal == null) return 0;
@@ -194,7 +194,7 @@ export class SQLiteService {
       docs = docs.slice(0, options.limit);
     }
 
-    return { docs: docs.map(doc => cloneData(doc)) };
+    return { docs: docs.map((doc: any) => cloneData(doc)) };
   }
 
   setDoc(path: string, data: any, merge: boolean = false): void {

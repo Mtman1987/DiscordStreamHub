@@ -53,21 +53,23 @@ function buildAuthObject(currentUser: User | null): DataAuthObject | null {
     return null;
   }
 
+  const providerData = currentUser.providerData ?? [];
+
   const token: DataAuthToken = {
-    name: currentUser.displayName,
-    email: currentUser.email,
-    email_verified: currentUser.emailVerified,
-    phone_number: currentUser.phoneNumber,
+    name: currentUser.displayName ?? null,
+    email: currentUser.email ?? null,
+    email_verified: currentUser.emailVerified ?? false,
+    phone_number: currentUser.phoneNumber ?? null,
     sub: currentUser.uid,
     Data: {
-      identities: currentUser.providerData.reduce((acc, p) => {
+      identities: providerData.reduce((acc, p) => {
         if (p.providerId) {
           acc[p.providerId] = [p.uid];
         }
         return acc;
       }, {} as Record<string, string[]>),
-      sign_in_provider: currentUser.providerData[0]?.providerId || 'custom',
-      tenant: currentUser.tenantId,
+      sign_in_provider: providerData[0]?.providerId || 'custom',
+      tenant: currentUser.tenantId ?? null,
     },
   };
 

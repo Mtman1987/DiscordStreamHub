@@ -13,6 +13,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useDataStore, useCollection, useMemoData } from '@/data';
 import { collection, query, orderBy, limit } from '@/lib/data-shim';
 import type { UserProfile } from '@/lib/types';
+import { timestampToDateOrNow } from '@/lib/date-utils';
 
 export function RecentShoutouts() {
   const store = useDataStore();
@@ -58,7 +59,7 @@ export function RecentShoutouts() {
           ))}
 
           {!isLoading && recentShoutouts.map((user) => {
-            const timestamp = user.shoutoutGeneratedAt?.toDate?.() || new Date();
+            const timestamp = timestampToDateOrNow(user.shoutoutGeneratedAt);
             const description = user.dailyShoutout?.embeds?.[0]?.description || user.dailyShoutout?.description || 'Shoutout generated';
             return (
               <div key={user.id} className="flex flex-col gap-2">

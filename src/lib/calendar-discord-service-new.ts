@@ -10,6 +10,19 @@ type CalendarMessageMeta = {
   monthOffset?: number;
 };
 
+type CalendarDiscordEvent = {
+  id: string;
+  type?: string;
+  eventName?: string;
+  description?: string;
+  eventDateTime?: unknown;
+};
+
+type DatedCalendarEvent = {
+  event: CalendarDiscordEvent;
+  date: Date | null;
+};
+
 function ensureBotToken() {
   const token = process.env.DISCORD_BOT_TOKEN;
   if (!token) {
@@ -77,22 +90,22 @@ async function getTodaysCaptain(serverId: string): Promise<CaptainHighlight | nu
 export async function buildMissionLogEmbed(serverId: string) {
   const eventsRef = db.collection('servers').doc(serverId).collection('calendarEvents');
   const snapshot = await eventsRef.orderBy('eventDateTime', 'asc').limit(50).get();
-  const events = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  const events: CalendarDiscordEvent[] = snapshot.docs.map((doc: { id: string; data: () => Record<string, unknown> }) => ({ id: doc.id, ...doc.data() }));
 
   const now = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
   const upcomingEvents = events
-    .filter((event: any) => event.type !== 'captains-log')
-    .map((event: any) => ({ event, date: resolveEventDate(event.eventDateTime) }))
-    .filter(({ date }) => !!date && date >= todayStart)
-    .sort((a, b) => (a.date!.getTime() - b.date!.getTime()))
+    .filter((event) => event.type !== 'captains-log')
+    .map((event): DatedCalendarEvent => ({ event, date: resolveEventDate(event.eventDateTime) }))
+    .filter((entry): entry is DatedCalendarEvent & { date: Date } => !!entry.date && entry.date >= todayStart)
+    .sort((a, b) => a.date.getTime() - b.date.getTime())
     .slice(0, 6);
 
   const description = upcomingEvents.length > 0
     ? upcomingEvents
         .map(({ event, date }) =>
-          `${getEventColorEmoji(event.id)} **${event.eventName ?? 'Mission'}**\n${event.description ?? 'Details coming soon.'}\n📅 ${date ? format(date, 'MMM dd, yyyy - h:mm a') : 'TBA'}`
+          `${getEventColorEmoji(event.id)} **${event.eventName ?? 'Mission'}**\n${event.description ?? 'Details coming soon.'}\n📅 ${format(date, 'MMM dd, yyyy - h:mm a')}`
         )
         .join('\n\n')
     : '🛰️ No missions scheduled yet.\nUse the buttons below to add missions or sign up for captain\'s log!';

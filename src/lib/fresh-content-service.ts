@@ -162,7 +162,7 @@ class FreshContentService {
     const expired = await freshContentRef.where('batchTimestamp', '<', Date.now() - (24 * 60 * 60 * 1000)).get();
     
     const batch = db.batch();
-    expired.docs.forEach(doc => {
+    expired.docs.forEach((doc: { ref: any }) => {
       batch.delete(doc.ref);
     });
     

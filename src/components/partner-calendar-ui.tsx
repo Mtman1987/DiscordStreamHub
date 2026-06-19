@@ -1,5 +1,6 @@
 'use client';
 
+/* eslint-disable @next/next/no-img-element */
 import * as React from 'react';
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, isSameDay, isSameMonth } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -77,7 +78,7 @@ export function PartnerCalendar({ month, events, username, avatar }: PartnerCale
             <img src={avatar} alt={username} className="w-16 h-16 rounded-full border-2 border-purple-400" />
           )}
           <div>
-            <h1 className="text-3xl font-bold">{username}'s Stream Schedule</h1>
+            <h1 className="text-3xl font-bold">{username}{"'s Stream Schedule"}</h1>
             <p className="text-purple-200">{format(month, 'MMMM yyyy')}</p>
           </div>
         </div>

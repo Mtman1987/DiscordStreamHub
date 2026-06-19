@@ -13,7 +13,8 @@ export async function GET() {
     nodeEnv: process.env.NODE_ENV,
     totalEnvVars: allEnvKeys.length,
     discordKeys,
-    hasFirebaseConfig: !!process.env.FIREBASE_CONFIG,
-    projectId: process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT
+    dataDir: process.env.DATA_DIR || process.env.FLY_VOLUME_PATH || '/data',
+    databaseFile: process.env.DB_FILE || '/data/app.db',
+    storagePath: process.env.STORAGE_PATH || '/data/clips'
   });
 }

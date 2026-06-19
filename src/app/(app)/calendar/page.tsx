@@ -51,6 +51,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Skeleton } from '@/components/ui/skeleton';
 import { MissionCalendarCard, MissionLogCard, CaptainStat } from '@/components/mission-calendar-ui';
 import { CalendarDisplay } from './_components/calendar-display';
+import { timestampToDate } from '@/lib/date-utils';
 
 // Define a type for the new event, making eventDateTime a Timestamp
 type NewCalendarEvent = Omit<CalendarEvent, 'id' | 'eventDateTime'> & {
@@ -71,7 +72,7 @@ function SimpleEventList({ serverId }: { serverId: string | null }) {
     
     const todaysCaptain = React.useMemo(() => {
         if (!allEvents) return null;
-        return allEvents.find(e => e.type === 'captains-log' && e.eventDateTime && isToday(e.eventDateTime.toDate()));
+        return allEvents.find(e => e.type === 'captains-log' && isToday(timestampToDate(e.eventDateTime) ?? new Date(0)));
     }, [allEvents]);
 
     const displayEvents = React.useMemo(() => {
@@ -96,13 +97,16 @@ function SimpleEventList({ serverId }: { serverId: string | null }) {
                         </div>
                     ) : displayEvents && displayEvents.length > 0 ? (
                         <ul className="space-y-2 text-sm">
-                            {displayEvents.map(event => (
-                                <li key={event.id} className="p-2 bg-secondary rounded-md">
-                                    <p className="font-bold">{event.eventName} <span className="font-normal text-muted-foreground">({event.type})</span></p>
-                                    <p>{event.description}</p>
-                                    <p className="text-xs text-muted-foreground">{event.eventDateTime ? format(event.eventDateTime.toDate(), 'PPP, p') : 'No date'}</p>
-                                </li>
-                            ))}
+                            {displayEvents.map(event => {
+                                const eventDate = timestampToDate(event.eventDateTime);
+                                return (
+                                    <li key={event.id} className="p-2 bg-secondary rounded-md">
+                                        <p className="font-bold">{event.eventName} <span className="font-normal text-muted-foreground">({event.type})</span></p>
+                                        <p>{event.description}</p>
+                                        <p className="text-xs text-muted-foreground">{eventDate ? format(eventDate, 'PPP, p') : 'No date'}</p>
+                                    </li>
+                                );
+                            })}
                         </ul>
                     ) : (
                         <p className="text-center text-muted-foreground py-10">No events found in the database.</p>
@@ -204,13 +208,14 @@ export default function CalendarPage() {
     const now = new Date();
 
     const eventsForMonth = allEvents.filter((event) => {
-      if (!event.eventDateTime) return false;
-      const date = event.eventDateTime.toDate();
+      const date = timestampToDate(event.eventDateTime);
+      if (!date) return false;
       return date >= viewStart && date <= viewEnd;
     });
 
     const captainLogs = eventsForMonth.filter((event) => {
-      return event.type === 'captains-log' && event.eventDateTime && isSameMonth(event.eventDateTime.toDate(), calendarMonth);
+      const eventDate = timestampToDate(event.eventDateTime);
+      return event.type === 'captains-log' && !!eventDate && isSameMonth(eventDate, calendarMonth);
     });
 
     const captainsMap = captainLogs.reduce<Record<string, CaptainStat>>((acc, log) => {
@@ -230,13 +235,17 @@ export default function CalendarPage() {
     const sortedCaptains = Object.values(captainsMap).sort((a, b) => b.count - a.count);
 
     const todaysCaptain = allEvents.find(
-      (event) => event.type === 'captains-log' && event.eventDateTime && isSameDay(event.eventDateTime.toDate(), todayRef)
+      (event) => {
+        const eventDate = timestampToDate(event.eventDateTime);
+        return event.type === 'captains-log' && !!eventDate && isSameDay(eventDate, todayRef);
+      }
     ) || null;
 
     const upcomingMissions = allEvents
-      .filter((event) => event.type !== 'captains-log' && event.eventDateTime)
+      .filter((event) => event.type !== 'captains-log' && !!timestampToDate(event.eventDateTime))
       .filter((event) => {
-        const eventDate = event.eventDateTime!.toDate();
+        const eventDate = timestampToDate(event.eventDateTime);
+        if (!eventDate) return false;
         eventDate.setHours(23, 59, 59, 999);
         return eventDate >= now;
       });
@@ -324,7 +333,8 @@ export default function CalendarPage() {
 
     // Check for conflicts before saving
     const conflict = allEvents.find(existingEvent => {
-        const existingEventDate = existingEvent.eventDateTime.toDate();
+        const existingEventDate = timestampToDate(existingEvent.eventDateTime);
+        if (!existingEventDate) return false;
         return isSameMinute(existingEventDate, eventDate);
     });
 
@@ -501,14 +511,17 @@ export default function CalendarPage() {
                         <ScrollArea className="h-40 w-full rounded-md border p-2">
                              <div className="space-y-2">
                                 {currentUserLogs.length > 0 ? (
-                                    currentUserLogs.map(log => (
-                                        <div key={log.id} className="flex items-center justify-between text-sm p-2 bg-secondary rounded-md">
-                                            <span>{format(log.eventDateTime.toDate(), 'MMMM do, yyyy')}</span>
-                                            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleDeleteEvent(log.id)}>
-                                                <Trash2 className="h-4 w-4" />
-                                            </Button>
-                                        </div>
-                                    ))
+                                    currentUserLogs.map(log => {
+                                        const logDate = timestampToDate(log.eventDateTime);
+                                        return (
+                                            <div key={log.id} className="flex items-center justify-between text-sm p-2 bg-secondary rounded-md">
+                                                <span>{logDate ? format(logDate, 'MMMM do, yyyy') : 'No date'}</span>
+                                                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleDeleteEvent(log.id)}>
+                                                    <Trash2 className="h-4 w-4" />
+                                                </Button>
+                                            </div>
+                                        );
+                                    })
                                 ) : (
                                     <p className="text-sm text-muted-foreground text-center py-4">You have not claimed any days this month.</p>
                                 )}
@@ -580,17 +593,20 @@ export default function CalendarPage() {
                             <ScrollArea className="h-40 w-full rounded-md border p-2">
                                 <div className="space-y-2">
                                     {currentUserEvents.length > 0 ? (
-                                        currentUserEvents.map(event => (
-                                            <div key={event.id} className="flex items-center justify-between text-sm p-2 bg-secondary rounded-md">
-                                                <div className="flex-1 truncate">
-                                                    <p className="font-semibold truncate">{event.eventName}</p>
-                                                    <p className="text-xs text-muted-foreground">{format(event.eventDateTime.toDate(), 'PP, p')}</p>
+                                        currentUserEvents.map(event => {
+                                            const eventDate = timestampToDate(event.eventDateTime);
+                                            return (
+                                                <div key={event.id} className="flex items-center justify-between text-sm p-2 bg-secondary rounded-md">
+                                                    <div className="flex-1 truncate">
+                                                        <p className="font-semibold truncate">{event.eventName}</p>
+                                                        <p className="text-xs text-muted-foreground">{eventDate ? format(eventDate, 'PP, p') : 'No date'}</p>
+                                                    </div>
+                                                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleDeleteEvent(event.id)}>
+                                                        <Trash2 className="h-4 w-4" />
+                                                    </Button>
                                                 </div>
-                                                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleDeleteEvent(event.id)}>
-                                                    <Trash2 className="h-4 w-4" />
-                                                </Button>
-                                            </div>
-                                        ))
+                                            );
+                                        })
                                     ) : (
                                         <p className="text-sm text-muted-foreground text-center py-4">You have not created any events this month.</p>
                                     )}

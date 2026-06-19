@@ -540,7 +540,7 @@ export async function POST(request: NextRequest) {
           
           // Clear only Twitch events
           const oldTwitchEvents = await eventsRef.where('type', '==', 'stream').get();
-          oldTwitchEvents.docs.forEach(doc => batch.delete(doc.ref));
+          oldTwitchEvents.docs.forEach((doc: { ref: any }) => batch.delete(doc.ref));
           
           // Add new Twitch events
           segments.forEach(seg => {
@@ -597,7 +597,7 @@ export async function POST(request: NextRequest) {
               
               // Clear old Google events
               const oldGoogleEvents = await eventsRef.where('type', '==', 'google').get();
-              oldGoogleEvents.docs.forEach(doc => batch.delete(doc.ref));
+              oldGoogleEvents.docs.forEach((doc: { ref: any }) => batch.delete(doc.ref));
               
               // Add new Google events
               events.forEach(event => {

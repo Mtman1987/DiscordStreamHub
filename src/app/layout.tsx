@@ -6,8 +6,13 @@ import { ThemeProvider } from '@/components/theme-provider';
 import { DataComponentsProvider } from '@/data';
 
 export const metadata: Metadata = {
-  title: "Discord Streamer's Hub",
-  description: 'Manage your Discord community with AI-powered tools.',
+  title: 'Discord Stream Hub',
+  description: 'Auth hub, shoutout bot, admin support, and community tools.',
+  icons: {
+    icon: '/brand/discord-stream-hub-icon-192.png',
+    apple: '/brand/discord-stream-hub-icon-192.png',
+    shortcut: '/favicon.ico',
+  },
 };
 
 // Polling initialization moved to /api/startup route to prevent hot reload issues

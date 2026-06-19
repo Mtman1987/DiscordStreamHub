@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 
 export default function LoginPage() {
@@ -46,10 +47,21 @@ export default function LoginPage() {
         boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)'
       }}>
         <div style={{ textAlign: 'center', marginBottom: '30px' }}>
-          <div style={{
-            fontSize: '48px',
-            marginBottom: '16px'
-          }}>🚀</div>
+          <Image
+            src="/brand/discord-stream-hub-logo.png"
+            alt="Discord Stream Hub"
+            width={280}
+            height={210}
+            priority
+            style={{
+              width: '100%',
+              maxWidth: '280px',
+              height: 'auto',
+              margin: '0 auto 16px',
+              display: 'block',
+              borderRadius: '16px'
+            }}
+          />
           <h1 style={{
             fontSize: '24px',
             fontWeight: 'bold',
@@ -58,7 +70,7 @@ export default function LoginPage() {
             WebkitBackgroundClip: 'text',
             WebkitTextFillColor: 'transparent'
           }}>
-            Cosmic Raid
+            Discord Stream Hub
           </h1>
           <p style={{
             color: '#888',

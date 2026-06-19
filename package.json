@@ -8,7 +8,7 @@
     "register-activity-command": "tsx scripts/register-activity-command.ts",
     "build": "next build --webpack",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint . --ignore-pattern .next/** --ignore-pattern node_modules/**",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -81,6 +81,8 @@
     "@types/react": "18.3.27",
     "@types/react-dom": "^18",
     "autoprefixer": "^10.4.19",
+    "eslint": "^9.39.4",
+    "eslint-config-next": "^16.2.9",
     "postcss": "^8",
     "tailwindcss": "^3.4.1",
     "typescript": "5.9.3"

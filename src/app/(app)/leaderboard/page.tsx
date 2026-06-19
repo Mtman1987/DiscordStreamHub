@@ -339,7 +339,7 @@ export default function LeaderboardPage() {
                         Admin Leaderboard
                     </CardTitle>
                     <CardDescription>
-                        Points from calendar events, captain's logs, and admin messages.
+                        {"Points from calendar events, captain's logs, and admin messages."}
                     </CardDescription>
                 </CardHeader>
                 <CardContent>

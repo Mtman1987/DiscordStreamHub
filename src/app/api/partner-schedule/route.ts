@@ -21,13 +21,13 @@ export async function POST(request: NextRequest) {
 
       const segments = await fetchTwitchSchedule(twitchId, '');
       
-      // Store events in Firestore
+      // Store events in the app database.
       const eventsRef = db.collection('servers').doc(serverId).collection('users').doc(userId).collection('scheduleEvents');
       const batch = db.batch();
       
       // Clear old events
       const oldEvents = await eventsRef.get();
-      oldEvents.docs.forEach(doc => batch.delete(doc.ref));
+      oldEvents.docs.forEach((doc: { ref: any }) => batch.delete(doc.ref));
       
       // Add new events
       segments.forEach(seg => {

@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
         client_secret: process.env.TWITCH_CLIENT_SECRET!,
         code,
         grant_type: 'authorization_code',
-        redirect_uri: `${getAppUrl() || 'https://discord-stream-hub.fly.dev'}/api/twitch/schedule-callback`,
+        redirect_uri: `${getAppUrl() || request.nextUrl.origin}/api/twitch/schedule-callback`,
       }),
     });
 

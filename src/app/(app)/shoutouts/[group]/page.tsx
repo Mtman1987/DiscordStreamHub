@@ -57,6 +57,17 @@ import {
 } from '@/components/ui/select';
 import { matchesGroup, slugToCanonicalGroup } from '@/lib/group-utils';
 
+type ShoutoutActionState =
+  | { status: 'success'; results: ShoutoutResult[]; error: undefined }
+  | { status: 'error'; results: ShoutoutResult[]; error: string };
+
+async function noopShoutoutAction(
+  state: ShoutoutActionState,
+  _payload: FormData
+): Promise<ShoutoutActionState> {
+  return state;
+}
+
 
 // Simple row for Raid Train, Raid Pile
 function StreamerRow({
@@ -505,17 +516,13 @@ export default function GroupDetailPage() {
   const [editingStreamer, setEditingStreamer] = React.useState<UserProfile | null>(null);
   const [isSaving, setIsSaving] = React.useState(false);
   
-  // Conditionally declare the hook only for the community page
-  type ShoutoutActionState =
-    | { status: 'success'; results: ShoutoutResult[]; error: undefined }
-    | { status: 'error'; results: ShoutoutResult[]; error: string };
-
-  const [generateState, formAction] = isCommunityPage 
-    ? useActionState<ShoutoutActionState, FormData>(
-        generateAllShoutoutsAction as (state: ShoutoutActionState, payload: FormData) => Promise<ShoutoutActionState>,
-        { status: 'success', results: [], error: undefined }
-      )
-    : [{ status: 'success', results: [], error: undefined }, () => {}];
+  const shoutoutAction = isCommunityPage
+    ? generateAllShoutoutsAction as (state: ShoutoutActionState, payload: FormData) => Promise<ShoutoutActionState>
+    : noopShoutoutAction;
+  const [generateState, formAction] = useActionState<ShoutoutActionState, FormData>(
+    shoutoutAction,
+    { status: 'success', results: [], error: undefined }
+  );
 
   React.useEffect(() => {
     const storedServerId = localStorage.getItem('discordServerId');
@@ -574,7 +581,7 @@ export default function GroupDetailPage() {
     const sortedRoles = Array.from(roles).sort();
 
     return { members: groupMembers, onlineUsers: online, offlineUsers: offline, communityMembers: community, allRoles: sortedRoles };
-  }, [allUsers, groupName, isPartnersPage, isLoadingUsers]);
+  }, [allUsers, groupName]);
 
 
   const handleSaveChannel = async () => {

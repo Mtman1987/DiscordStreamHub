@@ -30,7 +30,7 @@ class RaidTrainService {
     // Create all 24 hour slots
     for (let hour = 0; hour < 24; hour++) {
       const slotId = `${dateStr}-${hour.toString().padStart(2, '0')}`;
-      const existingSlot = snapshot.docs.find(doc => doc.data().hour === hour);
+      const existingSlot = snapshot.docs.find((doc: { data: () => any }) => doc.data().hour === hour);
       
       slots.push({
         id: slotId,

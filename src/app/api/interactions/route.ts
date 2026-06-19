@@ -35,6 +35,7 @@ export async function POST(request: NextRequest) {
   }
 
   const interaction = JSON.parse(rawBody);
+  const publicBaseUrl = getAppUrl() || request.nextUrl.origin;
 
   // Ping response
   if (interaction.type === 1) {
@@ -1049,7 +1050,7 @@ export async function POST(request: NextRequest) {
       const userId = interaction.member?.user?.id || interaction.user?.id;
       const logDate = interaction.data.components[0].components[0].value;
       
-      const response = await fetch(`${getAppUrl() || 'http://localhost:3000'}/api/calendar/captain-log`, {
+      const response = await fetch(`${publicBaseUrl}/api/calendar/captain-log`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ serverId, userId, selectedDate: logDate })
@@ -1147,7 +1148,7 @@ export async function POST(request: NextRequest) {
       const missionTime = components[2].components[0].value;
       const missionDescription = components[3].components[0].value;
       
-      const response = await fetch(`${getAppUrl() || 'http://localhost:3000'}/api/calendar/add-mission`, {
+      const response = await fetch(`${publicBaseUrl}/api/calendar/add-mission`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ serverId, userId, missionName, missionDate, missionTime, missionDescription })

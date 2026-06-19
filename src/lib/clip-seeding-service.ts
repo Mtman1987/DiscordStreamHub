@@ -54,9 +54,10 @@ export async function seedMp4s(serverId: string): Promise<void> {
             console.log(`[Seeding] ⚠️ No URL for clip ${clip.id}, trying next...`);
             continue;
           }
+          const downloadUrl = typeof mp4Url === 'string' ? mp4Url : mp4Url.url;
           
           const tempMp4 = join(tmpdir(), `${clip.id}.mp4`);
-          const mp4Response = await fetch(mp4Url);
+          const mp4Response = await fetch(downloadUrl);
           if (!mp4Response.ok) {
             console.log(`[Seeding] ⚠️ Download failed for ${clip.id}, trying next...`);
             continue;
@@ -128,12 +129,12 @@ export async function convertMp4sToGifs(serverId: string, concurrency: number = 
       
       console.log(`[Seeding] Converting ${mp4Snapshot.size} clips for ${user.twitchLogin}`);
       
-      const mp4s = mp4Snapshot.docs.map(d => d.data() as ClipMp4);
+      const mp4s = mp4Snapshot.docs.map((d: { data: () => any }) => d.data() as ClipMp4);
       
       // Process in batches
       for (let i = 0; i < mp4s.length; i += concurrency) {
         const batch = mp4s.slice(i, i + concurrency);
-        await Promise.all(batch.map(mp4 => convertSingleMp4ToGif(serverId, user.discordUserId, mp4)));
+        await Promise.all(batch.map((mp4: ClipMp4) => convertSingleMp4ToGif(serverId, user.discordUserId, mp4)));
       }
       
       console.log(`[Seeding] ✅ Completed ${user.twitchLogin}`);
@@ -151,7 +152,7 @@ async function convertSingleMp4ToGif(serverId: string, userId: string, mp4: Clip
   const palettePath = join(tmpdir(), `${mp4.clipId}_palette.png`);
   
   try {
-    // Download MP4 from Firebase
+    // Download MP4 from volume-backed media URL.
     const mp4Response = await fetch(mp4.mp4Url);
     const mp4Buffer = Buffer.from(await mp4Response.arrayBuffer());
     await writeFile(tempMp4, mp4Buffer);
@@ -203,10 +204,10 @@ async function getCrewAndPartners(serverId: string) {
     .get();
 
   return snapshot.docs
-    .map(doc => ({
+    .map((doc: { id: string; data: () => any }) => ({
       discordUserId: doc.id,
       twitchLogin: doc.data().twitchLogin,
       group: doc.data().group
     }))
-    .filter(u => u.twitchLogin && (u.group === 'Crew' || u.group === 'Partners' || u.group === 'Vip'));
+    .filter((u: { twitchLogin?: string; group?: string }) => u.twitchLogin && (u.group === 'Crew' || u.group === 'Partners' || u.group === 'Vip'));
 }

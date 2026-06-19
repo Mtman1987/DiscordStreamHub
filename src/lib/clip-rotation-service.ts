@@ -7,12 +7,12 @@ import { deleteGif } from './local-storage-service';
 import { readdir } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
-import { getPuppeteerExecutablePath, getStoragePath } from './runtime-config';
+import { getAppUrl, getPuppeteerExecutablePath, getStoragePath } from './runtime-config';
 
 const STORAGE_PATH = getStoragePath();
 
 // In-memory cooldown guard — survives within process lifetime
-// Firestore is the source of truth, this prevents race conditions within a poll cycle
+// The app database is the source of truth; this prevents races within a poll cycle.
 const clipCooldowns = new Map<string, number>();
 const COOLDOWN_MS = 12 * 60 * 60 * 1000;
 
@@ -88,11 +88,11 @@ export async function fetchNewClipOnLive(serverId: string, userId: string, twitc
       return;
     }
     
-    // Firestore check (persists across restarts)
+    // Database check (persists across restarts)
     const lastFetch = await getLastClipFetch(serverId, userId);
     if (lastFetch && now - lastFetch < COOLDOWN_MS) {
       clipCooldowns.set(cacheKey, lastFetch);
-      console.log(`[ClipFetching] ${twitchLogin} cooldown (firestore): ${Math.round((COOLDOWN_MS - (now - lastFetch)) / 60000)}min remaining`);
+      console.log(`[ClipFetching] ${twitchLogin} cooldown (database): ${Math.round((COOLDOWN_MS - (now - lastFetch)) / 60000)}min remaining`);
       return;
     }
     
@@ -235,7 +235,8 @@ async function recordLiveStream(twitchLogin: string): Promise<number> {
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 720 });
 
-    const embedUrl = `https://player.twitch.tv/?channel=${twitchLogin}&parent=localhost&muted=true`;
+    const twitchParent = new URL(getAppUrl() || 'http://localhost:3000').hostname;
+    const embedUrl = `https://player.twitch.tv/?channel=${twitchLogin}&parent=${encodeURIComponent(twitchParent)}&muted=true`;
     console.log(`[LiveRecord] Navigating to ${embedUrl}`);
     await page.goto(embedUrl, { waitUntil: 'networkidle2', timeout: 30000 });
 
@@ -396,10 +397,10 @@ async function getCrewAndPartners(serverId: string) {
     .get();
 
   return snapshot.docs
-    .map(doc => ({
+    .map((doc: { id: string; data: () => any }) => ({
       discordUserId: doc.id,
       twitchLogin: doc.data().twitchLogin,
       group: doc.data().group
     }))
-    .filter(u => u.twitchLogin && (u.group === 'Crew' || u.group === 'Partners'));
+    .filter((u: { twitchLogin?: string; group?: string }) => u.twitchLogin && (u.group === 'Crew' || u.group === 'Partners'));
 }

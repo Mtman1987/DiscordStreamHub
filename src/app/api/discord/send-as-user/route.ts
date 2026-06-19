@@ -23,13 +23,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Bot token not configured' }, { status: 500 });
     }
 
-    // Check Firestore for saved webhook
-    console.log('[send-as-user] Checking Firestore for webhook');
+    // Check the app database for a saved webhook.
+    console.log('[send-as-user] Checking app database for webhook');
     const webhookDoc = await db.collection('webhooks').doc(channelId).get();
     let webhook = webhookDoc.exists ? webhookDoc.data() : null;
 
     if (!webhook) {
-      console.log('[send-as-user] No webhook in Firestore, fetching from Discord');
+      console.log('[send-as-user] No webhook in app database, fetching from Discord');
       // Try to get existing webhooks from Discord first
       const webhooksResponse = await fetch(`https://discord.com/api/v10/channels/${channelId}/webhooks`, {
         headers: { 'Authorization': `Bot ${botToken}` }
@@ -63,15 +63,15 @@ export async function POST(request: NextRequest) {
         console.log('[send-as-user] Created webhook:', webhook.id);
       }
       
-      // Save to Firestore
+      // Save to the app database.
       await db.collection('webhooks').doc(channelId).set({
         id: webhook.id,
         token: webhook.token,
         channelId: channelId
       });
-      console.log('[send-as-user] Saved webhook to Firestore');
+      console.log('[send-as-user] Saved webhook to app database');
     } else {
-      console.log('[send-as-user] Using webhook from Firestore:', webhook.id);
+      console.log('[send-as-user] Using webhook from app database:', webhook.id);
     }
 
     // Send message via webhook with custom username and avatar

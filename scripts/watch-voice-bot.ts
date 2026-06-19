@@ -22,7 +22,8 @@ import {
   PermissionsBitField,
   TextBasedChannel,
 } from 'discord.js';
-import { spawn, ChildProcessWithoutNullStreams } from 'node:child_process';
+import { spawn, ChildProcessByStdio } from 'node:child_process';
+import type { Readable } from 'node:stream';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
@@ -63,7 +64,7 @@ type WatchRequestResult =
 type GuildPlayback = {
   player: AudioPlayer;
   connection: VoiceConnection;
-  ffmpeg?: ChildProcessWithoutNullStreams;
+  ffmpeg?: ChildProcessByStdio<null, Readable, Readable>;
   currentRequestId?: string;
   textChannel?: TextBasedChannel;
   advancing?: boolean;

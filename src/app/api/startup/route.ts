@@ -3,11 +3,25 @@ import { cleanupOrphanedDiscordEmbeds } from '@/lib/discord-orphan-cleanup-servi
 import { startTwitchPolling } from '@/lib/twitch-polling-service';
 import { getHardcodedGuildId } from '@/lib/runtime-config';
 
-const HARDCODED_SERVER_ID = getHardcodedGuildId() || '1240832965865635881';
+const HARDCODED_SERVER_ID = getHardcodedGuildId();
 let startupWorkQueued = false;
+
+function startupServicesDisabled(): boolean {
+  return process.env.DISABLE_STARTUP_SERVICES === 'true';
+}
 
 export async function POST(request: NextRequest) {
   try {
+    if (startupServicesDisabled()) {
+      console.log('[Startup] DISABLE_STARTUP_SERVICES=true; startup services skipped');
+      return NextResponse.json({
+        success: true,
+        skipped: true,
+        message: 'Startup services disabled by environment',
+        serverId: HARDCODED_SERVER_ID
+      });
+    }
+
     console.log('[Startup] Initializing automated services...');
 
     let queuedNow = false;
@@ -35,7 +49,10 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET() {
-  return NextResponse.json({ message: 'Startup endpoint ready' });
+  return NextResponse.json({
+    message: 'Startup endpoint ready',
+    startupServicesDisabled: startupServicesDisabled()
+  });
 }
 
 function runStartupCleanup(): void {

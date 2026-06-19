@@ -4,6 +4,7 @@
 
 import { DataComponentsProvider } from "@/data";
 import { useSearchParams, useParams } from "next/navigation";
+import { useEffect, useState } from "react";
 
 function ShoutoutCard() {
     const params = useParams();
@@ -18,6 +19,11 @@ function ShoutoutCard() {
     const thumbnail = searchParams.get('thumbnail');
     const isLive = searchParams.get('live') === 'true';
     const isMatureStream = searchParams.get('mature') === 'true';
+    const [twitchParent, setTwitchParent] = useState('localhost');
+
+    useEffect(() => {
+      setTwitchParent(window.location.hostname);
+    }, []);
 
 
   return (
@@ -53,7 +59,7 @@ function ShoutoutCard() {
             {isLive ? (
               <div className="relative w-full h-full">
                 <iframe
-                  src={`https://player.twitch.tv/?channel=${streamer}&parent=localhost&autoplay=true&muted=true&controls=false`}
+                  src={`https://player.twitch.tv/?channel=${streamer}&parent=${encodeURIComponent(twitchParent)}&autoplay=true&muted=true&controls=false`}
                   className="w-full h-full"
                   allowFullScreen
                   sandbox="allow-scripts allow-same-origin allow-presentation"

@@ -25,6 +25,11 @@ export type GenerateTailoredShoutoutInput = z.infer<
   typeof GenerateTailoredShoutoutInputSchema
 >;
 
+const GenerateTailoredShoutoutPromptInputSchema =
+  GenerateTailoredShoutoutInputSchema.extend({
+    timestamp: z.string(),
+  });
+
 const GenerateTailoredShoutoutOutputSchema = z.object({
   shoutoutEmbed: z
     .any()
@@ -43,7 +48,7 @@ export async function generateTailoredShoutout(
 
 const vipShoutoutPrompt = ai.definePrompt({
     name: "vipShoutoutPrompt",
-    input: { schema: GenerateTailoredShoutoutInputSchema },
+    input: { schema: GenerateTailoredShoutoutPromptInputSchema },
     output: { schema: GenerateTailoredShoutoutOutputSchema },
     prompt: `
       You are Space Mountain Command Center AI announcing a VIP PRIORITY ALERT.
@@ -86,7 +91,7 @@ const vipShoutoutPrompt = ai.definePrompt({
 
 const communityShoutoutPrompt = ai.definePrompt({
     name: "communityShoutoutPrompt",
-    input: { schema: GenerateTailoredShoutoutInputSchema },
+    input: { schema: GenerateTailoredShoutoutPromptInputSchema },
     output: { schema: GenerateTailoredShoutoutOutputSchema },
     prompt: `
       You are Space Mountain Command Center AI announcing community member missions.
@@ -119,7 +124,7 @@ const communityShoutoutPrompt = ai.definePrompt({
 
 const trainPrompt = ai.definePrompt({
     name: "trainPrompt",
-    input: { schema: GenerateTailoredShoutoutInputSchema },
+    input: { schema: GenerateTailoredShoutoutPromptInputSchema },
     output: { schema: GenerateTailoredShoutoutOutputSchema },
     prompt: `
       You are Space Mountain Command announcing a RAID TRAIN convoy mission.
@@ -136,7 +141,7 @@ const trainPrompt = ai.definePrompt({
 
 const pilePrompt = ai.definePrompt({
     name: "pilePrompt",
-    input: { schema: GenerateTailoredShoutoutInputSchema },
+    input: { schema: GenerateTailoredShoutoutPromptInputSchema },
     output: { schema: GenerateTailoredShoutoutOutputSchema },
     prompt: `
       You are Space Mountain Command announcing a RAID PILE fleet convergence.
@@ -189,7 +194,7 @@ const generateTailoredShoutoutFlow = ai.defineFlow(
 
 
     // Fallback for other groups with Space Mountain theme
-    const embeds = {
+    const embeds: Record<GenerateTailoredShoutoutInput['groupType'], any> = {
       VIP: {
         content: '🚀 **PRIORITY TRANSMISSION FROM SPACE MOUNTAIN COMMAND** @everyone',
         embeds: [
@@ -243,14 +248,14 @@ const generateTailoredShoutoutFlow = ai.defineFlow(
           },
         ],
       },
-      'Raid Train': {
+      Train: {
         color: 0xff4500,
         title: `🚂 🚀 SPACE MOUNTAIN RAID TRAIN DEPARTING!`,
         description: `**ALL ABOARD THE COSMIC EXPRESS!** Next destination: Captain ${input.streamerName}'s vessel in the **${input.topic}** sector! Prepare for warp speed and maximum hype deployment! 🌌`,
         thumbnail: { url: input.avatarUrl },
         footer: { text: 'Space Mountain Raid Train Command' },
       },
-      'Raid Pile': {
+      Pile: {
         color: 0x5865f2,
         title: `🛸 SPACE MOUNTAIN FLEET CONVERGENCE!`,
         description: `**MASSIVE FLEET MANEUVER INITIATED!** All Space Mountain vessels converge on Captain ${input.streamerName}'s coordinates! They're exploring **${input.topic}** - let's show them the power of our cosmic community! 🌌🚀`,

@@ -27,6 +27,8 @@ class Timestamp {
   }
 }
 
-console.log('[SQLiteDB] Server init: using SQLite via @/lib/db');
+if (process.env.SQLITE_DEBUG_LOGS === 'true') {
+  console.log('[SQLiteDB] Server init: using SQLite via @/lib/db');
+}
 
 export { db, auth, app, FieldValue, Timestamp };

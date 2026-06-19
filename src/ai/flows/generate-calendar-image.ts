@@ -4,6 +4,7 @@ import { db } from '@/data/server-init';
 import { addMonths, format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, isSameDay, isSameMonth } from 'date-fns';
 import puppeteer from 'puppeteer';
 import { getPuppeteerExecutablePath } from '@/lib/runtime-config';
+import { timestampToDate } from '@/lib/date-utils';
 
 export async function generateCalendarImage(
   serverId: string,
@@ -16,7 +17,7 @@ export async function generateCalendarImage(
       .orderBy('eventDateTime', 'asc')
       .get();
     
-    const events = eventsSnapshot.docs.map(doc => ({
+    const events = eventsSnapshot.docs.map((doc: { id: string; data: () => Record<string, unknown> }) => ({
       id: doc.id,
       ...doc.data()
     })) as any[];
@@ -38,7 +39,8 @@ export async function generateCalendarImage(
     
     events.forEach((event) => {
       if (!event.eventDateTime) return;
-      const eventDate = event.eventDateTime.toDate();
+      const eventDate = timestampToDate(event.eventDateTime);
+      if (!eventDate) return;
       const key = format(eventDate, 'yyyy-MM-dd');
       if (!eventsByDay.has(key)) {
         eventsByDay.set(key, { captainsLog: null, dayEvents: [] });
@@ -64,8 +66,15 @@ export async function generateCalendarImage(
     
     const sortedCaptains = Array.from(captainStats.values()).sort((a, b) => b.count - a.count);
     const upcomingEvents = events
-      .filter(e => e.type !== 'captains-log' && e.eventDateTime && isSameMonth(e.eventDateTime.toDate(), targetMonth))
-      .sort((a, b) => a.eventDateTime.toDate().getTime() - b.eventDateTime.toDate().getTime())
+      .filter(e => {
+        const eventDate = timestampToDate(e.eventDateTime);
+        return e.type !== 'captains-log' && !!eventDate && isSameMonth(eventDate, targetMonth);
+      })
+      .sort((a, b) => {
+        const aDate = timestampToDate(a.eventDateTime)?.getTime() ?? 0;
+        const bDate = timestampToDate(b.eventDateTime)?.getTime() ?? 0;
+        return aDate - bDate;
+      })
       .slice(0, 5);
 
     const html = `
@@ -191,7 +200,8 @@ export async function generateCalendarImage(
           <div class="events-section">
             <div class="events-title">Upcoming Events</div>
             ${upcomingEvents.length > 0 ? upcomingEvents.map(event => {
-              const eventDate = event.eventDateTime.toDate();
+              const eventDate = timestampToDate(event.eventDateTime);
+              if (!eventDate) return '';
               return `
                 <div class="event-item">
                   <div class="event-dot-list"></div>
@@ -221,7 +231,7 @@ export async function generateCalendarImage(
     await browser.close();
     browser = null;
     
-    return `data:image/png;base64,${screenshot.toString('base64')}`;
+    return `data:image/png;base64,${Buffer.from(screenshot).toString('base64')}`;
   } catch (error) {
     console.error(`[generateCalendarImage] Error:`, error);
     return null;

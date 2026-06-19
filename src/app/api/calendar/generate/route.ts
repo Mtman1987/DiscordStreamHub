@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
       channelId,
       messageId: message.id,
       includeButtons,
-      lastImageUrl: imageUrl,
+      lastImageUrl: imageUrl ?? undefined,
       monthOffset,
     });
 

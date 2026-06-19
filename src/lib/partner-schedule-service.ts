@@ -1,6 +1,7 @@
 'use server';
 
 import { db } from '@/data/server-init';
+import { getAppUrl } from '@/lib/runtime-config';
 
 interface TwitchScheduleSegment {
   id: string;
@@ -63,7 +64,7 @@ function parseICalDate(icalDate: string): string {
 export async function generateScheduleEmbed(
   userId: string,
   serverId: string,
-  options: { forceRefresh?: boolean } = {}
+  options: { forceRefresh?: boolean; channelId?: string; messageId?: string } = {}
 ) {
   const userDoc = await db.collection('servers').doc(serverId).collection('users').doc(userId).get();
   const userData = userDoc.data();
@@ -88,7 +89,7 @@ export async function generateScheduleEmbed(
       const files = await fs.readdir(userCalendarDir);
       const pngFiles = files.filter(f => f.endsWith('.png')).sort().reverse();
       if (pngFiles.length > 0) {
-        imageUrl = `https://discord-stream-hub-new.fly.dev/api/media/${username}/calendar/${pngFiles[0]}`;
+        imageUrl = `${getAppUrl()}/api/media/${username}/calendar/${pngFiles[0]}`;
         console.log('[PartnerSchedule] Using existing calendar:', imageUrl);
       }
     } catch (readError) {
@@ -100,7 +101,7 @@ export async function generateScheduleEmbed(
     const segments = await fetchTwitchSchedule(broadcasterId, '');
     const batch = db.batch();
     const oldEvents = await eventsRef.get();
-    oldEvents.docs.forEach(doc => batch.delete(doc.ref));
+    oldEvents.docs.forEach((doc: { ref: any }) => batch.delete(doc.ref));
 
     segments.forEach(seg => {
       const docRef = eventsRef.doc();
@@ -170,7 +171,7 @@ async function generatePartnerCalendarImage(userId: string, serverId: string): P
     const avatar = userData?.twitchProfileImageUrl;
 
     const eventsSnapshot = await db.collection('servers').doc(serverId).collection('users').doc(userId).collection('scheduleEvents').get();
-    const events = eventsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const events = eventsSnapshot.docs.map((doc: { id: string; data: () => Record<string, unknown> }) => ({ id: doc.id, ...doc.data() }));
 
     const month = new Date();
     const now = new Date();
@@ -333,7 +334,7 @@ body { width: 1200px; height: 900px; background: linear-gradient(135deg, #581c87
 
     await fs.writeFile(filePath, screenshot);
 
-    const publicUrl = `https://discord-stream-hub-new.fly.dev/api/media/${username}/calendar/${fileName}`;
+    const publicUrl = `${getAppUrl()}/api/media/${username}/calendar/${fileName}`;
     console.log('[PartnerCalendar] Image saved to volume:', publicUrl);
     return publicUrl;
   } catch (error) {
@@ -397,5 +398,5 @@ export async function getCustomEvents(userId: string, serverId: string) {
     .limit(10)
     .get();
 
-  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  return snapshot.docs.map((doc: { id: string; data: () => Record<string, unknown> }) => ({ id: doc.id, ...doc.data() }));
 }

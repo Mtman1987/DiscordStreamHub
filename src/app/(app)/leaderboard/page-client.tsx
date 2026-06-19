@@ -136,48 +136,6 @@ export default function LeaderboardPage() {
             📥 Download Image
           </button>
           <button
-            onClick={async () => {
-              try {
-                const response = await fetch('/api/points/add', {
-                  method: 'POST',
-                  headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': 'Bearer 1234'
-                  },
-                  body: JSON.stringify({ 
-                    userId: '767875979561009173',
-                    username: 'mtman1987', 
-                    displayName: 'mtman1987',
-                    points: 200 
-                  })
-                });
-                if (response.ok) {
-                  toast({ title: 'Added 200 points to mtman1987!' });
-                  refreshLeaderboard();
-                } else {
-                  throw new Error('Failed to add points');
-                }
-              } catch (error) {
-                toast({ variant: 'destructive', title: 'Error adding points' });
-              }
-            }}
-            style={{
-              padding: '12px 20px',
-              backgroundColor: '#f59e0b',
-              color: '#fff',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '14px',
-              fontWeight: '600',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px'
-            }}
-          >
-            ⚡ +200 Points
-          </button>
-          <button
             onClick={refreshLeaderboard}
             disabled={finalIsLoading}
             style={{

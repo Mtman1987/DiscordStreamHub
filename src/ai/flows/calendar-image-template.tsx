@@ -145,7 +145,7 @@ export function CalendarImageTemplate({
 
       {/* Footer */}
       <div style={{ display: 'flex', alignItems: 'center', marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #4a5568' }}>
-        <div style={{ fontSize: '14px', marginRight: '12px', color: '#a0aec0' }}>Month's Captains:</div>
+        <div style={{ fontSize: '14px', marginRight: '12px', color: '#a0aec0' }}>{"Month's Captains:"}</div>
         <div style={{ display: 'flex', alignItems: 'center' }}>
           {monthCaptains.slice(0, 5).map((c, i) => (
              <div key={c.userId} style={{ display: 'flex', alignItems: 'center', marginLeft: i > 0 ? '-10px' : '0' }}>

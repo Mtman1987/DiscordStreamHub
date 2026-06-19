@@ -1,13 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 export default function QuickSetupPage() {
-  const [serverId, setServerId] = useState('1240832965865635881');
+  const [serverId, setServerId] = useState('');
   const [channels, setChannels] = useState({
     crew: '',
     partners: '',
@@ -16,7 +16,29 @@ export default function QuickSetupPage() {
   });
   const [status, setStatus] = useState('');
 
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/runtime-config')
+      .then(response => response.ok ? response.json() : null)
+      .then(config => {
+        const configuredServerId = config?.publicIds?.hardcodedGuildId;
+        if (!cancelled && configuredServerId) {
+          setServerId(configuredServerId);
+        }
+      })
+      .catch(() => {
+        // Keep the field editable if runtime config cannot be loaded.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const handleSetup = async () => {
+    if (!serverId.trim()) {
+      setStatus('❌ Server ID is required.');
+      return;
+    }
     setStatus('Setting up...');
     
     const response = await fetch('/api/setup/init', {
@@ -39,6 +61,10 @@ export default function QuickSetupPage() {
   };
 
   const handleEnablePolling = async () => {
+    if (!serverId.trim()) {
+      setStatus('❌ Server ID is required.');
+      return;
+    }
     setStatus('Enabling polling...');
     
     const response = await fetch('/api/setup/enable-polling', {

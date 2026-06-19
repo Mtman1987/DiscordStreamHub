@@ -16,6 +16,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useDataStore, useCollection, useMemoData } from '@/data';
 import { collection, query, orderBy, limit, where } from '@/lib/data-shim';
 import type { CalendarEvent } from '@/lib/types';
+import { timestampToDateOrNow } from '@/lib/date-utils';
 
 const iconMap: Record<string, React.ReactNode> = {
   event: <Users className="h-4 w-4 text-muted-foreground" />,
@@ -54,7 +55,7 @@ export function UpcomingEvents() {
       <CardHeader className="flex flex-row items-center justify-between pb-2">
         <div>
           <CardTitle className="text-xl font-headline">Upcoming Events</CardTitle>
-          <CardDescription>What's next on the schedule.</CardDescription>
+          <CardDescription>{"What's next on the schedule."}</CardDescription>
         </div>
         <Button asChild size="sm" variant="ghost">
           <Link href="/calendar">
@@ -75,7 +76,7 @@ export function UpcomingEvents() {
             </div>
           ))}
           {!isLoading && events && events.map((event) => {
-            const eventDate = event.eventDateTime?.toDate?.() || new Date();
+            const eventDate = timestampToDateOrNow(event.eventDateTime);
             return (
               <div key={event.id} className="flex items-center gap-4">
                 <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-secondary">

@@ -56,6 +56,7 @@ export function useDbCollection<T = any>(
   const [error, setError] = useState<Error | null>(null);
   const fetchCount = useRef(0);
 
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const doFetch = useCallback(() => {
     if (!path) { setData(null); setIsLoading(false); return; }
     setIsLoading(true);

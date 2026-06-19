@@ -23,7 +23,7 @@ interface ProcessedMemberData {
 class MemberProcessingService {
   async processDiscordMembers(serverId: string): Promise<ProcessedMemberData> {
     try {
-      // Get all users from Firestore
+      // Get all users from the app database.
       const usersSnapshot = await db.collection('servers').doc(serverId).collection('users').get();
 
       let totalMembers = 0;
@@ -34,7 +34,7 @@ class MemberProcessingService {
         'Everyone Else': 0
       };
 
-      usersSnapshot.forEach(doc => {
+      usersSnapshot.forEach((doc: { data: () => any }) => {
         const userData = doc.data();
         totalMembers++;
 

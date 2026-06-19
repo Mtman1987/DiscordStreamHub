@@ -1,7 +1,7 @@
 {
-  "name": "Cosmic Raid",
-  "short_name": "Cosmic Raid",
-  "description": "Space-themed gaming and entertainment platform",
+  "name": "Discord Stream Hub",
+  "short_name": "Stream Hub",
+  "description": "Auth hub, shoutout bot, admin support, and community tools",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#1e1b4b",
@@ -9,14 +9,14 @@
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "/cosmicraid.png",
-      "sizes": "1024x1024",
+      "src": "/brand/discord-stream-hub-icon-192.png",
+      "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/cosmicraid.png",
-      "sizes": "1024x1024",
+      "src": "/brand/discord-stream-hub-icon-512.png",
+      "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
     }

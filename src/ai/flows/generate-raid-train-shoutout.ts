@@ -3,7 +3,6 @@
 import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
 import { getTwitchUserTool } from '../tools/get-twitch-user-tool';
-import { RaidTrainService } from '@/lib/raid-train-service';
 
 const GenerateRaidTrainShoutoutInputSchema = z.object({
   forceUsername: z.string().optional().describe('Force a specific username instead of current slot'),
@@ -18,10 +17,7 @@ const GenerateRaidTrainShoutoutOutputSchema = z.object({
 export type GenerateRaidTrainShoutoutOutput = z.infer<typeof GenerateRaidTrainShoutoutOutputSchema>;
 
 export async function generateRaidTrainShoutout(input: GenerateRaidTrainShoutoutInput = {}): Promise<GenerateRaidTrainShoutoutOutput> {
-  const raidTrainService = RaidTrainService.getInstance();
-  const currentSlot = await raidTrainService.getCurrentSlot();
-  
-  const targetUsername = input.forceUsername || currentSlot?.username;
+  const targetUsername = input.forceUsername;
   
   if (!targetUsername) {
     return {

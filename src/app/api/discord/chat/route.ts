@@ -9,6 +9,7 @@ import {
   getDiscordActivityApplicationId,
   getDiscordActivityVoiceChannelId,
   getDiscordChatHandleWatchEnabled,
+  getDiscordClientId,
   getHardcodedGuildId,
   getSpaceMountainIconUrl as getConfiguredSpaceMountainIconUrl,
 } from '@/lib/runtime-config';
@@ -478,7 +479,9 @@ export async function POST(request: NextRequest) {
 
     // DSH owns button-posting flows. Regular Chat Tag commands are handled directly by
     // the Chat Tag app, so we only keep the controls-button trigger here.
-    const isSpmtCommand = msgLower.startsWith('spmt ') || msgLower.startsWith('@spmt ') || message.startsWith('<@1279582181768957963>');
+    const discordClientId = getDiscordClientId();
+    const isSpmtMention = discordClientId ? message.startsWith(`<@${discordClientId}>`) || message.startsWith(`<@!${discordClientId}>`) : false;
+    const isSpmtCommand = msgLower.startsWith('spmt ') || msgLower.startsWith('@spmt ') || isSpmtMention;
     if (isSpmtCommand && channelId) {
       let normalizedMsg = message;
       if (message.startsWith('<@')) {

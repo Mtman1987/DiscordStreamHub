@@ -22,14 +22,14 @@ class TwitchLinkingService {
     notFound: string[];
     errors: string[];
   }> {
-    const result = { linked: 0, notFound: [], errors: [] };
+    const result: { linked: number; notFound: string[]; errors: string[] } = { linked: 0, notFound: [], errors: [] };
 
     try {
       // Get all users without Twitch accounts
       const usersSnapshot = await db.collection('servers').doc(serverId).collection('users').get();
       const usersToLink: Array<{ id: string; displayName: string; username: string }> = [];
 
-      usersSnapshot.forEach(doc => {
+      usersSnapshot.forEach((doc: { id: string; data: () => any }) => {
         const data = doc.data();
         if (!data.twitchLogin) {
           usersToLink.push({
@@ -193,7 +193,7 @@ class TwitchLinkingService {
       const usersSnapshot = await db.collection('servers').doc(serverId).collection('users').get();
       const unmatched: UnmatchedUser[] = [];
 
-      usersSnapshot.forEach(doc => {
+      usersSnapshot.forEach((doc: { id: string; data: () => any }) => {
         const data = doc.data();
         if (!data.twitchLogin) {
           unmatched.push({

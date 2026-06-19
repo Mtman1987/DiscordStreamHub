@@ -7,6 +7,7 @@ import { DataComponentsProvider } from '@/data';
 import { PartnerCalendar } from '@/components/partner-calendar-ui';
 import { useDoc, useDataStore } from '@/data';
 import { doc, collection, onSnapshot } from '@/lib/data-shim';
+import { timestampToDate } from '@/lib/date-utils';
 
 function PartnerScheduleCalendar() {
   const params = useParams();
@@ -29,7 +30,7 @@ function PartnerScheduleCalendar() {
 
     const eventsRef = collection(store, 'servers', serverId, 'users', userId, 'scheduleEvents');
     const unsubscribe = onSnapshot(eventsRef, (snapshot) => {
-      const events = snapshot.docs.map(doc => ({
+      const events = snapshot.docs.map((doc: { id: string; data: () => Record<string, unknown> }) => ({
         id: doc.id,
         ...doc.data()
       }));
@@ -46,7 +47,8 @@ function PartnerScheduleCalendar() {
     const now = new Date();
     return scheduleEvents.flatMap(event => {
       if (event.isRecurring && event.eventDateTime) {
-        const originalDate = event.eventDateTime.toDate();
+        const originalDate = timestampToDate(event.eventDateTime);
+        if (!originalDate) return [];
         const dayOfWeek = originalDate.getDay();
         const hours = originalDate.getHours();
         const minutes = originalDate.getMinutes();

@@ -3,7 +3,7 @@ import { getChatTagApiBase, getHardcodedGuildId } from '@/lib/runtime-config';
 
 export const dynamic = 'force-dynamic';
 
-const DEFAULT_SERVER_ID = getHardcodedGuildId() || '1240832965865635881';
+const DEFAULT_SERVER_ID = getHardcodedGuildId();
 const CHAT_TAG_SERVICE_SECRET = process.env.CHAT_TAG_BOT_SECRET || process.env.BOT_SECRET_KEY || '1234';
 
 export async function POST(request: NextRequest) {

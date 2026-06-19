@@ -29,8 +29,14 @@ export function useCurrentUser() {
 
     getRuntimeConfigClient()
       .then((runtime) => {
-        const serverId = localStorage.getItem('discordServerId') || runtime?.publicIds?.hardcodedGuildId || '1240832965865635881';
-        const hardcodedAdminId = runtime?.publicIds?.hardcodedAdminDiscordId || '767875979561009173';
+        const serverId = localStorage.getItem('discordServerId') || runtime?.publicIds?.hardcodedGuildId || '';
+        const hardcodedAdminId = runtime?.publicIds?.hardcodedAdminDiscordId || '';
+        if (!serverId) {
+          _cache = { key: null, user: null, fetched: true };
+          setUser(null);
+          setIsLoading(false);
+          return null;
+        }
         const cacheKey = `${serverId}:${userId}`;
         if (_cache.fetched && _cache.key === cacheKey) { setUser(_cache.user); setIsLoading(false); return null; }
 

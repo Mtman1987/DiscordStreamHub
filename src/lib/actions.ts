@@ -183,7 +183,7 @@ export async function resetCalendarAction(prevState: any, formData: FormData) {
         }
 
         const batch = db.batch();
-        snapshot.docs.forEach(doc => {
+        snapshot.docs.forEach((doc: { ref: any }) => {
             batch.delete(doc.ref);
         });
         await batch.commit();
@@ -361,7 +361,7 @@ export async function updateUsersByRoleAction(prevState: any, formData: FormData
         }
 
         const batch = db.batch();
-        snapshot.docs.forEach(doc => {
+        snapshot.docs.forEach((doc: { ref: any }) => {
             batch.update(doc.ref, { group: newGroup });
         });
         await batch.commit();
@@ -425,7 +425,7 @@ export async function postNewCalendar(guildId: string, channelId: string): Promi
 }
 
 /**
- * Syncs Discord server data with Firebase database.
+ * Syncs Discord server data into the volume-backed app database.
  */
 export async function syncDiscordData(prevState: any, formData: FormData) {
     try {

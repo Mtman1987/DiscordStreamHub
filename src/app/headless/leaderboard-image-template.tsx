@@ -76,7 +76,7 @@ export function LeaderboardImageTemplate({ entries }: LeaderboardImageTemplatePr
         ))}
       </div>
       <div style={{ marginTop: 'auto', textAlign: 'center', fontSize: '12px', color: '#718096' }}>
-        Powered by Streamer's Hub
+        {"Powered by Streamer's Hub"}
       </div>
     </div>
   );

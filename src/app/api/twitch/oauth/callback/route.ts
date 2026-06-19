@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, ensureDb } from '@/lib/db';
-import { getAppUrl, getChatTagApiBase, getHardcodedGuildId, getTwitchClientId } from '@/lib/runtime-config';
+import { getAppUrl, getChatTagApiBase, getHardcodedGuildId, getHearMeOutUrl, getTwitchClientId } from '@/lib/runtime-config';
 
 function getTwitchOAuthConfig() {
   const clientSecret = process.env.TWITCH_CLIENT_SECRET;
@@ -18,7 +18,7 @@ class TwitchOAuthExchangeError extends Error {
 }
 
 function parseOAuthState(state: string | null) {
-  const fallbackServerId = getHardcodedGuildId() || '1240832965865635881';
+  const fallbackServerId = getHardcodedGuildId();
   if (!state) {
     return {
       serverId: fallbackServerId,
@@ -120,7 +120,7 @@ function popupCallbackResponse(publicUrl: string, payload: Record<string, string
 }
 
 function chatTagCallbackResponse(payload: Record<string, string>) {
-  const chatTagUrl = getChatTagApiBase() || 'https://chat-tag-new.fly.dev';
+  const chatTagUrl = getChatTagApiBase();
   const params = new URLSearchParams(payload);
   return NextResponse.redirect(`${chatTagUrl}/api/auth/twitch/callback?${params}`);
 }
@@ -135,8 +135,7 @@ export async function GET(request: NextRequest) {
 
   const publicUrl =
     getAppUrl() ||
-    request.nextUrl.origin ||
-    'https://discord-stream-hub-new.fly.dev';
+    request.nextUrl.origin;
 
   if (oauthError) {
     const { isChatTag } = parseOAuthState(state);
@@ -326,7 +325,7 @@ export async function GET(request: NextRequest) {
             updated_at: Date.now(), source: 'hearmeout'
           });
       }
-      const hmoUrl = 'https://hearmeout-main.fly.dev';
+      const hmoUrl = getHearMeOutUrl();
       const params = new URLSearchParams({
         success: 'true', user_id: userId, username, display_name: displayName, photo_url: photoUrl,
       });
@@ -382,8 +381,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Twitch OAuth not configured' }, { status: 500 });
     }
 
+    const publicUrl = getAppUrl() || request.nextUrl.origin;
+
     // Determine redirect URI based on source
-    const redirectUri = `${getAppUrl() || 'https://discord-stream-hub-new.fly.dev'}/api/twitch/oauth/callback`;
+    const redirectUri = `${publicUrl}/api/twitch/oauth/callback`;
 
     // Exchange code for access token
     const tokenResponse = await fetch('https://id.twitch.tv/oauth2/token', {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -38,19 +38,7 @@ export default function RaidPilePage() {
   const [minSize, setMinSize] = useState(10);
   const { toast } = useToast();
 
-  useEffect(() => {
-    getRuntimeConfigClient().then((config) => {
-      const numbers = config?.publicNumbers || {};
-      const ids = config?.publicIds || {};
-      setChannelId(ids.raidPileChannelId || '');
-      setPointsReward(Number(numbers.raidPilePointsReward || 25));
-      setMaxSize(Number(numbers.raidPileMaxSize || 40));
-      setMinSize(Number(numbers.raidPileMinSize || 10));
-    }).catch(() => {});
-    fetchPiles();
-  }, []);
-
-  const fetchPiles = async () => {
+  const fetchPiles = useCallback(async () => {
     try {
       const response = await fetch('/api/raid-pile/status');
       if (response.ok) {
@@ -62,7 +50,19 @@ export default function RaidPilePage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    getRuntimeConfigClient().then((config) => {
+      const numbers = config?.publicNumbers || {};
+      const ids = config?.publicIds || {};
+      setChannelId(ids.raidPileChannelId || '');
+      setPointsReward(Number(numbers.raidPilePointsReward || 25));
+      setMaxSize(Number(numbers.raidPileMaxSize || 40));
+      setMinSize(Number(numbers.raidPileMinSize || 10));
+    }).catch(() => {});
+    fetchPiles();
+  }, [fetchPiles]);
 
   const updateRaidPileChannel = async () => {
     try {

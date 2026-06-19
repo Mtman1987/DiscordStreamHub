@@ -10,8 +10,7 @@ export async function GET(request: Request) {
       url.searchParams.get('serverId') ||
       url.searchParams.get('guildId') ||
       url.searchParams.get('discordServerId') ||
-      getHardcodedGuildId() ||
-      '1240832965865635881';
+      getHardcodedGuildId();
 
     const serverConfig = db.get('servers', requestedServerId) || db.get('userSessions', requestedServerId);
     

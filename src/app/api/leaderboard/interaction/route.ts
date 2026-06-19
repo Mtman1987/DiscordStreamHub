@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
 
       const userPoints = leaderboardDoc.data()?.points || 0;
       const allLeaderboard = await db.collection('servers').doc(guildId).collection('leaderboard').orderBy('points', 'desc').get();
-      const rank = allLeaderboard.docs.findIndex((doc) => doc.id === userProfileId) + 1;
+      const rank = allLeaderboard.docs.findIndex((doc: { id: string }) => doc.id === userProfileId) + 1;
 
       return NextResponse.json({
         type: 4,

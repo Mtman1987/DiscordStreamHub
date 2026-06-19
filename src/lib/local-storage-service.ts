@@ -1,9 +1,6 @@
-'use server';
-
 import { mkdir, writeFile, unlink, readdir, stat } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
-import fetch from 'node-fetch';
 import { getStoragePath } from './runtime-config';
 
 const STORAGE_PATH = getStoragePath();
@@ -120,6 +117,7 @@ class LocalStorageService {
 }
 
 const localStorageService = new LocalStorageService();
+export { localStorageService };
 
 export async function uploadGifFromUrl(gifUrl: string, fileName: string): Promise<string> {
   return localStorageService.uploadGifFromUrl(gifUrl, fileName);
@@ -145,7 +143,7 @@ export async function generateFileName(clipId: string, streamerName: string): Pr
   return localStorageService.generateFileName(clipId, streamerName);
 }
 
-export async function uploadFileToFirebase(buffer: Buffer, fileName: string, contentType: string): Promise<string> {
+export async function uploadFileToVolume(buffer: Buffer, fileName: string, contentType: string): Promise<string> {
   return localStorageService.uploadGifFromUrl(`data:${contentType};base64,${buffer.toString('base64')}`, fileName);
 }
 

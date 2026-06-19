@@ -5,7 +5,7 @@ import { getHardcodedGuildId } from '@/lib/runtime-config';
 export async function GET(request: NextRequest) {
   try {
     await new Promise(resolve => setTimeout(resolve, 100)); // Wait for db init
-    const serverId = request.nextUrl.searchParams.get('serverId') || getHardcodedGuildId() || '1240832965865635881';
+    const serverId = request.nextUrl.searchParams.get('serverId') || getHardcodedGuildId();
     const botDoc = await db.collection('servers').doc(serverId).collection('config').doc('twitchBotOAuth').get();
     if (botDoc.exists) {
       const data = botDoc.data() || {};

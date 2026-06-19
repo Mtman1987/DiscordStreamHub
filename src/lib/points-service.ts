@@ -243,7 +243,7 @@ export class PointsService {
       .orderBy('points', 'desc')
       .get();
 
-    const rank = leaderboardSnapshot.docs.findIndex((doc) => doc.id === userId) + 1;
+    const rank = leaderboardSnapshot.docs.findIndex((doc: { id: string }) => doc.id === userId) + 1;
     return { rank: rank > 0 ? rank : leaderboardSnapshot.docs.length + 1, points: userPoints };
   }
 
@@ -275,7 +275,7 @@ export class PointsService {
       .limit(limit);
 
     const snapshot = await leaderboardRef.get();
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    return snapshot.docs.map((doc: { id: string; data: () => Record<string, unknown> }) => ({ id: doc.id, ...doc.data() }));
   }
 
   async addPointsToAll(points: number, serverId?: string): Promise<{ count: number }> {

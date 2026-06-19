@@ -2,8 +2,16 @@
 
 import { getTwitchClientId } from '@/lib/runtime-config';
 
+type ClipVideoUrlResult =
+  | string
+  | {
+      url: string;
+      token?: string;
+      signature?: string;
+    };
+
 // Clip URL finder - uses Twitch API fallback only in production
-export async function getClipVideoUrl(clipUrl: string): Promise<string | null> {
+export async function getClipVideoUrl(clipUrl: string): Promise<ClipVideoUrlResult | null> {
   try {
     // Extract clip slug from URL (e.g., https://www.twitch.tv/username/clip/ClipSlug)
     const clipSlug = clipUrl.split('/clip/')[1]?.split('?')[0];

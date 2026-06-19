@@ -8,7 +8,7 @@ type DocumentData = any;
 
 /**
  * This service is now in a diagnostic mode.
- * It only posts the mock data it receives and does not have any fallback logic to query Firestore.
+ * It only posts the mock data it receives and does not have any fallback database query path.
  * This isolates its function to simply posting a pre-made payload to Discord.
  */
 export async function postAllShoutoutsToDiscord(serverId: string, usersToPost: DocumentData[]): Promise<void> {
@@ -56,7 +56,7 @@ export async function postAllShoutoutsToDiscord(serverId: string, usersToPost: D
   }
 }
 
-export async function sendDiscordMessage(channelId: string, messageData: any): Promise<void> {
+export async function sendDiscordMessage(channelId: string, messageData: any): Promise<string | null> {
   const botToken = process.env.DISCORD_BOT_TOKEN;
   if (!botToken) {
     throw new Error('DISCORD_BOT_TOKEN is not configured');
@@ -75,4 +75,7 @@ export async function sendDiscordMessage(channelId: string, messageData: any): P
     const error = await response.text();
     throw new Error(`Discord API error: ${response.status} - ${error}`);
   }
+
+  const message = await response.json();
+  return message?.id ?? null;
 }

@@ -135,7 +135,7 @@ class DiscordSyncService {
     }
 
     await batch.commit();
-    console.log(`Synced ${channels.filter(c => c.type === 0).length} channels`);
+    console.log(`Synced ${channels.filter((c: any) => c.type === 0).length} channels`);
   }
 
   private async syncRoles(serverId: string): Promise<void> {
@@ -161,7 +161,7 @@ class DiscordSyncService {
 
   private async determineGroup(roleIds: string[], serverId: string): Promise<'VIP' | 'Mountaineer' | 'Train' | 'Pile'> {
     try {
-      // Get role mappings from Firestore
+      // Get role mappings from the app database.
       const serverDoc = await db.collection('servers').doc(serverId).get();
       const roleMappings = serverDoc.data()?.roleMappings || {};
 
@@ -385,5 +385,42 @@ export async function syncChannelsAndRoles(serverId: string): Promise<void> {
   } catch (error) {
     console.error('[DiscordSync] syncChannelsAndRoles failed:', error);
   }
+}
+
+export async function getUserRolesAndGroup(
+  serverId: string,
+  userId: string
+): Promise<{ roles: string[]; group: 'VIP' | 'Mountaineer' | 'Train' | 'Pile' }> {
+  const existingUser = await db.collection('servers').doc(serverId).collection('users').doc(userId).get();
+  const existingData = existingUser.data();
+  const existingRoles = Array.isArray(existingData?.roles) ? existingData.roles : [];
+  const existingGroup = existingData?.group;
+
+  if (existingRoles.length > 0 && typeof existingGroup === 'string') {
+    return {
+      roles: existingRoles,
+      group: existingGroup as 'VIP' | 'Mountaineer' | 'Train' | 'Pile',
+    };
+  }
+
+  const botToken = process.env.DISCORD_BOT_TOKEN;
+  if (!botToken) {
+    return { roles: existingRoles, group: 'Mountaineer' };
+  }
+
+  const response = await fetch(`https://discord.com/api/v10/guilds/${serverId}/members/${userId}`, {
+    headers: { Authorization: `Bot ${botToken}` },
+  });
+
+  if (!response.ok) {
+    console.warn(`[DiscordSync] Failed to fetch member ${userId} in ${serverId}: ${response.status}`);
+    return { roles: existingRoles, group: 'Mountaineer' };
+  }
+
+  const member = await response.json();
+  const roles = Array.isArray(member.roles) ? member.roles : [];
+  const group = await discordSyncService['determineGroup'](roles, serverId);
+
+  return { roles, group };
 }
 

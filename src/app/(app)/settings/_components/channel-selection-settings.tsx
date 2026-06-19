@@ -22,25 +22,16 @@ export function ChannelSelectionSettings() {
   });
   const { toast } = useToast();
 
-  React.useEffect(() => {
-    const id = localStorage.getItem('discordServerId');
-    setServerId(id);
-    if (id) {
-      loadChannels(id);
-      loadChannelSettings(id);
-    }
-  }, []);
-
-  const loadChannels = async (id: string) => {
+  const loadChannels = React.useCallback(async (id: string) => {
     try {
       const channelData = await getChannels(id);
       setChannels(channelData);
     } catch (error) {
       console.error('Error loading channels:', error);
     }
-  };
+  }, []);
 
-  const loadChannelSettings = async (id: string) => {
+  const loadChannelSettings = React.useCallback(async (id: string) => {
     try {
       const response = await fetch(`/api/settings/channels?serverId=${id}`);
       if (response.ok) {
@@ -50,7 +41,16 @@ export function ChannelSelectionSettings() {
     } catch (error) {
       console.error('Error loading channel settings:', error);
     }
-  };
+  }, []);
+
+  React.useEffect(() => {
+    const id = localStorage.getItem('discordServerId');
+    setServerId(id);
+    if (id) {
+      loadChannels(id);
+      loadChannelSettings(id);
+    }
+  }, [loadChannels, loadChannelSettings]);
 
   const saveChannelSettings = async () => {
     if (!serverId) return;

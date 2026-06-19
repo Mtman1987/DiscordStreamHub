@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Image from 'next/image';
 import {
   Sidebar,
   SidebarProvider,
@@ -11,7 +12,7 @@ import {
   SidebarSeparator,
 } from '@/components/ui/sidebar';
 import Link from 'next/link';
-import { BotMessageSquare, Rocket } from 'lucide-react';
+import { Rocket } from 'lucide-react';
 import { MainNav } from './_components/main-nav';
 import { UserNav } from './_components/user-nav';
 import { DataClientProvider } from '@/data';
@@ -28,9 +29,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 className="flex items-center gap-2"
                 prefetch={false}
               >
-                <BotMessageSquare className="h-8 w-8 text-primary" />
+                <Image
+                  src="/brand/discord-stream-hub-icon-192.png"
+                  alt="Discord Stream Hub"
+                  width={32}
+                  height={32}
+                  className="rounded-lg"
+                  priority
+                />
                 <h2 className="font-headline text-lg font-semibold tracking-tight group-data-[collapsed=true]:hidden">
-                  Streamer's Hub
+                  Discord Stream Hub
                 </h2>
               </Link>
               <SidebarTrigger className="hidden md:flex" />

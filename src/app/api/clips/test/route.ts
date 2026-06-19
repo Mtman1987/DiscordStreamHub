@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getUserByLogin, getClipsForUser } from '@/lib/twitch-api-service';
 import { getClipVideoUrl } from '@/lib/clip-url-finder';
 import { convertClipToGif } from '@/lib/gif-conversion-service';
+import { getHardcodedGuildId } from '@/lib/runtime-config';
 
 export async function POST(request: NextRequest) {
   try {
@@ -38,7 +39,7 @@ export async function POST(request: NextRequest) {
       twitchLogin,
       Math.min(clip.duration, 30),
       'stream',
-      { serverId: '1240832965865635881' }
+      { serverId: getHardcodedGuildId() }
     );
 
     console.log('[TestClip] GIF URL:', gifUrl);

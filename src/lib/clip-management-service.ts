@@ -1,7 +1,7 @@
 'use server';
 
 import { db } from "@/data/server-init";
-import { deleteGif } from "./firebase-storage-service";
+import { deleteGif } from "./local-storage-service";
 import { DAILY_CLIP_LIMIT } from "./clip-settings";
 
 type DocumentReference = any;
@@ -94,7 +94,7 @@ export async function manageUserClips(
     return clipDay.getTime() !== today.getTime();
   });
   
-  // Delete old clips from Firebase Storage
+  // Delete old clips from volume storage
   for (const oldClip of oldClips) {
     try {
       // Extract filename from URL for deletion
@@ -192,7 +192,7 @@ export async function cleanupAllOldClips(serverId: string): Promise<number> {
     });
     
     if (oldClips.length > 0) {
-      // Delete old clips from Firebase Storage
+      // Delete old clips from volume storage
       for (const oldClip of oldClips) {
         try {
           const gifFileName = oldClip.gifUrl.split('/').pop()?.split('?')[0];
@@ -279,7 +279,7 @@ export async function deleteClipFromPool(serverId: string, lookup: UserLookup, g
       lastClipUpdate: new Date()
     });
 
-    // Delete from Firebase Storage
+    // Delete from volume storage
     try {
       const gifFileName = gifUrl.split('/').pop()?.split('?')[0];
       if (gifFileName) {

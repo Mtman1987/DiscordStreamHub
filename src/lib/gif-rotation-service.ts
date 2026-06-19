@@ -4,10 +4,10 @@ import { db } from '@/lib/db';
 import { getClipsForUser } from './twitch-api-service';
 import { readdir, readFile, unlink, writeFile } from 'fs/promises';
 import { join } from 'path';
-import { getAppUrl, getStoragePath } from './runtime-config';
+import { getAppUrl, getGifStorageChannelId, getStoragePath } from './runtime-config';
 
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
-const GIF_STORAGE_CHANNEL = '1341552730971443293';
+const GIF_STORAGE_CHANNEL = getGifStorageChannelId();
 const MAX_GIFS = 6;
 
 export async function fetchNewGifOnLive(serverId: string, discordUserId: string, twitchLogin: string): Promise<void> {

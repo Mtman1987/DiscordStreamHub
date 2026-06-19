@@ -31,6 +31,7 @@ export async function GET() {
       hardcodedAdminTwitchId: getRuntimePublicId('hardcodedAdminTwitchId'),
       chatTagChannelId: getRuntimePublicId('chatTagChannelId'),
       discordShoutoutChannelId: getRuntimePublicId('discordShoutoutChannelId'),
+      gifStorageChannelId: getRuntimePublicId('gifStorageChannelId'),
     },
     publicText: {
       chatTagWebhookName: getRuntimePublicText('chatTagWebhookName'),

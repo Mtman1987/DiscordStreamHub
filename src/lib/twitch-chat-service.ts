@@ -66,7 +66,7 @@ class TwitchChatService {
     this.allowedUserIds.clear();
     this.allowedLogins.clear();
     
-    usersSnapshot.docs.forEach(doc => {
+    usersSnapshot.docs.forEach((doc: { data: () => any }) => {
       const data = doc.data();
       if (data.twitchId) this.allowedUserIds.add(data.twitchId);
       if (data.twitchLogin) this.allowedLogins.add(data.twitchLogin.toLowerCase());

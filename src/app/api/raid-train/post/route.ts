@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
 
     const targetDate = date ? new Date(date) : addDays(new Date(), 1); // Default to tomorrow
     const slots = await raidTrainService.getScheduleForDate(serverId, targetDate);
-    const embed = raidTrainService.generateScheduleEmbed(slots, targetDate);
+    const embed = await raidTrainService.generateScheduleEmbed(slots, targetDate, serverId);
     const components = raidTrainService.generateScheduleButtons(targetDate);
 
     // Post to Discord

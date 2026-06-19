@@ -15,20 +15,20 @@ export function TwitchLinkingCard({ serverId }: { serverId: string }) {
   const [channels, setChannels] = React.useState<any[]>([]);
   const [selectedChannel, setSelectedChannel] = React.useState('');
 
-  React.useEffect(() => {
-    if (serverId) {
-      loadChannels();
-    }
-  }, [serverId]);
-
-  const loadChannels = async () => {
+  const loadChannels = React.useCallback(async () => {
     try {
       const channelData = await getChannels(serverId);
       setChannels(channelData);
     } catch (error) {
       console.error('Error loading channels:', error);
     }
-  };
+  }, [serverId]);
+
+  React.useEffect(() => {
+    if (serverId) {
+      loadChannels();
+    }
+  }, [serverId, loadChannels]);
 
   const handleDispatchEmbed = async () => {
     if (!selectedChannel) {

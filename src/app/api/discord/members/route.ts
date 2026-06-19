@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
 
     const snapshot = await db.collection('servers').doc(serverId).collection('users').get();
     
-    const members = snapshot.docs.map(doc => ({
+    const members = snapshot.docs.map((doc: { id: string; data: () => any }) => ({
       id: doc.id,
       ...doc.data()
     }));

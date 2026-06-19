@@ -153,6 +153,21 @@ class TwitchApiService {
     }
   }
 
+  async getTwitchUserClips(login: string, limit: number = 20): Promise<TwitchClip[]> {
+    const user = await this.getUserByLogin(login);
+    if (!user) {
+      return [];
+    }
+
+    return this.getClipsForUser(user.id, limit);
+  }
+
+  async createClip(_userId: string, _serverId?: string): Promise<string | null> {
+    // Legacy callers expect this helper to exist, but the current app no longer
+    // has a safe server-side flow for creating Twitch clips here.
+    return null;
+  }
+
   async getStreamsByLogins(userLogins: string[]): Promise<Map<string, TwitchStream>> {
     const streamMap = new Map<string, TwitchStream>();
 
@@ -302,6 +317,14 @@ export async function getStreamByLogin(login: string): Promise<TwitchStream | nu
 
 export async function getClipsForUser(userId: string, limit: number = 5): Promise<TwitchClip[]> {
   return twitchApiService.getClipsForUser(userId, limit);
+}
+
+export async function getTwitchUserClips(login: string, limit: number = 5): Promise<TwitchClip[]> {
+  return twitchApiService.getTwitchUserClips(login, limit);
+}
+
+export async function createClip(userId: string, serverId?: string): Promise<string | null> {
+  return twitchApiService.createClip(userId, serverId);
 }
 
 export async function getStreamsByLogins(userLogins: string[]): Promise<Map<string, TwitchStream>> {

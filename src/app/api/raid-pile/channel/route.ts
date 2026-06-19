@@ -4,10 +4,10 @@ import { generateRaidPileShoutout } from '@/ai/flows/generate-raid-pile-shoutout
 
 export async function POST(request: NextRequest) {
   try {
-    const { channelId } = await request.json();
+    const { serverId, channelId } = await request.json();
     
-    if (!channelId) {
-      return NextResponse.json({ error: 'Channel ID is required' }, { status: 400 });
+    if (!serverId || !channelId) {
+      return NextResponse.json({ error: 'Server ID and Channel ID are required' }, { status: 400 });
     }
 
     const raidPileService = RaidPileService.getInstance();
@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    const embed = raidPileService.generateDiscordEmbed(piles);
+    const embed = await raidPileService.generateDiscordEmbed(piles, serverId);
     
     // Combine shoutouts and pile display
     const content = {
