@@ -434,6 +434,26 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`[ForwardForum] Forwarded message from ${userName} (${guildName}/#${channelName}) → thread ${threadId}`);
+
+    // Also forward to spmt.live forum for spacemountain.live display
+    try {
+      await fetch('https://spmt.live/api/forum/forward', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-spmt-key': process.env.SPMT_SYSTEM_KEY || '' },
+        body: JSON.stringify({
+          channelId: channelId || guildId,
+          channelName,
+          guildName,
+          userName,
+          userAvatar,
+          message,
+          attachments: normalizeAttachments(data.attachments),
+        }),
+      });
+    } catch (e) {
+      console.warn('[ForwardForum] spmt.live forward failed:', e);
+    }
+
     return NextResponse.json({ success: true, forwardedMessageId });
   } catch (error) {
     console.error('[ForwardForum] Error:', error);
