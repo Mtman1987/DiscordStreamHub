@@ -74,6 +74,16 @@ type ForwardedAttachment = {
   filename?: string;
 };
 
+type ForwardedMention = {
+  id: string;
+  username: string;
+  global_name?: string;
+  displayName?: string;
+};
+
+type ForwardedEmbed = Record<string, any>;
+type ForwardedSticker = Record<string, any>;
+
 type MediaExtraction = {
   description?: string;
   imageUrl?: string;
@@ -118,14 +128,63 @@ function normalizeAttachments(value: unknown): ForwardedAttachment[] {
     .filter(attachment => Boolean(attachment.url || attachment.proxy_url));
 }
 
-function extractForwardedMedia(message: string, attachments: ForwardedAttachment[]): MediaExtraction {
+function normalizeMentions(value: unknown): ForwardedMention[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((mention: any) => ({
+      id: String(mention?.id || mention?.userId || '').trim(),
+      username: String(mention?.username || mention?.global_name || mention?.displayName || mention?.name || '').trim(),
+      global_name: typeof mention?.global_name === 'string' ? mention.global_name : undefined,
+      displayName: typeof mention?.displayName === 'string' ? mention.displayName : undefined,
+    }))
+    .filter(mention => mention.id && mention.username);
+}
+
+function normalizeEmbeds(value: unknown): ForwardedEmbed[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((embed): embed is ForwardedEmbed => Boolean(embed && typeof embed === 'object')).slice(0, 5);
+}
+
+function normalizeStickers(value: unknown): ForwardedSticker[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((sticker): sticker is ForwardedSticker => Boolean(sticker && typeof sticker === 'object')).slice(0, 10);
+}
+
+function displayNameForMention(mention: ForwardedMention) {
+  return mention.displayName || mention.global_name || mention.username || mention.id;
+}
+
+function normalizeDiscordContent(message: string, mentions: ForwardedMention[]) {
+  let normalized = String(message || '');
+  for (const mention of mentions) {
+    const label = `@${displayNameForMention(mention)}`;
+    normalized = normalized.replace(new RegExp(`<@!?${mention.id}>`, 'g'), label);
+  }
+  normalized = normalized.replace(/<#(\d+)>/g, '#channel-$1');
+  normalized = normalized.replace(/<@&(\d+)>/g, '@role-$1');
+  normalized = normalized.replace(/<a?:([a-zA-Z0-9_]+):\d+>/g, ':$1:');
+  return normalized.trim();
+}
+
+function extractEmbedImageUrls(embeds: ForwardedEmbed[]) {
+  return embeds
+    .flatMap(embed => [
+      typeof embed?.image?.url === 'string' ? embed.image.url : '',
+      typeof embed?.thumbnail?.url === 'string' ? embed.thumbnail.url : '',
+      typeof embed?.video?.url === 'string' ? embed.video.url : '',
+    ])
+    .filter(Boolean);
+}
+
+function extractForwardedMedia(message: string, attachments: ForwardedAttachment[], embeds: ForwardedEmbed[]): MediaExtraction {
   const attachmentImage = attachments.find(isImageAttachment);
   const attachmentUrls = attachments
     .map(attachment => attachment.url || attachment.proxy_url)
     .filter((url): url is string => Boolean(url));
 
+  const embedImageUrls = extractEmbedImageUrls(embeds);
   const urls = Array.from(message.matchAll(URL_PATTERN), match => cleanUrlMatch(match[0]));
-  const imageUrl = attachmentImage?.url || attachmentImage?.proxy_url || urls.find(hasImageExtension);
+  const imageUrl = attachmentImage?.url || attachmentImage?.proxy_url || urls.find(hasImageExtension) || embedImageUrls[0];
   const mediaUrlsToRemove = new Set<string>(imageUrl ? [imageUrl] : []);
 
   let description = message;
@@ -138,7 +197,7 @@ function extractForwardedMedia(message: string, attachments: ForwardedAttachment
   return {
     description: description || undefined,
     imageUrl,
-    attachmentUrls: attachmentUrls.filter(url => url !== imageUrl),
+    attachmentUrls: [...attachmentUrls, ...embedImageUrls].filter(url => url !== imageUrl),
   };
 }
 
@@ -153,6 +212,9 @@ async function mirrorForwardToSpaceMountain(input: {
   userAvatar?: string;
   message: string;
   attachments: ForwardedAttachment[];
+  embeds: ForwardedEmbed[];
+  mentions: ForwardedMention[];
+  stickers: ForwardedSticker[];
 }) {
   const endpoint = (process.env.SPACEMOUNTAIN_FORUM_FORWARD_URL || 'https://spacemountain.live/api/integrations/dsh/forum-forward').trim();
   if (!endpoint) return;
@@ -163,6 +225,8 @@ async function mirrorForwardToSpaceMountain(input: {
   const content = [
     input.message,
     ...attachmentUrls.map(url => `Attachment: ${url}`),
+    ...extractEmbedImageUrls(input.embeds).map(url => `Embed media: ${url}`),
+    ...input.stickers.map(sticker => `Sticker: ${String(sticker.name || sticker.id || 'sticker')}`),
   ].filter(Boolean).join('\n');
 
   if (!content.trim()) return;
@@ -195,6 +259,9 @@ async function mirrorForwardToSpaceMountain(input: {
         authorName: input.userName,
         title: `${input.guildName} / #${input.channelName}`,
         content,
+        embeds: input.embeds,
+        mentions: input.mentions.map(mention => ({ id: mention.id, username: displayNameForMention(mention) })),
+        stickers: input.stickers,
         category: 'Discord Forward',
         postedAt: new Date().toISOString(),
       }),
@@ -379,12 +446,16 @@ export async function POST(request: NextRequest) {
     const messageChannelId = data.channelId || '';
     const messageId = data.messageId || '';
     const attachments = normalizeAttachments(data.attachments);
+    const mentions = normalizeMentions(data.mentions);
+    const embeds = normalizeEmbeds(data.embeds);
+    const stickers = normalizeStickers(data.sticker_items || data.stickers);
+    const normalizedMessage = normalizeDiscordContent(message, mentions);
 
     if (!guildId) {
       return NextResponse.json({ error: 'guildId required' }, { status: 400 });
     }
 
-    if (!message && attachments.length === 0) {
+    if (!message && attachments.length === 0 && embeds.length === 0 && stickers.length === 0) {
       return NextResponse.json({ success: true, skipped: 'empty-message' });
     }
 
@@ -399,7 +470,7 @@ export async function POST(request: NextRequest) {
     const channelId = sourceChannel.sourceChannelId || messageChannelId;
     const channelName = sourceChannel.sourceChannelName;
 
-    const media = extractForwardedMedia(message, attachments);
+    const media = extractForwardedMedia(normalizedMessage, attachments, embeds);
 
     // Build the forwarded message embed. Controls are intentionally omitted so the
     // forum post stays clean; native replies/reactions can be mirrored by a watcher.
@@ -421,11 +492,31 @@ export async function POST(request: NextRequest) {
     if (media.imageUrl) {
       embed.image = { url: media.imageUrl };
     }
+    const fields: any[] = [];
     if (media.attachmentUrls.length > 0) {
-      embed.fields = [{
+      fields.push({
         name: 'Attachments',
         value: media.attachmentUrls.map(url => `[Open attachment](${url})`).join('\n').slice(0, 1024),
-      }];
+      });
+    }
+    for (const sourceEmbed of embeds.slice(0, 3)) {
+      const title = typeof sourceEmbed.title === 'string' ? sourceEmbed.title : '';
+      const description = typeof sourceEmbed.description === 'string' ? sourceEmbed.description : '';
+      if (title || description) {
+        fields.push({
+          name: title ? `Embed: ${title}`.slice(0, 256) : 'Embed',
+          value: (description || sourceEmbed.url || 'Embedded Discord content').slice(0, 1024),
+        });
+      }
+    }
+    if (stickers.length > 0) {
+      fields.push({
+        name: 'Stickers',
+        value: stickers.map(sticker => String(sticker.name || sticker.id || 'sticker')).join(', ').slice(0, 1024),
+      });
+    }
+    if (fields.length > 0) {
+      embed.fields = fields.slice(0, 10);
     }
 
     const components: any[] = [];
@@ -585,7 +676,10 @@ export async function POST(request: NextRequest) {
       messageId,
       userName,
       userAvatar,
-      message,
+      message: normalizedMessage || message,
+      embeds,
+      mentions,
+      stickers,
       attachments,
     });
 
@@ -601,7 +695,10 @@ export async function POST(request: NextRequest) {
           guildName,
           userName,
           userAvatar,
-          message,
+          message: normalizedMessage || message,
+          embeds,
+          mentions: mentions.map(mention => ({ id: mention.id, username: displayNameForMention(mention) })),
+          stickers,
           attachments: normalizeAttachments(data.attachments),
         }),
       });

@@ -360,6 +360,9 @@ export async function POST(request: NextRequest) {
     const userAvatar = data.userAvatar || data.avatarUrl || '';
     const message = data.message || data.content || '';
     const attachments = Array.isArray(data.attachments) ? data.attachments : [];
+    const embeds = Array.isArray(data.embeds) ? data.embeds : [];
+    const mentions = Array.isArray(data.mentions) ? data.mentions : [];
+    const stickers = Array.isArray(data.sticker_items || data.stickers) ? (data.sticker_items || data.stickers) : [];
     const channelId = data.channelId || '';
     const messageId = data.messageId || '';
     const dispatch = data.dispatch !== false;
@@ -395,6 +398,9 @@ export async function POST(request: NextRequest) {
           userAvatar,
           message,
           attachments,
+          embeds,
+          mentions,
+          stickers,
         }),
         signal: timeoutSignal(8000),
       }).catch((error) => {

@@ -47,7 +47,8 @@ export function LeaderboardSnapshot() {
     return leaderboard.map(entry => {
       const user = allUsers.find(u => u.id === entry.userProfileId);
       return { ...entry, user };
-    }).filter(item => item.user);
+    }).filter(item => item.user)
+      .sort((a, b) => Number(b.points || 0) - Number(a.points || 0));
   }, [leaderboard, allUsers]);
 
   return (

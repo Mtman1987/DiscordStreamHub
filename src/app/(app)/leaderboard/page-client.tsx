@@ -56,7 +56,9 @@ export default function LeaderboardPage() {
         combinedData.push({ ...entry, user: userProfile, rank });
         rank++;
     }
-    setLeaderboardData(combinedData);
+    setLeaderboardData(combinedData
+      .sort((a, b) => Number(b.points || 0) - Number(a.points || 0))
+      .map((entry, index) => ({ ...entry, rank: index + 1 })));
     setIsLoading(false);
   }, [rawLeaderboard, store, serverId]);
 
