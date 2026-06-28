@@ -377,6 +377,8 @@ class TwitchPollingService {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 5000);
     try {
+      const { getUserByLogin } = await import('./twitch-api-service');
+      const userInfo = await getUserByLogin(input.twitchLogin).catch(() => null);
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (process.env.SPACEMOUNTAIN_SHOUTOUT_TOKEN) {
         headers.Authorization = `Bearer ${process.env.SPACEMOUNTAIN_SHOUTOUT_TOKEN}`;
@@ -384,6 +386,9 @@ class TwitchPollingService {
 
       const sourceMessageUrl = input.channelId && input.messageId
         ? `https://discord.com/channels/${input.serverId}/${input.channelId}/${input.messageId}`
+        : null;
+      const previewUrl = input.stream?.thumbnail_url
+        ? String(input.stream.thumbnail_url).replace(/\{width\}/g, '1920').replace(/\{height\}/g, '1080')
         : null;
 
       const response = await fetch(endpoint, {
@@ -399,12 +404,13 @@ class TwitchPollingService {
           sourceMessageId: input.messageId || null,
           sourceMessageUrl,
           twitchLogin: input.twitchLogin,
-          displayName: input.stream?.user_name || input.twitchLogin,
+          displayName: input.stream?.user_name || userInfo?.display_name || input.twitchLogin,
           group: input.group,
           title: input.stream?.title || null,
           gameName: input.stream?.game_name || null,
           viewerCount: Number(input.stream?.viewer_count || 0),
-          imageUrl: input.stream?.thumbnail_url || null,
+          avatarUrl: userInfo?.profile_image_url || null,
+          imageUrl: previewUrl,
           streamUrl: `https://twitch.tv/${input.twitchLogin}`,
           isLive: input.isLive !== false,
           isSpotlight: Boolean(input.isSpotlight),
