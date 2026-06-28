@@ -208,6 +208,10 @@ async function mirrorForwardToSpaceMountain(input: {
   }
 }
 
+function getForwardingMappingKey(sourceServerId: string, channelId?: string) {
+  return `${sourceServerId}:${channelId || sourceServerId}`;
+}
+
 async function getForwardedThreadId(sourceServerId: string, channelId?: string): Promise<string | null> {
   try {
     const doc = await db
@@ -218,6 +222,8 @@ async function getForwardedThreadId(sourceServerId: string, channelId?: string):
       .get();
     if (!doc.exists) return null;
     const mappings = doc.data()?.mappings || {};
+    const mappingKey = getForwardingMappingKey(sourceServerId, channelId);
+    if (mappings[mappingKey]) return mappings[mappingKey];
     if (channelId && mappings[channelId]) return mappings[channelId];
     return null;
   } catch {
@@ -251,9 +257,28 @@ async function getForumRule(sourceServerId: string): Promise<ForwardingForumRule
 
 function buildThreadName(channelName: string, channelId: string) {
   const cleanChannelName = channelName?.replace(/^#+/, '').trim();
-  const base = cleanChannelName ? `#${cleanChannelName}` : '';
+  const base = cleanChannelName || '';
   const fallback = channelId ? `channel-${channelId}` : 'discord-forward';
   return (base || fallback).slice(0, 100);
+}
+
+async function ensureThreadCanReceiveMessages(threadId: string): Promise<boolean> {
+  const details = await getChannelDetails(threadId);
+  if (!details?.id) return false;
+
+  if (details.archived) {
+    try {
+      await discordRequest(`/channels/${threadId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ archived: false }),
+      });
+    } catch (error) {
+      console.warn(`[ForwardForum] Could not unarchive mapped thread ${threadId}:`, error);
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function shouldMirrorMessage(message: string) {
@@ -386,6 +411,14 @@ export async function POST(request: NextRequest) {
       : await getForwardedThreadId(guildId, channelId || undefined);
 
     let threadId = mappedThreadId;
+    if (threadId) {
+      const threadUsable = await ensureThreadCanReceiveMessages(threadId);
+      if (!threadUsable) {
+        console.warn(`[ForwardForum] Mapped thread ${threadId} for ${guildId}/${channelId} is not usable; creating a replacement`);
+        threadId = null;
+      }
+    }
+
     let createdNewThread = false;
     let starterMessageId: string | null = null;
 
@@ -424,6 +457,7 @@ export async function POST(request: NextRequest) {
       threadId = created.id;
       starterMessageId = created.message?.id || created.id || null;
       createdNewThread = true;
+      const mappingKey = getForwardingMappingKey(guildId, channelId);
       const label = channelName || guildName || channelId || guildId;
       await db
         .collection('servers')
@@ -439,10 +473,10 @@ export async function POST(request: NextRequest) {
           restrictToWhitelist,
           sourceChannelWhitelist,
           mappings: {
-            [channelId || guildId]: threadId,
+            [mappingKey]: threadId,
           },
           labels: {
-            [channelId || guildId]: label,
+            [mappingKey]: label,
           },
           updatedAt: new Date().toISOString(),
         }, { merge: true });

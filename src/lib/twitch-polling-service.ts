@@ -368,6 +368,8 @@ class TwitchPollingService {
     twitchLogin: string;
     group: string;
     stream?: any;
+    imageUrl?: string | null;
+    bannerUrl?: string | null;
     isLive?: boolean;
     isSpotlight?: boolean;
   }): Promise<void> {
@@ -390,6 +392,13 @@ class TwitchPollingService {
       const previewUrl = input.stream?.thumbnail_url
         ? String(input.stream.thumbnail_url).replace(/\{width\}/g, '1920').replace(/\{height\}/g, '1080')
         : null;
+      const imageUrl = input.imageUrl || previewUrl;
+      const videoUrl = await this.resolveShoutoutVideoUrl({
+        serverId: input.serverId,
+        discordUserId: input.discordUserId,
+        twitchLogin: input.twitchLogin,
+        imageUrl,
+      });
 
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -410,7 +419,9 @@ class TwitchPollingService {
           gameName: input.stream?.game_name || null,
           viewerCount: Number(input.stream?.viewer_count || 0),
           avatarUrl: userInfo?.profile_image_url || null,
-          imageUrl: previewUrl,
+          imageUrl,
+          videoUrl,
+          bannerUrl: input.bannerUrl || null,
           streamUrl: `https://twitch.tv/${input.twitchLogin}`,
           isLive: input.isLive !== false,
           isSpotlight: Boolean(input.isSpotlight),
@@ -427,6 +438,87 @@ class TwitchPollingService {
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  private absolutizeDshMediaUrl(url?: string | null): string | null {
+    if (!url) return null;
+    const value = String(url).trim();
+    if (!value) return null;
+    if (/^https?:\/\//i.test(value)) return value;
+    if (value.startsWith('/')) return `${getAppUrl().replace(/\/$/, '')}${value}`;
+    return value;
+  }
+
+  private async resolveShoutoutVideoUrl(input: {
+    serverId: string;
+    discordUserId: string;
+    twitchLogin: string;
+    imageUrl?: string | null;
+  }): Promise<string | null> {
+    const direct = this.absolutizeDshMediaUrl(input.imageUrl);
+    if (direct && /\.(mp4|webm|mov)(\?.*)?$/i.test(direct)) return direct;
+
+    const normalizedLogin = String(input.twitchLogin || '').trim().toLowerCase();
+    if (!normalizedLogin) return null;
+
+    try {
+      const { existsSync } = await import('fs');
+      const { readdir } = await import('fs/promises');
+      const { join } = await import('path');
+      const mediaPath = join(getStoragePath(), normalizedLogin);
+
+      if (direct && /\/api\/media\//i.test(direct)) {
+        const mediaPathname = new URL(direct).pathname.replace(/^\/api\/media\//, '');
+        const parts = mediaPathname.split('/').map(part => decodeURIComponent(part));
+        const fileName = parts.pop();
+        if (fileName && /\.gif$/i.test(fileName)) {
+          const pairedMp4Name = fileName.replace(/\.gif$/i, '.mp4');
+          const pairedPath = join(getStoragePath(), ...parts, pairedMp4Name);
+          if (existsSync(pairedPath)) {
+            return this.absolutizeDshMediaUrl(`/api/media/${[...parts, pairedMp4Name].map(encodeURIComponent).join('/')}`);
+          }
+        }
+      }
+
+      if (existsSync(mediaPath)) {
+        const mp4Files = (await readdir(mediaPath)).filter(file => /\.mp4$/i.test(file)).sort();
+        if (mp4Files.length > 0) {
+          const gifDoc = await db.collection('servers').doc(input.serverId).collection('users').doc(input.discordUserId)
+            .collection('gifRotation').doc('storage').get();
+          const currentIndex = Number(gifDoc.data()?.currentIndex || 0);
+          const mp4File = mp4Files[currentIndex % mp4Files.length];
+          return this.absolutizeDshMediaUrl(`/api/media/${encodeURIComponent(normalizedLogin)}/${encodeURIComponent(mp4File)}`);
+        }
+      }
+
+      const mp4Snapshot = await db.collection('servers').doc(input.serverId)
+        .collection('users').doc(input.discordUserId)
+        .collection('clipMp4s')
+        .get();
+      const storedMp4 = mp4Snapshot.docs
+        .map((doc: any) => doc.data()?.mp4Url)
+        .find((url: any) => typeof url === 'string' && url.length > 0);
+      if (storedMp4) return this.absolutizeDshMediaUrl(storedMp4);
+    } catch (error) {
+      console.warn(`[TwitchPolling] Could not resolve stored MP4 for ${input.twitchLogin}:`, error);
+    }
+
+    try {
+      const { getUserByLogin, getClipsForUser } = await import('./twitch-api-service');
+      const { getClipVideoUrl } = await import('./clip-url-finder');
+      const twitchUser = await getUserByLogin(input.twitchLogin);
+      if (!twitchUser?.id) return null;
+      const clips = await getClipsForUser(twitchUser.id, 5);
+      for (const clip of clips) {
+        const video = await getClipVideoUrl(clip.url);
+        const url = typeof video === 'string' ? video : video?.url;
+        if (url) return url;
+      }
+    } catch (error) {
+      console.warn(`[TwitchPolling] Could not resolve Twitch clip MP4 for ${input.twitchLogin}:`, error);
+    }
+
+    return null;
   }
 
   private async postNewShoutout(serverId: string, discordUserId: string, twitchLogin: string, stream: any, state: PollingState): Promise<void> {
@@ -502,6 +594,8 @@ class TwitchPollingService {
     let embed;
     let embedsToSend: any[] = [];
     let componentsToSend: any[] | undefined = undefined;
+    let spaceMountainImageUrl: string | null = null;
+    let spaceMountainBannerUrl: string | null = null;
     
     if (group === 'Crew') {
       const { getUserByLogin } = await import('./twitch-api-service');
@@ -526,6 +620,8 @@ class TwitchPollingService {
       const CLIP_PATH = getStoragePath();
       const bannerFilePath = joinPath(CLIP_PATH, 'banners', `${twitchLogin.toLowerCase()}.gif`);
       const resolvedBannerUrl = bannerExists(bannerFilePath) ? bannerUrl : null;
+      spaceMountainImageUrl = crewImageUrl;
+      spaceMountainBannerUrl = resolvedBannerUrl;
       
       if (!resolvedBannerUrl) {
         console.log(`[TwitchPolling] Crew banner missing for ${twitchLogin}; skipping banner embed until worker backfills it`);
@@ -596,6 +692,8 @@ class TwitchPollingService {
       // Then get clip with new index
       const { getNextGifCdnUrl } = await import('./gif-rotation-service');
       const clip = await getNextGifCdnUrl(serverId, discordUserId, twitchLogin);
+      const partnerImageUrl = clip || stream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080');
+      spaceMountainImageUrl = partnerImageUrl;
       
       embed = {
         author: {
@@ -613,7 +711,7 @@ class TwitchPollingService {
           { name: '🌟 Partner Status', value: 'Official Space Mountain Partner', inline: true }
         ],
         thumbnail: { url: userInfo?.profile_image_url || 'https://static-cdn.jtvnw.net/ttv-boxart/twitch-logo.png' },
-        image: clip ? { url: clip } : { url: stream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080') },
+        image: { url: partnerImageUrl },
         footer: { text: 'Twitch • Space Mountain Partner Shoutout' },
         timestamp: new Date().toISOString()
       };
@@ -665,6 +763,7 @@ class TwitchPollingService {
         const clip = await getNextGifCdnUrl(serverId, discordUserId, twitchLogin);
         if (clip) imageUrl = clip;
       }
+      spaceMountainImageUrl = imageUrl;
       
       embed = {
         title: `🚨 **${stream.user_name}** is now LIVE on Twitch!`,
@@ -680,6 +779,8 @@ class TwitchPollingService {
     } else if (group === 'Raid Pile') {
       const { getUserByLogin } = await import('./twitch-api-service');
       const userInfo = await getUserByLogin(twitchLogin);
+      const raidImageUrl = stream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080');
+      spaceMountainImageUrl = raidImageUrl;
       
       embed = {
         title: `🚨 **${stream.user_name}** is now LIVE on Twitch!`,
@@ -687,7 +788,7 @@ class TwitchPollingService {
         url: `https://twitch.tv/${twitchLogin}`,
         color: 0x4ECDC4,
         thumbnail: { url: userInfo?.profile_image_url || 'https://static-cdn.jtvnw.net/ttv-boxart/twitch-logo.png' },
-        image: { url: stream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080') },
+        image: { url: raidImageUrl },
         footer: { text: 'Twitch • Raid Pile Shoutout 🎯' },
         timestamp: new Date().toISOString()
       };
@@ -712,6 +813,7 @@ class TwitchPollingService {
         const clip = await getNextGifCdnUrl(serverId, discordUserId, twitchLogin);
         if (clip) imageUrl = clip;
       }
+      spaceMountainImageUrl = imageUrl;
       
       embed = {
         title: `🚨 **${stream.user_name}** is now LIVE on Twitch!`,
@@ -744,6 +846,8 @@ class TwitchPollingService {
         twitchLogin: stream.user_login,
         group,
         stream,
+        imageUrl: spaceMountainImageUrl,
+        bannerUrl: spaceMountainBannerUrl,
         isLive: true,
         isSpotlight: group === 'Honored Guests',
       });
