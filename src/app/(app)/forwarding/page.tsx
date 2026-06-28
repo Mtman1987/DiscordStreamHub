@@ -5,10 +5,11 @@ import dynamic from 'next/dynamic';
 import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Send, Loader2, Monitor, Volume2, VolumeX, MonitorOff, MessageSquare, ChevronDown } from 'lucide-react';
+import { Send, Loader2, Monitor, Volume2, VolumeX, MonitorOff, MessageSquare } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { formatDistanceToNow } from 'date-fns';
 import { useDbDoc } from '@/hooks/use-db';
@@ -113,9 +114,6 @@ export default function ForwardingPage() {
   const [userId, setUserId] = React.useState<string | null>(null);
   const [selectedChannelId, setSelectedChannelId] = React.useState<string>('');
   const [messages, setMessages] = React.useState<DiscordMessage[]>([]);
-  const [channelLatest, setChannelLatest] = React.useState<Record<string, string>>({});
-  const [channelSeen, setChannelSeen] = React.useState<Record<string, string>>({});
-  const [channelNew, setChannelNew] = React.useState<Record<string, boolean>>({});
   const [newMessage, setNewMessage] = React.useState<string>('');
   const [isLoading, setIsLoading] = React.useState(false);
   const [isSending, setIsSending] = React.useState(false);
@@ -129,6 +127,7 @@ export default function ForwardingPage() {
   const [showDiscord, setShowDiscord] = React.useState(true);
   const [showTwitch, setShowTwitch] = React.useState(false);
   const [selectedTwitchChannel, setSelectedTwitchChannel] = React.useState<string>('');
+  const [manualTwitchChannel, setManualTwitchChannel] = React.useState<string>('');
   const [liveUsers, setLiveUsers] = React.useState<LiveTwitchUser[]>([]);
   const [showVideo, setShowVideo] = React.useState(false);
   const [isMuted, setIsMuted] = React.useState(true);
@@ -198,44 +197,20 @@ export default function ForwardingPage() {
     try {
       const response = await fetch(`/api/discord/messages?channelId=${channelId}&limit=50`);
       const data = await response.json();
-      if (data.messages) {
-        const nextMessages = data.messages.reverse();
-        const latestId = nextMessages[nextMessages.length - 1]?.id || '';
-        setMessages(nextMessages);
-        if (latestId) {
-          setChannelLatest((current) => ({ ...current, [channelId]: latestId }));
-          setChannelSeen((current) => {
-            const currentSeen = current[channelId] || '';
-            if (!silent || selectedChannelId === channelId) return { ...current, [channelId]: latestId };
-            if (currentSeen && currentSeen !== latestId) {
-              setChannelNew((flags) => ({ ...flags, [channelId]: true }));
-            }
-            return current;
-          });
-        }
-      }
+      if (data.messages) setMessages(data.messages.reverse());
     } catch (error) {
       if (!silent) toast({ variant: 'destructive', title: 'Failed to fetch messages' });
     } finally {
       if (!silent) setIsLoading(false);
     }
-  }, [toast, selectedChannelId]);
+  }, [toast]);
 
   React.useEffect(() => {
     if (!selectedChannelId || !showDiscord) return;
     fetchMessages(selectedChannelId);
-    setChannelNew((current) => ({ ...current, [selectedChannelId]: false }));
     const interval = setInterval(() => fetchMessages(selectedChannelId, true), 30000);
     return () => clearInterval(interval);
   }, [selectedChannelId, fetchMessages, showDiscord]);
-
-  const openChannel = React.useCallback((channelId: string) => {
-    setSelectedChannelId((current) => current === channelId ? '' : channelId);
-    if (channelLatest[channelId]) {
-      setChannelSeen((current) => ({ ...current, [channelId]: channelLatest[channelId] }));
-    }
-    setChannelNew((current) => ({ ...current, [channelId]: false }));
-  }, [channelLatest]);
 
   React.useEffect(() => {
     const viewport = document.querySelector('[data-radix-scroll-area-viewport]');
@@ -285,6 +260,11 @@ export default function ForwardingPage() {
     }
   }, [speech.transcript, speech.isListening]);
 
+  const applyManualTwitchChannel = React.useCallback(() => {
+    const cleaned = manualTwitchChannel.trim().replace(/^@/, '').replace(/^https?:\/\/(www\.)?twitch\.tv\//i, '').split(/[/?#]/)[0];
+    if (cleaned) setSelectedTwitchChannel(cleaned.toLowerCase());
+  }, [manualTwitchChannel]);
+
   return (
     <div className={`h-screen flex flex-col overflow-hidden ${isEmbedded ? 'p-3' : 'p-8'}`}>
       <div className="flex items-center gap-2 mb-4">
@@ -314,35 +294,12 @@ export default function ForwardingPage() {
         {showDiscord && (
           <Card className="flex-1 flex flex-col overflow-hidden">
             <CardContent className={`flex-1 flex flex-col overflow-hidden ${isEmbedded ? 'p-3' : 'p-6'}`}>
-              <div className="mb-3 space-y-2">
-                {channels.map((channel) => {
-                  const isOpen = selectedChannelId === channel.id;
-                  return (
-                    <div key={channel.id} className="rounded-lg border bg-muted/20">
-                      <button
-                        type="button"
-                        onClick={() => openChannel(channel.id)}
-                        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left"
-                      >
-                        <span className="flex min-w-0 items-center gap-2">
-                          <span className="text-muted-foreground">{channelIcon(channel.type)}</span>
-                          <span className="truncate font-medium">{channel.name}</span>
-                          {channelNew[channel.id] && (
-                            <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold uppercase text-primary-foreground">New</span>
-                          )}
-                        </span>
-                        <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
               <ScrollArea className="flex-1 pr-4">
                 <div ref={scrollRef} className="min-h-full">
                   {isLoading ? (
                     <div className="flex justify-center py-8"><Loader2 className="h-8 w-8 animate-spin" /></div>
                   ) : messages.length === 0 ? (
-                    <p className="text-center text-muted-foreground py-8">Open a channel accordion to view messages</p>
+                    <p className="text-center text-muted-foreground py-8">Select a channel to view messages</p>
                   ) : (
                     <div className="space-y-4">
                       {messages.map((msg) => (
@@ -396,7 +353,7 @@ export default function ForwardingPage() {
                         {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                       </Button>
                     </div>
-                    <Select value={selectedChannelId} onValueChange={openChannel}>
+                    <Select value={selectedChannelId} onValueChange={setSelectedChannelId}>
                       <SelectTrigger className="w-full"><SelectValue placeholder="Channel" /></SelectTrigger>
                       <SelectContent>
                         {channels.map((c) => <SelectItem key={c.id} value={c.id}>{channelIcon(c.type)} {c.name}</SelectItem>)}
@@ -438,6 +395,16 @@ export default function ForwardingPage() {
                   {liveUsers.length === 0 && <SelectItem value="_none" disabled>No one is live</SelectItem>}
                 </SelectContent>
               </Select>
+              <Input
+                value={manualTwitchChannel}
+                onChange={(e) => setManualTwitchChannel(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') applyManualTwitchChannel();
+                }}
+                placeholder="or type channel"
+                className="max-w-[180px]"
+              />
+              <Button variant="outline" onClick={applyManualTwitchChannel}>Open</Button>
               <Button variant={showVideo ? 'default' : 'outline'} size="icon" onClick={() => setShowVideo(!showVideo)} title={showVideo ? 'Hide video' : 'Show video'}>
                 {showVideo ? <Monitor className="h-4 w-4" /> : <MonitorOff className="h-4 w-4" />}
               </Button>
