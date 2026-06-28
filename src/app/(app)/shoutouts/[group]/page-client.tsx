@@ -405,8 +405,8 @@ function VipMemberCard({
     }, [channelId, serverId, streamer.dailyShoutout, streamer.username, toast]);
 
     return (
-        <Card className="grid md:grid-cols-12 overflow-hidden">
-            <div className="md:col-span-5 relative aspect-video md:aspect-auto w-full h-full group border-r-2 bg-black">
+        <Card className="grid overflow-hidden md:grid-cols-2 min-h-[360px] bg-gradient-to-tr from-primary/10 to-transparent">
+            <div className="relative aspect-video md:aspect-auto w-full min-h-[260px] md:min-h-[360px] group border-b-2 md:border-b-0 md:border-r-2 bg-black">
                  <Image
                     src={previewUrl}
                     alt={`Twitch clip from ${streamer.username}`}
@@ -423,15 +423,15 @@ function VipMemberCard({
                 </Badge>
             </div>
 
-            <div className="md:col-span-7 flex flex-col p-4">
+            <div className="flex min-w-0 flex-col p-5 md:p-6">
                 <CardHeader className="p-0">
                     <div className="flex items-start gap-4">
                          <Avatar className={`h-14 w-14 border-4 ${streamer.isOnline ? 'border-green-500' : 'border-gray-400'}`}>
                             <AvatarImage src={streamer.avatarUrl} alt={streamer.username} />
                             <AvatarFallback>{streamer.username.charAt(0)}</AvatarFallback>
                         </Avatar>
-                        <div className="flex-1">
-                            <CardTitle className="flex items-center gap-2 text-2xl">
+                        <div className="min-w-0 flex-1">
+                            <CardTitle className="flex items-center gap-2 text-2xl break-words">
                                <Star className="h-6 w-6 text-yellow-400" />
                                 <Link href={`https://twitch.tv/${streamer.username}`} target="_blank" rel="noopener noreferrer" className="hover:underline">
                                     {streamer.username}
@@ -440,15 +440,15 @@ function VipMemberCard({
                             <Badge variant="secondary" className="mt-1 w-fit">
                                 Honored Crew -+ Space Mountain VIP
                             </Badge>
-                            <CardDescription className="truncate">
+                            <CardDescription className="break-words">
                                {streamer.isOnline ? streamer.topic || 'Streaming now!' : 'Offline'}
                             </CardDescription>
                         </div>
                     </div>
                 </CardHeader>
                 <CardContent className="p-0 mt-4 flex-1 space-y-4">
-                    <div className="bg-muted/50 p-3 rounded-md text-sm text-muted-foreground flex-1">
-                        <p className="line-clamp-4">
+                    <div className="bg-muted/50 p-4 rounded-md text-sm text-muted-foreground">
+                        <p className="whitespace-pre-wrap break-words leading-relaxed">
                             {streamer.dailyShoutout?.description || 'A unique shoutout message will be generated when this VIP goes live.'}
                         </p>
                     </div>

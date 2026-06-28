@@ -697,19 +697,7 @@ class TwitchPollingService {
       const { getNextGifCdnUrl } = await import('./gif-rotation-service');
       const clip = await getNextGifCdnUrl(serverId, discordUserId, twitchLogin);
       const partnerImageUrl = clip || stream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080');
-      const bannerUrl = `${getAppUrl()}/api/media/banners/${twitchLogin.toLowerCase()}.gif?v=${Date.now()}`;
-      const { existsSync: bannerExists } = await import('fs');
-      const { join: joinPath } = await import('path');
-      const CLIP_PATH = getStoragePath();
-      const bannerFilePath = joinPath(CLIP_PATH, 'banners', `${twitchLogin.toLowerCase()}.gif`);
-      const resolvedBannerUrl = bannerExists(bannerFilePath) ? bannerUrl : null;
       spaceMountainImageUrl = partnerImageUrl;
-      spaceMountainBannerUrl = resolvedBannerUrl;
-
-      if (!resolvedBannerUrl) {
-        console.log(`[TwitchPolling] Partner banner missing for ${twitchLogin}; requesting worker backfill`);
-        await maybeRequestLiveBanner(serverId, discordUserId, twitchLogin);
-      }
       
       embed = {
         author: {
@@ -731,9 +719,7 @@ class TwitchPollingService {
         footer: { text: 'Twitch • Space Mountain Partner Shoutout' },
         timestamp: new Date().toISOString()
       };
-      embedsToSend = resolvedBannerUrl
-        ? [{ image: { url: resolvedBannerUrl }, color: 0x8B00FF }, embed]
-        : [embed];
+      embedsToSend = [embed];
       componentsToSend = [
         {
           type: 1,
