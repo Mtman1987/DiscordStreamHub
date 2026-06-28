@@ -38,9 +38,13 @@ export class StubDocRef {
 
 export class StubCollRef {
   _path: string;
+  _orderBy?: { field: string; direction: 'asc' | 'desc' };
+  _limit?: number;
 
-  constructor(path: string) {
+  constructor(path: string, options?: { orderBy?: { field: string; direction: 'asc' | 'desc' }; limit?: number }) {
     this._path = path;
+    this._orderBy = options?.orderBy;
+    this._limit = options?.limit;
   }
 
   get type() {
@@ -69,15 +73,25 @@ export function collection(storeOrRef: any, ...pathSegments: string[]): StubColl
 }
 
 export function query(ref: any, ..._constraints: any[]): any {
-  return ref;
+  if (!(ref instanceof StubCollRef)) return ref;
+  const next = new StubCollRef(ref._path, { orderBy: ref._orderBy, limit: ref._limit });
+  for (const constraint of _constraints) {
+    if (constraint?.type === 'orderBy') {
+      next._orderBy = { field: constraint.field, direction: constraint.direction };
+    }
+    if (constraint?.type === 'limit') {
+      next._limit = constraint.value;
+    }
+  }
+  return next;
 }
 
 export function orderBy(_field: string, _direction?: string): any {
-  return null;
+  return { type: 'orderBy', field: _field, direction: _direction === 'asc' ? 'asc' : 'desc' };
 }
 
 export function limit(_n: number): any {
-  return null;
+  return { type: 'limit', value: Math.max(0, Math.trunc(Number(_n || 0))) };
 }
 
 export function where(_field: string, _op: string, _value: any): any {
@@ -171,8 +185,25 @@ export function onSnapshot(ref: any, callback: (snap: any) => void, onError?: (e
   } else if (ref instanceof StubCollRef) {
     dbList(ref._path)
       .then(results => {
+        let orderedResults = [...results];
+        if (ref._orderBy?.field) {
+          const { field, direction } = ref._orderBy;
+          orderedResults.sort((a, b) => {
+            const left = a?.[field];
+            const right = b?.[field];
+            const leftValue = typeof left === 'number' ? left : Number(left ?? 0);
+            const rightValue = typeof right === 'number' ? right : Number(right ?? 0);
+            const result = Number.isFinite(leftValue) && Number.isFinite(rightValue)
+              ? leftValue - rightValue
+              : String(left ?? '').localeCompare(String(right ?? ''));
+            return direction === 'asc' ? result : -result;
+          });
+        }
+        if (typeof ref._limit === 'number' && ref._limit > 0) {
+          orderedResults = orderedResults.slice(0, ref._limit);
+        }
         callback({
-          docs: results.map(item => ({
+          docs: orderedResults.map(item => ({
             id: item.id,
             data: () => reviveTimestamps(item),
             ref: new StubDocRef(`${ref._path}/${item.id}`),

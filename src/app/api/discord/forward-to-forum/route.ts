@@ -83,6 +83,12 @@ type ForwardedMention = {
 
 type ForwardedEmbed = Record<string, any>;
 type ForwardedSticker = Record<string, any>;
+type ForwardedEmote = {
+  id: string;
+  name: string;
+  animated: boolean;
+  url: string;
+};
 
 type MediaExtraction = {
   description?: string;
@@ -166,6 +172,25 @@ function normalizeDiscordContent(message: string, mentions: ForwardedMention[]) 
   return normalized.trim();
 }
 
+function extractCustomEmotes(message: string): ForwardedEmote[] {
+  const emotes: ForwardedEmote[] = [];
+  const seen = new Set<string>();
+  for (const match of String(message || '').matchAll(/<(a?):([a-zA-Z0-9_]+):(\d+)>/g)) {
+    const animated = match[1] === 'a';
+    const name = match[2];
+    const id = match[3];
+    if (seen.has(id)) continue;
+    seen.add(id);
+    emotes.push({
+      id,
+      name,
+      animated,
+      url: `https://cdn.discordapp.com/emojis/${id}.${animated ? 'gif' : 'webp'}`,
+    });
+  }
+  return emotes;
+}
+
 function extractEmbedImageUrls(embeds: ForwardedEmbed[]) {
   return embeds
     .flatMap(embed => [
@@ -215,6 +240,7 @@ async function mirrorForwardToSpaceMountain(input: {
   embeds: ForwardedEmbed[];
   mentions: ForwardedMention[];
   stickers: ForwardedSticker[];
+  emotes: ForwardedEmote[];
 }) {
   const endpoint = (process.env.SPACEMOUNTAIN_FORUM_FORWARD_URL || 'https://spacemountain.live/api/integrations/dsh/forum-forward').trim();
   if (!endpoint) return;
@@ -226,6 +252,7 @@ async function mirrorForwardToSpaceMountain(input: {
     input.message,
     ...attachmentUrls.map(url => `Attachment: ${url}`),
     ...extractEmbedImageUrls(input.embeds).map(url => `Embed media: ${url}`),
+    ...input.emotes.map(emote => `Emote :${emote.name}: ${emote.url}`),
     ...input.stickers.map(sticker => `Sticker: ${String(sticker.name || sticker.id || 'sticker')}`),
   ].filter(Boolean).join('\n');
 
@@ -259,9 +286,15 @@ async function mirrorForwardToSpaceMountain(input: {
         authorName: input.userName,
         title: `${input.guildName} / #${input.channelName}`,
         content,
+        attachments: input.attachments,
         embeds: input.embeds,
         mentions: input.mentions.map(mention => ({ id: mention.id, username: displayNameForMention(mention) })),
+        mentionedUsers: input.mentions.reduce((acc: Record<string, string>, mention) => {
+          acc[mention.id] = displayNameForMention(mention);
+          return acc;
+        }, {}),
         stickers: input.stickers,
+        emotes: input.emotes,
         category: 'Discord Forward',
         postedAt: new Date().toISOString(),
       }),
@@ -449,6 +482,7 @@ export async function POST(request: NextRequest) {
     const mentions = normalizeMentions(data.mentions);
     const embeds = normalizeEmbeds(data.embeds);
     const stickers = normalizeStickers(data.sticker_items || data.stickers);
+    const emotes = extractCustomEmotes(message);
     const normalizedMessage = normalizeDiscordContent(message, mentions);
 
     if (!guildId) {
@@ -681,6 +715,7 @@ export async function POST(request: NextRequest) {
       mentions,
       stickers,
       attachments,
+      emotes,
     });
 
     // Keep the older spmt.live mirror for compatibility with the account/forum app.
@@ -699,6 +734,7 @@ export async function POST(request: NextRequest) {
           embeds,
           mentions: mentions.map(mention => ({ id: mention.id, username: displayNameForMention(mention) })),
           stickers,
+          emotes,
           attachments: normalizeAttachments(data.attachments),
         }),
       });
