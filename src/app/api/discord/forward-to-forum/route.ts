@@ -141,6 +141,73 @@ function extractForwardedMedia(message: string, attachments: ForwardedAttachment
   };
 }
 
+async function mirrorForwardToSpaceMountain(input: {
+  guildId: string;
+  guildName: string;
+  channelId: string;
+  channelName: string;
+  messageId: string;
+  userName: string;
+  userAvatar?: string;
+  message: string;
+  attachments: ForwardedAttachment[];
+}) {
+  const endpoint = (process.env.SPACEMOUNTAIN_FORUM_FORWARD_URL || 'https://spacemountain.live/api/integrations/dsh/forum-forward').trim();
+  if (!endpoint) return;
+
+  const attachmentUrls = input.attachments
+    .map(attachment => attachment.url || attachment.proxy_url)
+    .filter((url): url is string => Boolean(url));
+  const content = [
+    input.message,
+    ...attachmentUrls.map(url => `Attachment: ${url}`),
+  ].filter(Boolean).join('\n');
+
+  if (!content.trim()) return;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (process.env.SPACEMOUNTAIN_FORUM_FORWARD_TOKEN) {
+      headers.Authorization = `Bearer ${process.env.SPACEMOUNTAIN_FORUM_FORWARD_TOKEN}`;
+    }
+
+    const sourceMessageUrl = input.channelId && input.messageId
+      ? `https://discord.com/channels/${input.guildId}/${input.channelId}/${input.messageId}`
+      : null;
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers,
+      signal: controller.signal,
+      body: JSON.stringify({
+        id: input.messageId ? `${input.guildId}_${input.messageId}` : undefined,
+        sourceApp: 'discord-stream-hub',
+        sourceServerId: input.guildId,
+        sourceChannelId: input.channelId,
+        sourceChannelName: input.channelName,
+        sourceMessageId: input.messageId || undefined,
+        sourceMessageUrl,
+        authorName: input.userName,
+        title: `${input.guildName} / #${input.channelName}`,
+        content,
+        category: 'Discord Forward',
+        postedAt: new Date().toISOString(),
+      }),
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      console.warn(`[ForwardForum] SpaceMountain forum mirror returned ${response.status}: ${text.slice(0, 200)}`);
+    }
+  } catch (error) {
+    console.warn('[ForwardForum] SpaceMountain forum mirror failed:', error);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function getForwardedThreadId(sourceServerId: string, channelId?: string): Promise<string | null> {
   try {
     const doc = await db
@@ -435,7 +502,20 @@ export async function POST(request: NextRequest) {
 
     console.log(`[ForwardForum] Forwarded message from ${userName} (${guildName}/#${channelName}) → thread ${threadId}`);
 
-    // Also forward to spmt.live forum for spacemountain.live display
+    // Also forward directly into the SpaceMountain website forum feed.
+    await mirrorForwardToSpaceMountain({
+      guildId,
+      guildName,
+      channelId: channelId || guildId,
+      channelName,
+      messageId,
+      userName,
+      userAvatar,
+      message,
+      attachments,
+    });
+
+    // Keep the older spmt.live mirror for compatibility with the account/forum app.
     try {
       await fetch('https://spmt.live/api/forum/forward', {
         method: 'POST',
