@@ -80,6 +80,7 @@ type MediaExtraction = {
   attachmentUrls: string[];
 };
 
+const THREAD_CHANNEL_TYPES = new Set([10, 11, 12]);
 const URL_PATTERN = /https?:\/\/[^\s<>()]+/gi;
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
 
@@ -146,6 +147,7 @@ async function mirrorForwardToSpaceMountain(input: {
   guildName: string;
   channelId: string;
   channelName: string;
+  messageChannelId?: string;
   messageId: string;
   userName: string;
   userAvatar?: string;
@@ -173,8 +175,9 @@ async function mirrorForwardToSpaceMountain(input: {
       headers.Authorization = `Bearer ${process.env.SPACEMOUNTAIN_FORUM_FORWARD_TOKEN}`;
     }
 
-    const sourceMessageUrl = input.channelId && input.messageId
-      ? `https://discord.com/channels/${input.guildId}/${input.channelId}/${input.messageId}`
+    const sourceMessageChannelId = input.messageChannelId || input.channelId;
+    const sourceMessageUrl = sourceMessageChannelId && input.messageId
+      ? `https://discord.com/channels/${input.guildId}/${sourceMessageChannelId}/${input.messageId}`
       : null;
 
     const response = await fetch(endpoint, {
@@ -281,6 +284,39 @@ async function ensureThreadCanReceiveMessages(threadId: string): Promise<boolean
   return true;
 }
 
+async function resolveForwardingSourceChannel(channelId: string): Promise<{
+  sourceChannelId: string;
+  sourceChannelName: string;
+  messageChannelId: string;
+}> {
+  if (!channelId) {
+    return {
+      sourceChannelId: '',
+      sourceChannelName: 'unknown',
+      messageChannelId: '',
+    };
+  }
+
+  const details = await getChannelDetails(channelId);
+  const channelType = Number(details?.type);
+  const parentId = typeof details?.parent_id === 'string' ? details.parent_id : '';
+
+  if (THREAD_CHANNEL_TYPES.has(channelType) && parentId) {
+    const parent = await getChannelDetails(parentId);
+    return {
+      sourceChannelId: parentId,
+      sourceChannelName: parent?.name || parentId,
+      messageChannelId: channelId,
+    };
+  }
+
+  return {
+    sourceChannelId: channelId,
+    sourceChannelName: details?.name || await getChannelName(channelId),
+    messageChannelId: channelId,
+  };
+}
+
 function shouldMirrorMessage(message: string) {
   const trimmed = message.trim();
   if (!trimmed) return false;
@@ -340,7 +376,7 @@ export async function POST(request: NextRequest) {
     const userName = data.userName || data.displayName || data.username || 'Unknown';
     const userAvatar = data.userAvatar || data.avatarUrl || '';
     const message = data.message || data.content || '';
-    const channelId = data.channelId || '';
+    const messageChannelId = data.channelId || '';
     const messageId = data.messageId || '';
     const attachments = normalizeAttachments(data.attachments);
 
@@ -356,10 +392,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, skipped: 'command-message' });
     }
 
-    const [guildName, channelName] = await Promise.all([
+    const [guildName, sourceChannel] = await Promise.all([
       getGuildName(guildId),
-      channelId ? getChannelName(channelId) : Promise.resolve('unknown'),
+      resolveForwardingSourceChannel(messageChannelId),
     ]);
+    const channelId = sourceChannel.sourceChannelId || messageChannelId;
+    const channelName = sourceChannel.sourceChannelName;
 
     const media = extractForwardedMedia(message, attachments);
 
@@ -502,7 +540,8 @@ export async function POST(request: NextRequest) {
         forwardedMessageId,
         forwardedThreadId: threadId,
         originGuildId: guildId,
-        originChannelId: channelId,
+        originChannelId: messageChannelId,
+        originSourceChannelId: channelId,
         originMessageId: messageId,
         originUserName: userName,
         originUserAvatar: userAvatar,
@@ -542,6 +581,7 @@ export async function POST(request: NextRequest) {
       guildName,
       channelId: channelId || guildId,
       channelName,
+      messageChannelId,
       messageId,
       userName,
       userAvatar,
@@ -556,6 +596,7 @@ export async function POST(request: NextRequest) {
         headers: { 'Content-Type': 'application/json', 'x-spmt-key': process.env.SPMT_SYSTEM_KEY || '' },
         body: JSON.stringify({
           channelId: channelId || guildId,
+          messageChannelId,
           channelName,
           guildName,
           userName,
