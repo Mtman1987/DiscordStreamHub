@@ -360,6 +360,69 @@ class TwitchPollingService {
     // This method is no longer used - replaced by pollTwitchStreams batch processing
   }
 
+  private async forwardShoutoutToSpaceMountain(input: {
+    serverId: string;
+    discordUserId: string;
+    channelId?: string | null;
+    messageId?: string | null;
+    twitchLogin: string;
+    group: string;
+    stream?: any;
+    isLive?: boolean;
+    isSpotlight?: boolean;
+  }): Promise<void> {
+    const endpoint = (process.env.SPACEMOUNTAIN_SHOUTOUT_FEED_URL || 'https://spacemountain.live/api/integrations/dsh/shoutout').trim();
+    if (!endpoint) return;
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (process.env.SPACEMOUNTAIN_SHOUTOUT_TOKEN) {
+        headers.Authorization = `Bearer ${process.env.SPACEMOUNTAIN_SHOUTOUT_TOKEN}`;
+      }
+
+      const sourceMessageUrl = input.channelId && input.messageId
+        ? `https://discord.com/channels/${input.serverId}/${input.channelId}/${input.messageId}`
+        : null;
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        signal: controller.signal,
+        body: JSON.stringify({
+          id: `${input.serverId}_${input.discordUserId}`,
+          sourceApp: 'discord-stream-hub',
+          serverId: input.serverId,
+          discordUserId: input.discordUserId,
+          sourceChannelId: input.channelId || null,
+          sourceMessageId: input.messageId || null,
+          sourceMessageUrl,
+          twitchLogin: input.twitchLogin,
+          displayName: input.stream?.user_name || input.twitchLogin,
+          group: input.group,
+          title: input.stream?.title || null,
+          gameName: input.stream?.game_name || null,
+          viewerCount: Number(input.stream?.viewer_count || 0),
+          imageUrl: input.stream?.thumbnail_url || null,
+          streamUrl: `https://twitch.tv/${input.twitchLogin}`,
+          isLive: input.isLive !== false,
+          isSpotlight: Boolean(input.isSpotlight),
+          startedAt: input.stream?.started_at || null,
+          updatedAt: new Date().toISOString(),
+        }),
+      });
+
+      if (!response.ok) {
+        console.warn(`[TwitchPolling] SpaceMountain shoutout feed returned ${response.status} for ${input.twitchLogin}`);
+      }
+    } catch (error) {
+      console.warn(`[TwitchPolling] Could not forward shoutout to SpaceMountain for ${input.twitchLogin}:`, error);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   private async postNewShoutout(serverId: string, discordUserId: string, twitchLogin: string, stream: any, state: PollingState): Promise<void> {
     const lastShoutout = state.lastShoutouts[twitchLogin];
     // Only enforce cooldown if user currently has an active shoutout
@@ -404,6 +467,18 @@ class TwitchPollingService {
       if (group === 'Honored Guests' || group === 'Everyone Else') {
         await this.repostSpotlightPinnedEmbed(serverId, shoutoutChannelId);
       }
+
+      await this.forwardShoutoutToSpaceMountain({
+        serverId,
+        discordUserId,
+        channelId: shoutoutChannelId,
+        messageId,
+        twitchLogin,
+        group,
+        stream,
+        isLive: true,
+        isSpotlight: group === 'Honored Guests',
+      });
 
       state.lastShoutouts[twitchLogin] = new Date();
       await this.saveLastShoutout(serverId, twitchLogin, new Date());
@@ -655,6 +730,17 @@ class TwitchPollingService {
       // Save embed to file storage
       const { setUserEmbed } = await import('./embed-storage');
       await setUserEmbed(serverId, discordUserId, embedsToSend.length > 0 ? embedsToSend[embedsToSend.length - 1] : embed);
+      await this.forwardShoutoutToSpaceMountain({
+        serverId,
+        discordUserId,
+        channelId: shoutoutState.channelId,
+        messageId: shoutoutState.messageId,
+        twitchLogin: stream.user_login,
+        group,
+        stream,
+        isLive: true,
+        isSpotlight: group === 'Honored Guests',
+      });
       
       console.log(`[TwitchPolling] Updated shoutout for ${stream.user_login}`);
     } catch (error) {
@@ -681,6 +767,17 @@ class TwitchPollingService {
               channelId,
               lastUpdated: new Date()
             });
+            await this.forwardShoutoutToSpaceMountain({
+              serverId,
+              discordUserId,
+              channelId,
+              messageId: newMessageId,
+              twitchLogin: stream.user_login,
+              group,
+              stream,
+              isLive: true,
+              isSpotlight: group === 'Honored Guests',
+            });
             console.log(`[TwitchPolling] ✅ Reposted fresh shoutout for ${stream.user_login} (new msg: ${newMessageId})`);
           } else {
             console.error(`[TwitchPolling] ❌ Failed to repost fresh shoutout for ${stream.user_login}`);
@@ -706,6 +803,17 @@ class TwitchPollingService {
               messageId: newMessageId,
               channelId,
               lastUpdated: new Date()
+            });
+            await this.forwardShoutoutToSpaceMountain({
+              serverId,
+              discordUserId,
+              channelId,
+              messageId: newMessageId,
+              twitchLogin,
+              group,
+              stream,
+              isLive: true,
+              isSpotlight: group === 'Honored Guests',
             });
             console.log(`[TwitchPolling] ✅ Self-healed: reposted shoutout for ${twitchLogin} (new msg: ${newMessageId})`);
           } else {
@@ -738,6 +846,18 @@ class TwitchPollingService {
     
     await db.collection('servers').doc(serverId).collection('users').doc(discordUserId)
       .collection('shoutoutState').doc('current').delete();
+
+    if (shoutoutState?.twitchLogin) {
+      await this.forwardShoutoutToSpaceMountain({
+        serverId,
+        discordUserId,
+        channelId: shoutoutState.channelId,
+        messageId: shoutoutState.messageId,
+        twitchLogin: shoutoutState.twitchLogin,
+        group: shoutoutState.group || 'Everyone Else',
+        isLive: false,
+      });
+    }
 
     // Clear cached embed from file storage
     const { clearUserEmbed } = await import('./embed-storage');
