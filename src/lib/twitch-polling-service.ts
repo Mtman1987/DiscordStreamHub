@@ -566,6 +566,8 @@ class TwitchPollingService {
         await this.repostSpotlightPinnedEmbed(serverId, shoutoutChannelId);
       }
 
+      const currentSpotlightDoc = await db.collection('servers').doc(serverId).collection('spotlight').doc('current').get();
+      const isCurrentSpotlight = currentSpotlightDoc.exists && currentSpotlightDoc.data()?.userId === discordUserId;
       await this.forwardShoutoutToSpaceMountain({
         serverId,
         discordUserId,
@@ -575,7 +577,7 @@ class TwitchPollingService {
         group,
         stream,
         isLive: true,
-        isSpotlight: group === 'Honored Guests',
+        isSpotlight: isCurrentSpotlight,
       });
 
       state.lastShoutouts[twitchLogin] = new Date();
@@ -596,6 +598,8 @@ class TwitchPollingService {
     let componentsToSend: any[] | undefined = undefined;
     let spaceMountainImageUrl: string | null = null;
     let spaceMountainBannerUrl: string | null = null;
+    const currentSpotlightDoc = await db.collection('servers').doc(serverId).collection('spotlight').doc('current').get();
+    const isCurrentSpotlight = currentSpotlightDoc.exists && currentSpotlightDoc.data()?.userId === discordUserId;
     
     if (group === 'Crew') {
       const { getUserByLogin } = await import('./twitch-api-service');
@@ -749,8 +753,7 @@ class TwitchPollingService {
       const userInfo = await getUserByLogin(twitchLogin);
       
       // Check if user is in community spotlight
-      const spotlightDoc = await db.collection('servers').doc(serverId).collection('spotlight').doc('current').get();
-      const isSpotlight = spotlightDoc.exists && spotlightDoc.data()?.userId === discordUserId;
+      const isSpotlight = isCurrentSpotlight;
       
       let imageUrl = stream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080');
       
@@ -799,8 +802,7 @@ class TwitchPollingService {
       const userInfo = await getUserByLogin(twitchLogin);
       
       // Check if user is in community spotlight
-      const spotlightDoc = await db.collection('servers').doc(serverId).collection('spotlight').doc('current').get();
-      const isSpotlight = spotlightDoc.exists && spotlightDoc.data()?.userId === discordUserId;
+      const isSpotlight = isCurrentSpotlight;
       
       let imageUrl = stream.thumbnail_url.replace('{width}', '1920').replace('{height}', '1080');
       
@@ -849,7 +851,7 @@ class TwitchPollingService {
         imageUrl: spaceMountainImageUrl,
         bannerUrl: spaceMountainBannerUrl,
         isLive: true,
-        isSpotlight: group === 'Honored Guests',
+        isSpotlight: isCurrentSpotlight,
       });
       
       console.log(`[TwitchPolling] Updated shoutout for ${stream.user_login}`);
@@ -886,7 +888,7 @@ class TwitchPollingService {
               group,
               stream,
               isLive: true,
-              isSpotlight: group === 'Honored Guests',
+              isSpotlight: isCurrentSpotlight,
             });
             console.log(`[TwitchPolling] ✅ Reposted fresh shoutout for ${stream.user_login} (new msg: ${newMessageId})`);
           } else {
@@ -923,7 +925,7 @@ class TwitchPollingService {
               group,
               stream,
               isLive: true,
-              isSpotlight: group === 'Honored Guests',
+              isSpotlight: isCurrentSpotlight,
             });
             console.log(`[TwitchPolling] ✅ Self-healed: reposted shoutout for ${twitchLogin} (new msg: ${newMessageId})`);
           } else {
