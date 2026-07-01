@@ -8,16 +8,12 @@ import {
   getChatTagWebhookName,
   getDiscordActivityApplicationId,
   getDiscordActivityVoiceChannelId,
-  getDiscordChatHandleWatchEnabled,
   getDiscordClientId,
   getHardcodedGuildId,
+  getHearMeOutUrl,
   getSpaceMountainIconUrl as getConfiguredSpaceMountainIconUrl,
 } from '@/lib/runtime-config';
 import { recordDiscordMessageActivity } from '@/lib/discord-activity-service';
-// watch-request-service moved to hearmeout
-const handleWatchRequestCommand = async (...args: any[]) => null;
-const parseWatchAcceptCommand = (s: string) => null;
-const parseWatchCommand = (s: string) => null;
 
 const COOLDOWN_MS = 5 * 60 * 1000; // 1 point per 5 min per user
 const discordChatCooldowns = new Map<string, number>();
@@ -340,6 +336,21 @@ async function sendHearMeOutControls(channelId: string, userId?: string, origin?
   return sendDiscordChannelMessage(channelId, payload);
 }
 
+async function forwardHearMeOutDiscordChat(payload: any) {
+  const hearMeOutUrl = getHearMeOutUrl().replace(/\/$/, '');
+  const response = await fetch(`${hearMeOutUrl}/api/discord/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal: timeoutSignal(20_000),
+  });
+  const result = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(result?.error || `HearMeOut returned ${response.status}`);
+  }
+  return result;
+}
+
 export async function POST(request: NextRequest) {
   try {
     let body: any;
@@ -462,25 +473,31 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const watchCommand = parseWatchCommand(message) || parseWatchAcceptCommand(message);
     const isForwardedWatchCommand = /^!(wr|watch)(?:\s|$)/i.test(message) || /^!(add|accept)$/i.test(message.trim());
-    if ((watchCommand || isForwardedWatchCommand) && channelId) {
-      if (getDiscordChatHandleWatchEnabled()) {
-        console.log(`[DiscordChat] Watch request command detected from ${userName}: ${message} (channelId: ${channelId})`);
-        await handleWatchRequestCommand({
+    if (isForwardedWatchCommand && channelId) {
+      console.log(`[DiscordChat] Forwarding watch request to HearMeOut from ${userName}: ${message} (channelId: ${channelId})`);
+      try {
+        const result = await forwardHearMeOutDiscordChat({
+          ...data,
           message,
-          discordUserId: userId,
-          discordUserName: userName,
+          content: message,
+          userId,
+          userName,
+          displayName: userName,
           guildId,
+          serverId: guildId,
           channelId,
-          userMessageId: messageId,
-          publicBaseUrl: request.nextUrl.origin,
+          messageId,
+          source: 'discord-stream-hub',
         });
-        return NextResponse.json({ success: true, commandHandled: 'watch-request' });
+        return NextResponse.json({ success: true, commandHandled: 'watch-request', hearmeout: result });
+      } catch (error: any) {
+        const sent = await sendDiscordChannelMessage(channelId, {
+          content: `HearMeOut could not handle that watch request: ${error?.message || 'unknown error'}`,
+          allowed_mentions: { parse: [] },
+        });
+        return NextResponse.json({ success: false, commandHandled: 'watch-request', error: error?.message || 'HearMeOut request failed', sent }, { status: 502 });
       }
-      console.log(`[DiscordChat] Watch request command skipped because DISCORD_CHAT_HANDLE_WATCH is not true: ${message}`);
-      const deletedCommand = await deleteDiscordMessage(channelId, messageId);
-      return NextResponse.json({ success: true, skipped: 'watch-command-routed-externally', deletedCommand });
     }
 
     // DSH owns button-posting flows. Regular Chat Tag commands are handled directly by
