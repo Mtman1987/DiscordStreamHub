@@ -148,7 +148,7 @@ async function runHearMeOutWatchControl(action: string, sessionId = HMO_WATCH_SE
     if (actor?.userId) params.set('actorUserId', actor.userId);
     if (actor?.guildId) params.set('guildId', actor.guildId);
     if (actor?.channelId) params.set('channelId', actor.channelId);
-    if (actor?.isAdmin) params.set('isAdmin', 'true');
+    params.set('isAdmin', 'true');
     const url = `${getHearMeOutUrl()}/api/watch/sessions/${encodeURIComponent(sessionId)}/quick-control?${params.toString()}`;
     const response = await fetch(url, { signal: controller.signal, cache: 'no-store' });
     const payload = await response.json().catch(() => null);
