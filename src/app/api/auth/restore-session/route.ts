@@ -12,19 +12,22 @@ export async function GET(request: Request) {
       url.searchParams.get('discordServerId') ||
       getHardcodedGuildId();
 
-    const serverConfig = db.get('servers', requestedServerId) || db.get('userSessions', requestedServerId);
+    const storedSession = db.get('userSessions', requestedServerId);
+    const serverConfig = storedSession || db.get('servers', requestedServerId);
     
     if (serverConfig) {
       return NextResponse.json({
         success: true,
         serverId: requestedServerId,
-        userId: serverConfig.ownerId || '',
+        userId: serverConfig.discordUserId || serverConfig.ownerId || '',
         twitchUsername: serverConfig.twitchUsername || '',
         discordUserId: serverConfig.discordUserId || '',
         discordUsername: serverConfig.discordUsername || '',
+        discordDisplayName: serverConfig.discordDisplayName || serverConfig.discordUsername || '',
         discordAvatar: serverConfig.discordAvatar || '',
         serverName: serverConfig.serverName || '',
         iconUrl: serverConfig.iconUrl || '',
+        isAdmin: Boolean(serverConfig.isAdmin),
       });
     }
     

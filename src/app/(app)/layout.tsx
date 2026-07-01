@@ -2,6 +2,7 @@
 
 import React from 'react';
 import Image from 'next/image';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   Sidebar,
   SidebarProvider,
@@ -18,6 +19,70 @@ import { UserNav } from './_components/user-nav';
 import { DataClientProvider } from '@/data';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const [sessionReady, setSessionReady] = React.useState(false);
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    async function hydrateSession() {
+      try {
+        const existingServerId = window.localStorage.getItem('discordServerId');
+        const searchParams = new URLSearchParams(window.location.search);
+        const queryServerId = searchParams.get('serverId') || searchParams.get('guildId') || searchParams.get('discordServerId');
+        const query = queryServerId ? `?serverId=${encodeURIComponent(queryServerId)}` : '';
+        const response = await fetch(`/api/auth/restore-session${query}`, { cache: 'no-store' });
+        const data = response.ok ? await response.json() : null;
+
+        if (cancelled) return;
+
+        if (data?.success && data.serverId) {
+          window.localStorage.setItem('discordServerId', data.serverId);
+          if (data.discordUserId || data.userId) window.localStorage.setItem('discordUserId', data.discordUserId || data.userId);
+          if (data.twitchUsername) window.localStorage.setItem('twitchUsername', data.twitchUsername);
+          if (data.discordUsername) window.localStorage.setItem('discordUsername', data.discordUsername);
+          if (data.discordDisplayName) window.localStorage.setItem('discordDisplayName', data.discordDisplayName);
+          if (data.discordAvatar) window.localStorage.setItem('discordAvatar', data.discordAvatar);
+          if (data.serverName) window.localStorage.setItem('serverName', data.serverName);
+          if (data.iconUrl) window.localStorage.setItem('serverIconUrl', data.iconUrl);
+          window.localStorage.setItem('isLoggedIn', 'true');
+          window.dispatchEvent(new Event('dsh-session-restored'));
+          setSessionReady(true);
+          return;
+        }
+
+        if (existingServerId || window.localStorage.getItem('isLoggedIn') === 'true') {
+          setSessionReady(true);
+          return;
+        }
+
+        router.replace(`/login?next=${encodeURIComponent(pathname || '/dashboard')}`);
+      } catch (error) {
+        if (cancelled) return;
+        if (window.localStorage.getItem('discordServerId') || window.localStorage.getItem('isLoggedIn') === 'true') {
+          setSessionReady(true);
+          return;
+        }
+        router.replace(`/login?next=${encodeURIComponent(pathname || '/dashboard')}`);
+      }
+    }
+
+    hydrateSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pathname, router]);
+
+  if (!sessionReady) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background text-sm text-muted-foreground">
+        Checking Discord Stream Hub session...
+      </div>
+    );
+  }
+
   return (
     <DataClientProvider>
       <SidebarProvider collapsible="icon">
