@@ -80,18 +80,41 @@ function getHearMeOutUrl() {
   return getHearMeOutUrlFromRuntime().replace(/\/$/, '');
 }
 
-async function fetchHearMeOutWatchSession(signal: AbortSignal) {
-  const url = `${getHearMeOutUrl()}/api/watch/sessions/${HMO_WATCH_SESSION_ID}?format=json`;
+function parseHearMeOutControlId(customId: string) {
+  const [, action = '', ...sessionParts] = customId.split(':');
+  return {
+    action,
+    sessionId: sessionParts.join(':') || HMO_WATCH_SESSION_ID,
+  };
+}
+
+function buildHearMeOutControls(sessionId = HMO_WATCH_SESSION_ID) {
+  const id = (action: string) => `hmo_watch_control:${action}:${sessionId}`;
+  return [
+    {
+      type: 1,
+      components: [
+        { type: 2, style: 3, label: 'Play/Pause', custom_id: id('play-pause'), emoji: { name: '⏯️' } },
+        { type: 2, style: 2, label: 'Mute/Unmute', custom_id: id('mute-unmute'), emoji: { name: '🔇' } },
+        { type: 2, style: 1, label: 'Next', custom_id: id('next'), emoji: { name: '⏭️' } },
+        { type: 2, style: 4, label: 'Clear', custom_id: id('clear'), emoji: { name: '🧹' } },
+      ],
+    },
+  ];
+}
+
+async function fetchHearMeOutWatchSession(signal: AbortSignal, sessionId = HMO_WATCH_SESSION_ID) {
+  const url = `${getHearMeOutUrl()}/api/watch/sessions/${encodeURIComponent(sessionId)}?format=json`;
   const response = await fetch(url, { signal, cache: 'no-store' });
   const payload = await response.json().catch(() => null);
   if (!response.ok) return null;
   return payload?.session || payload;
 }
 
-async function resolveHearMeOutToggleAction(action: string, signal: AbortSignal) {
+async function resolveHearMeOutToggleAction(action: string, signal: AbortSignal, sessionId = HMO_WATCH_SESSION_ID) {
   if (action !== 'play-pause' && action !== 'mute-unmute') return action;
 
-  const session = await fetchHearMeOutWatchSession(signal).catch(() => null);
+  const session = await fetchHearMeOutWatchSession(signal, sessionId).catch(() => null);
   if (action === 'play-pause') {
     return session?.playback?.status === 'playing' ? 'pause' : 'play';
   }
@@ -99,12 +122,12 @@ async function resolveHearMeOutToggleAction(action: string, signal: AbortSignal)
   return session?.playback?.muted === true ? 'unmute' : 'mute';
 }
 
-async function runHearMeOutWatchControl(action: string) {
+async function runHearMeOutWatchControl(action: string, sessionId = HMO_WATCH_SESSION_ID) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10_000);
   try {
-    const resolvedAction = await resolveHearMeOutToggleAction(action, controller.signal);
-    const url = `${getHearMeOutUrl()}/api/watch/sessions/${HMO_WATCH_SESSION_ID}/quick-control?action=${encodeURIComponent(resolvedAction)}&format=json`;
+    const resolvedAction = await resolveHearMeOutToggleAction(action, controller.signal, sessionId);
+    const url = `${getHearMeOutUrl()}/api/watch/sessions/${encodeURIComponent(sessionId)}/quick-control?action=${encodeURIComponent(resolvedAction)}&format=json&platform=discord`;
     const response = await fetch(url, { signal: controller.signal, cache: 'no-store' });
     const payload = await response.json().catch(() => null);
     if (!response.ok) {
@@ -169,10 +192,18 @@ export async function POST(request: NextRequest) {
     const customId: string | undefined = body.data?.custom_id;
 
     if (body.type === 3 && customId) {
+      if (customId.startsWith('hmo_watch_controls:')) {
+        const sessionId = customId.split(':').slice(1).join(':') || HMO_WATCH_SESSION_ID;
+        return ephemeral('HearMeOut controls', {
+          components: buildHearMeOutControls(sessionId),
+          allowed_mentions: { parse: [] },
+        });
+      }
+
       if (customId.startsWith('hmo_watch_control:')) {
-        const action = customId.split(':')[1] || '';
+        const { action, sessionId } = parseHearMeOutControlId(customId);
         const applicationId = body.application_id || getDiscordClientId();
-        runHearMeOutWatchControl(action)
+        runHearMeOutWatchControl(action, sessionId)
           .then((result) => updateDeferredInteraction(applicationId, body.token, result.ok ? `✅ ${result.message}` : `❌ ${result.message}`))
           .catch((error) => updateDeferredInteraction(applicationId, body.token, `❌ ${error?.message || 'HearMeOut control request failed.'}`));
 
