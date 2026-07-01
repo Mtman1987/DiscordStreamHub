@@ -80,6 +80,14 @@ function getHearMeOutUrl() {
   return getHearMeOutUrlFromRuntime().replace(/\/$/, '');
 }
 
+function discordMemberCanManageWatch(member: any) {
+  const permissions = BigInt(String(member?.permissions || '0') || '0');
+  const ADMINISTRATOR = BigInt(0x8);
+  const MANAGE_MESSAGES = BigInt(0x2000);
+  const MANAGE_GUILD = BigInt(0x20);
+  return Boolean(permissions & ADMINISTRATOR || permissions & MANAGE_MESSAGES || permissions & MANAGE_GUILD);
+}
+
 function parseHearMeOutControlId(customId: string) {
   const [, action = '', ...sessionParts] = customId.split(':');
   return {
@@ -122,12 +130,26 @@ async function resolveHearMeOutToggleAction(action: string, signal: AbortSignal,
   return session?.playback?.muted === true ? 'unmute' : 'mute';
 }
 
-async function runHearMeOutWatchControl(action: string, sessionId = HMO_WATCH_SESSION_ID) {
+async function runHearMeOutWatchControl(action: string, sessionId = HMO_WATCH_SESSION_ID, actor?: {
+  userId?: string;
+  guildId?: string;
+  channelId?: string;
+  isAdmin?: boolean;
+}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10_000);
   try {
     const resolvedAction = await resolveHearMeOutToggleAction(action, controller.signal, sessionId);
-    const url = `${getHearMeOutUrl()}/api/watch/sessions/${encodeURIComponent(sessionId)}/quick-control?action=${encodeURIComponent(resolvedAction)}&format=json&platform=discord`;
+    const params = new URLSearchParams({
+      action: resolvedAction,
+      format: 'json',
+      platform: 'discord',
+    });
+    if (actor?.userId) params.set('actorUserId', actor.userId);
+    if (actor?.guildId) params.set('guildId', actor.guildId);
+    if (actor?.channelId) params.set('channelId', actor.channelId);
+    if (actor?.isAdmin) params.set('isAdmin', 'true');
+    const url = `${getHearMeOutUrl()}/api/watch/sessions/${encodeURIComponent(sessionId)}/quick-control?${params.toString()}`;
     const response = await fetch(url, { signal: controller.signal, cache: 'no-store' });
     const payload = await response.json().catch(() => null);
     if (!response.ok) {
@@ -203,7 +225,12 @@ export async function POST(request: NextRequest) {
       if (customId.startsWith('hmo_watch_control:')) {
         const { action, sessionId } = parseHearMeOutControlId(customId);
         const applicationId = body.application_id || getDiscordClientId();
-        runHearMeOutWatchControl(action, sessionId)
+        runHearMeOutWatchControl(action, sessionId, {
+          userId: body.member?.user?.id || body.user?.id,
+          guildId: body.guild_id,
+          channelId: body.channel_id,
+          isAdmin: discordMemberCanManageWatch(body.member),
+        })
           .then((result) => updateDeferredInteraction(applicationId, body.token, result.ok ? `✅ ${result.message}` : `❌ ${result.message}`))
           .catch((error) => updateDeferredInteraction(applicationId, body.token, `❌ ${error?.message || 'HearMeOut control request failed.'}`));
 
