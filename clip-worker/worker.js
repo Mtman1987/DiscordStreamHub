@@ -173,15 +173,19 @@ async function fetchBannerTemplate(templatePath) {
 }
 
 async function renderBannerGifFromHtml(html, bannerName) {
-  const tempHtml = path.join(os.tmpdir(), `banner_${bannerName}_${Date.now()}.html`);
-  const tempGif = path.join(os.tmpdir(), `banner_${bannerName}_${Date.now()}.gif`);
-  const palette = path.join(os.tmpdir(), `banner_${bannerName}_${Date.now()}_palette.png`);
+  const renderId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const safeBannerName = String(bannerName || 'banner').replace(/[^a-z0-9_-]/gi, '_').slice(0, 64);
+  const frameDir = path.join(os.tmpdir(), `banner_${safeBannerName}_${renderId}_frames`);
+  const tempHtml = path.join(os.tmpdir(), `banner_${safeBannerName}_${renderId}.html`);
+  const tempGif = path.join(os.tmpdir(), `banner_${safeBannerName}_${renderId}.gif`);
+  const palette = path.join(os.tmpdir(), `banner_${safeBannerName}_${renderId}_palette.png`);
   const fps = 30;
   const duration = 10;
   const framePaths = [];
   let browser;
 
   try {
+    await fs.mkdir(frameDir, { recursive: true });
     await fs.writeFile(tempHtml, html);
     const puppeteer = require('puppeteer-core');
     browser = await puppeteer.launch({
@@ -197,7 +201,7 @@ async function renderBannerGifFromHtml(html, bannerName) {
 
     const frameCount = Math.floor(duration * fps);
     for (let i = 0; i < frameCount; i++) {
-      const framePath = path.join(os.tmpdir(), `banner_${bannerName}_frame_${String(i).padStart(3, '0')}.png`);
+      const framePath = path.join(frameDir, `frame_${String(i).padStart(3, '0')}.png`);
       const screenshot = await page.screenshot({ type: 'png' });
       await fs.writeFile(framePath, screenshot);
       framePaths.push(framePath);
@@ -207,8 +211,9 @@ async function renderBannerGifFromHtml(html, bannerName) {
     await browser.close();
     browser = null;
 
-    await execAsync(`ffmpeg -y -framerate ${fps} -i "${path.join(os.tmpdir(), `banner_${bannerName}_frame_%03d.png`)}" -vf "palettegen" "${palette}"`);
-    await execAsync(`ffmpeg -y -framerate ${fps} -i "${path.join(os.tmpdir(), `banner_${bannerName}_frame_%03d.png`)}" -i "${palette}" -filter_complex "paletteuse" "${tempGif}"`);
+    const framePattern = path.join(frameDir, 'frame_%03d.png');
+    await execAsync(`ffmpeg -y -framerate ${fps} -i "${framePattern}" -vf "palettegen" "${palette}"`);
+    await execAsync(`ffmpeg -y -framerate ${fps} -i "${framePattern}" -i "${palette}" -filter_complex "paletteuse" "${tempGif}"`);
 
     const gifBuffer = await fs.readFile(tempGif);
     return gifBuffer;
@@ -220,6 +225,7 @@ async function renderBannerGifFromHtml(html, bannerName) {
     for (const framePath of framePaths) {
       await fs.unlink(framePath).catch(() => {});
     }
+    await fs.rm(frameDir, { recursive: true, force: true }).catch(() => {});
   }
 }
 

@@ -1,6 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { registerManualDiscordShoutout } from '@/lib/manual-discord-shoutout-service';
 
+function extractTwitchLogin(value: unknown): string {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const firstToken = raw.split(/\s+/)[0] || '';
+  return firstToken
+    .replace(/^https?:\/\/(www\.)?twitch\.tv\//i, '')
+    .replace(/^@/, '')
+    .replace(/\/+$/, '')
+    .replace(/[^a-z0-9_]/gi, '')
+    .toLowerCase()
+    .slice(0, 25);
+}
+
 export async function POST(request: NextRequest) {
   try {
     const authHeader = request.headers.get('authorization');
@@ -13,7 +26,8 @@ export async function POST(request: NextRequest) {
     const channelId = String(body.channelId || '').trim();
     const requesterName = String(body.requesterName || '').trim();
     const requesterDiscordId = String(body.requesterDiscordId || '').trim() || null;
-    const targetName = String(body.targetName || '').trim();
+    const rawTargetName = String(body.targetName || '').trim();
+    const targetName = extractTwitchLogin(rawTargetName);
     const targetDiscordUserId = String(body.targetDiscordUserId || '').trim() || null;
     const sourceMessageId = String(body.sourceMessageId || '').trim() || null;
 
@@ -21,6 +35,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         error: 'serverId, channelId, requesterName, and targetName or targetDiscordUserId are required',
       }, { status: 400 });
+    }
+
+    if (rawTargetName && !targetName) {
+      return NextResponse.json({ error: 'targetName must start with a valid Twitch username' }, { status: 400 });
     }
 
     const result = await registerManualDiscordShoutout({
