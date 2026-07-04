@@ -24,6 +24,44 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [sessionReady, setSessionReady] = React.useState(false);
 
   React.useEffect(() => {
+    function handleSpaceMountainAuth(event: MessageEvent) {
+      const allowedOrigins = new Set([
+        'https://spacemountain.live',
+        'https://spmt.live',
+        'http://localhost:3000',
+        'http://localhost:5173',
+      ]);
+      if (!allowedOrigins.has(event.origin)) return;
+      if (event.data?.type !== 'SPACEMOUNTAIN_AUTH') return;
+
+      const profile = event.data?.profile || {};
+      const linkedAccounts = profile.linkedAccounts || profile.linked_accounts || {};
+      const twitchAccount = linkedAccounts.twitch || profile.twitch || {};
+      const discordAccount = linkedAccounts.discord || profile.discord || {};
+      const token = typeof event.data?.token === 'string' ? event.data.token : '';
+      const spmtUserId = String(profile.id || profile.userId || profile.spmtUserId || '').trim();
+      const discordUserId = String(profile.discordUserId || profile.discord_user_id || discordAccount.id || discordAccount.userId || '').trim();
+      const twitchUsername = String(profile.twitchUsername || profile.twitchLogin || profile.twitch_login || twitchAccount.username || twitchAccount.login || '').trim();
+      const username = String(profile.username || profile.displayName || profile.discordUsername || '').trim();
+      const displayName = String(profile.displayName || username || '').trim();
+
+      if (token) window.localStorage.setItem('spmtToken', token);
+      if (spmtUserId) window.localStorage.setItem('spmtUserId', spmtUserId);
+      if (discordUserId) window.localStorage.setItem('discordUserId', discordUserId);
+      if (username) window.localStorage.setItem('discordUsername', username);
+      if (twitchUsername) window.localStorage.setItem('twitchUsername', twitchUsername);
+      if (displayName) window.localStorage.setItem('discordDisplayName', displayName);
+      window.localStorage.setItem('isLoggedIn', 'true');
+      window.dispatchEvent(new Event('dsh-session-restored'));
+      setSessionReady(true);
+    }
+
+    window.addEventListener('message', handleSpaceMountainAuth);
+    window.parent?.postMessage({ type: 'SPACEMOUNTAIN_AUTH_REQUEST', source: 'discord-stream-hub' }, '*');
+    return () => window.removeEventListener('message', handleSpaceMountainAuth);
+  }, []);
+
+  React.useEffect(() => {
     let cancelled = false;
 
     async function hydrateSession() {
