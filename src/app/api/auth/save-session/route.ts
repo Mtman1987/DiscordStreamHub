@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getHardcodedAdminDiscordId } from '@/lib/runtime-config';
 
+export const dynamic = 'force-dynamic';
+
 const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 
 async function fetchDiscord(endpoint: string) {

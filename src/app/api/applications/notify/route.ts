@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 function appendTemplateAttachment(embed: any, attachmentUrl?: string) {
   const url = String(attachmentUrl || '').trim();
   if (!url) return embed;

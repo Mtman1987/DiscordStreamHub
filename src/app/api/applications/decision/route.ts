@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getHardcodedAdminDiscordId } from '@/lib/runtime-config';
 
+export const dynamic = 'force-dynamic';
+
 const OWNER_ROLE_ID = '1283213615939194955';
 
 function isOwner(serverId: string, reviewerId: string) {

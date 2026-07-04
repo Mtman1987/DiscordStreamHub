@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getHardcodedGuildId } from '@/lib/runtime-config';
 
+export const dynamic = 'force-dynamic';
+
 const SERVER_ID = getHardcodedGuildId();
 
 type LiveCommunityUser = {
