@@ -217,10 +217,13 @@ export async function generateCalendarImage(
       </html>
     `;
     
+    const executablePath = getPuppeteerExecutablePath() || undefined;
+    console.log('[generateCalendarImage] Launching Chromium:', executablePath || 'puppeteer default');
+
     browser = await puppeteer.launch({
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      executablePath: getPuppeteerExecutablePath() || undefined
+      executablePath,
     });
     
     const page = await browser.newPage();

@@ -111,15 +111,15 @@ async function getTodaysCaptain(serverId: string): Promise<CaptainHighlight | nu
     .doc(serverId)
     .collection('calendarEvents')
     .where('type', '==', 'captains-log')
-    .where('dayKey', '==', todayKey)
-    .limit(1)
+    .limit(25)
     .get();
 
-  if (snapshot.empty) {
+  const captainDoc = snapshot.docs.find((doc: { data: () => Record<string, unknown> }) => doc.data()?.dayKey === todayKey);
+  if (!captainDoc) {
     return null;
   }
 
-  const data = snapshot.docs[0].data();
+  const data = captainDoc.data();
   return {
     username: data.username || 'Captain',
     avatarUrl: data.userAvatar || null,

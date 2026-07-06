@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { postCalendarToDiscord } from '@/lib/calendar-discord-service-new';
 
+export const runtime = 'nodejs';
+
 export async function POST(request: NextRequest) {
   try {
     const { serverId, channelId } = await request.json();
@@ -14,6 +16,7 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('Calendar post error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    const message = error instanceof Error ? error.message : 'Internal server error';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

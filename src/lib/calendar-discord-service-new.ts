@@ -72,15 +72,15 @@ async function getTodaysCaptain(serverId: string): Promise<CaptainHighlight | nu
     .doc(serverId)
     .collection('calendarEvents')
     .where('type', '==', 'captains-log')
-    .where('dayKey', '==', todayKey)
-    .limit(1)
+    .limit(25)
     .get();
 
-  if (snapshot.empty) {
+  const captainDoc = snapshot.docs.find((doc: { data: () => Record<string, unknown> }) => doc.data()?.dayKey === todayKey);
+  if (!captainDoc) {
     return null;
   }
 
-  const data = snapshot.docs[0].data();
+  const data = captainDoc.data();
   return {
     username: data.username || 'Captain',
     avatarUrl: data.userAvatar || null,
@@ -299,6 +299,7 @@ export async function refreshCalendarMessage(serverId: string) {
 }
 
 export async function postCalendarToDiscord(serverId: string, channelId: string, monthOffset = 0) {
+  console.log(`[CalendarPost] Starting post for server ${serverId} to channel ${channelId}`);
   const calendarImage = await generateCalendarImage(serverId, monthOffset);
   if (!calendarImage) {
     throw new Error('Failed to generate calendar image');
@@ -323,8 +324,8 @@ export async function postCalendarToDiscord(serverId: string, channelId: string,
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.error('Discord API error:', errorText);
-    throw new Error('Failed to post to Discord');
+    console.error('Discord API error:', response.status, errorText);
+    throw new Error(`Failed to post to Discord (${response.status}): ${errorText}`);
   }
 
   const result = await response.json();

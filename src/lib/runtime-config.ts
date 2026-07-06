@@ -332,7 +332,11 @@ export function getStoragePath(): string {
 }
 
 export function getPuppeteerExecutablePath(): string {
-  return getRuntimePublicText('puppeteerExecutablePath');
+  return (
+    getRuntimePublicText('puppeteerExecutablePath') ||
+    process.env.PUPPETEER_EXECUTABLE_PATH ||
+    '/usr/bin/chromium'
+  );
 }
 
 export function getDatabaseFilePath(): string {
