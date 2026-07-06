@@ -5,6 +5,8 @@ import { doc } from '@/lib/data-shim';
 import { useDataStore, useMemoData, useUser, useDoc } from '@/data';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
+import { LogOut } from 'lucide-react';
 
 interface UserProfile {
   username: string;
@@ -25,12 +27,37 @@ export function UserNav() {
   const [localAvatar, setLocalAvatar] = React.useState('');
   const [localServerName, setLocalServerName] = React.useState('');
 
-  React.useEffect(() => {
+  const refreshLocalSession = React.useCallback(() => {
     setUserId(localStorage.getItem('discordUserId'));
     setServerId(localStorage.getItem('discordServerId'));
     setLocalDisplayName(localStorage.getItem('discordDisplayName') || localStorage.getItem('discordUsername') || '');
     setLocalAvatar(localStorage.getItem('discordAvatar') || '');
     setLocalServerName(localStorage.getItem('serverName') || '');
+  }, []);
+
+  React.useEffect(() => {
+    refreshLocalSession();
+    window.addEventListener('dsh-session-restored', refreshLocalSession);
+    return () => window.removeEventListener('dsh-session-restored', refreshLocalSession);
+  }, [refreshLocalSession]);
+
+  const handleLogout = React.useCallback(() => {
+    [
+      'discordServerId',
+      'discordUserId',
+      'discordUsername',
+      'discordDisplayName',
+      'discordAvatar',
+      'twitchUsername',
+      'serverName',
+      'serverIconUrl',
+      'isAdmin',
+      'isLoggedIn',
+      'spmtToken',
+      'spmtUserId',
+      'spmtUsername',
+    ].forEach((key) => localStorage.removeItem(key));
+    window.location.href = '/login';
   }, []);
 
   const userProfileRef = useMemoData(() => {
@@ -65,17 +92,29 @@ export function UserNav() {
   const displayServer = serverInfo?.serverName || localServerName || (serverId ? `Server ID: ${serverId}` : 'No server selected');
 
   return (
-    <div className="flex items-center gap-3">
-      <Avatar className="h-9 w-9">
-        {avatarUrl && (
-          <AvatarImage src={avatarUrl} alt={displayName} />
-        )}
-        <AvatarFallback>{displayName.charAt(0).toUpperCase()}</AvatarFallback>
-      </Avatar>
-      <div className="grid gap-0.5 text-sm group-data-[collapsed=true]:hidden">
-        <div className="font-medium">{displayName}</div>
-        <div className="text-muted-foreground">{displayServer}</div>
+    <div className="flex items-center justify-between gap-2">
+      <div className="flex min-w-0 items-center gap-3">
+        <Avatar className="h-9 w-9">
+          {avatarUrl && (
+            <AvatarImage src={avatarUrl} alt={displayName} />
+          )}
+          <AvatarFallback>{displayName.charAt(0).toUpperCase()}</AvatarFallback>
+        </Avatar>
+        <div className="grid min-w-0 gap-0.5 text-sm group-data-[collapsed=true]:hidden">
+          <div className="truncate font-medium">{displayName}</div>
+          <div className="truncate text-muted-foreground">{displayServer}</div>
+        </div>
       </div>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        onClick={handleLogout}
+        title="Log out of Discord Stream Hub"
+        className="h-8 w-8 shrink-0 group-data-[collapsed=true]:hidden"
+      >
+        <LogOut className="h-4 w-4" />
+      </Button>
     </div>
   );
 }

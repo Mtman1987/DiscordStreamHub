@@ -18,6 +18,18 @@ import { MainNav } from './_components/main-nav';
 import { UserNav } from './_components/user-nav';
 import { DataClientProvider } from '@/data';
 
+const dshSessionKeys = [
+  'discordUserId',
+  'discordUsername',
+  'discordDisplayName',
+  'discordAvatar',
+  'twitchUsername',
+  'spmtToken',
+  'spmtUserId',
+  'spmtUsername',
+  'isAdmin',
+];
+
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -40,18 +52,20 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       const discordAccount = linkedAccounts.discord || profile.discord || {};
       const token = typeof event.data?.token === 'string' ? event.data.token : '';
       const spmtUserId = String(profile.id || profile.userId || profile.spmtUserId || '').trim();
-      const discordUserId = String(profile.discordUserId || profile.discord_user_id || discordAccount.id || discordAccount.userId || '').trim();
+      const discordUserId = String(profile.discordUserId || profile.discord_user_id || profile.discordId || profile.discord_id || discordAccount.id || discordAccount.userId || '').trim();
       const twitchUsername = String(profile.twitchUsername || profile.twitchLogin || profile.twitch_login || twitchAccount.username || twitchAccount.login || '').trim();
-      const username = String(profile.username || profile.displayName || profile.discordUsername || '').trim();
-      const displayName = String(profile.displayName || username || '').trim();
+      const username = String(profile.discordUsername || profile.discord_username || discordAccount.username || profile.username || profile.displayName || '').trim();
+      const displayName = String(profile.discordDisplayName || profile.discord_display_name || discordAccount.displayName || discordAccount.global_name || profile.displayName || username || '').trim();
 
+      dshSessionKeys.forEach((key) => window.localStorage.removeItem(key));
       if (token) window.localStorage.setItem('spmtToken', token);
       if (spmtUserId) window.localStorage.setItem('spmtUserId', spmtUserId);
+      if (profile.username) window.localStorage.setItem('spmtUsername', String(profile.username));
       if (discordUserId) window.localStorage.setItem('discordUserId', discordUserId);
       if (username) window.localStorage.setItem('discordUsername', username);
       if (twitchUsername) window.localStorage.setItem('twitchUsername', twitchUsername);
       if (displayName) window.localStorage.setItem('discordDisplayName', displayName);
-      window.localStorage.setItem('isLoggedIn', 'true');
+      if (spmtUserId || discordUserId) window.localStorage.setItem('isLoggedIn', 'true');
       window.dispatchEvent(new Event('dsh-session-restored'));
       setSessionReady(true);
     }
@@ -67,9 +81,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     async function hydrateSession() {
       try {
         const existingServerId = window.localStorage.getItem('discordServerId');
+        const existingUserId = window.localStorage.getItem('discordUserId');
+        const hasSpmtIdentity = Boolean(window.localStorage.getItem('spmtUserId') || window.localStorage.getItem('spmtToken'));
         const searchParams = new URLSearchParams(window.location.search);
         const queryServerId = searchParams.get('serverId') || searchParams.get('guildId') || searchParams.get('discordServerId');
-        const query = queryServerId ? `?serverId=${encodeURIComponent(queryServerId)}` : '';
+        const restoreParams = new URLSearchParams();
+        if (queryServerId || existingServerId) restoreParams.set('serverId', queryServerId || existingServerId || '');
+        if (existingUserId) restoreParams.set('userId', existingUserId);
+        const query = restoreParams.toString() ? `?${restoreParams.toString()}` : '';
         const response = await fetch(`/api/auth/restore-session${query}`, { cache: 'no-store' });
         const data = response.ok ? await response.json() : null;
 
@@ -77,20 +96,25 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
         if (data?.success && data.serverId) {
           window.localStorage.setItem('discordServerId', data.serverId);
-          if (data.discordUserId || data.userId) window.localStorage.setItem('discordUserId', data.discordUserId || data.userId);
-          if (data.twitchUsername) window.localStorage.setItem('twitchUsername', data.twitchUsername);
-          if (data.discordUsername) window.localStorage.setItem('discordUsername', data.discordUsername);
-          if (data.discordDisplayName) window.localStorage.setItem('discordDisplayName', data.discordDisplayName);
-          if (data.discordAvatar) window.localStorage.setItem('discordAvatar', data.discordAvatar);
           if (data.serverName) window.localStorage.setItem('serverName', data.serverName);
           if (data.iconUrl) window.localStorage.setItem('serverIconUrl', data.iconUrl);
-          window.localStorage.setItem('isLoggedIn', 'true');
+          if (!hasSpmtIdentity || data.userMatched) {
+            if (data.discordUserId || data.userId) window.localStorage.setItem('discordUserId', data.discordUserId || data.userId);
+            if (data.twitchUsername) window.localStorage.setItem('twitchUsername', data.twitchUsername);
+            if (data.discordUsername) window.localStorage.setItem('discordUsername', data.discordUsername);
+            if (data.discordDisplayName) window.localStorage.setItem('discordDisplayName', data.discordDisplayName);
+            if (data.discordAvatar) window.localStorage.setItem('discordAvatar', data.discordAvatar);
+            window.localStorage.setItem('isAdmin', data.isAdmin ? 'true' : 'false');
+          }
+          if (window.localStorage.getItem('discordUserId') || hasSpmtIdentity) {
+            window.localStorage.setItem('isLoggedIn', 'true');
+          }
           window.dispatchEvent(new Event('dsh-session-restored'));
           setSessionReady(true);
           return;
         }
 
-        if (existingServerId || window.localStorage.getItem('isLoggedIn') === 'true') {
+        if (existingUserId || hasSpmtIdentity || window.localStorage.getItem('isLoggedIn') === 'true') {
           setSessionReady(true);
           return;
         }

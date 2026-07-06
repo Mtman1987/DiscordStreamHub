@@ -12,13 +12,14 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { LogIn, Trash2 } from 'lucide-react';
+import { LogIn, ShieldCheck, Trash2 } from 'lucide-react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { Separator } from '@/components/ui/separator';
 
 export default function LoginPage() {
   const router = useRouter();
+  const spmtAuthorizeUrl = 'https://spmt.live/api/oauth/authorize?client_id=discord-stream-hub&redirect_uri=https%3A%2F%2Fdiscord-stream-hub-new.fly.dev%2Fauth%2Fcallback';
 
   const handleLogin = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -63,6 +64,28 @@ export default function LoginPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="rounded-lg border bg-muted/40 p-4">
+              <div className="mb-2 flex items-center gap-2 font-semibold">
+                <ShieldCheck className="h-4 w-4" />
+                Sign in with SPMT
+              </div>
+              <p className="mb-3 text-sm text-muted-foreground">
+                Use your SPMT account as the ecosystem identity for Discord Stream Hub. Legacy manual login stays available below.
+              </p>
+              <Button asChild className="w-full">
+                <a href={spmtAuthorizeUrl}>
+                  <LogIn className="mr-2 h-4 w-4" />
+                  Continue with SPMT
+                </a>
+              </Button>
+              <Button asChild variant="link" className="mt-1 w-full">
+                <a href="https://spmt.live/?view=connections">Authorize Twitch / Discord in SPMT</a>
+              </Button>
+            </div>
+            <div className="relative flex items-center justify-center">
+              <Separator className="shrink" />
+              <span className="absolute bg-card px-2 text-xs text-muted-foreground">Legacy manual session</span>
+            </div>
             <div className="space-y-2">
               <Label htmlFor="discord-server-id">Discord Server ID</Label>
               <Input
