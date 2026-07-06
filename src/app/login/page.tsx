@@ -73,13 +73,13 @@ export default function LoginPage() {
                 Use your SPMT account as the ecosystem identity for Discord Stream Hub. Legacy manual login stays available below.
               </p>
               <Button asChild className="w-full">
-                <a href={spmtAuthorizeUrl}>
+                <a href={spmtAuthorizeUrl} target="_blank" rel="noopener noreferrer">
                   <LogIn className="mr-2 h-4 w-4" />
                   Continue with SPMT
                 </a>
               </Button>
               <Button asChild variant="link" className="mt-1 w-full">
-                <a href="https://spmt.live/?view=connections">Authorize Twitch / Discord in SPMT</a>
+                <a href="https://spmt.live/?view=connections" target="_blank" rel="noopener noreferrer">Authorize Twitch / Discord in SPMT</a>
               </Button>
             </div>
             <div className="relative flex items-center justify-center">

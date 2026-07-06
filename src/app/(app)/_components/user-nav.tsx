@@ -57,7 +57,13 @@ export function UserNav() {
       'spmtUserId',
       'spmtUsername',
     ].forEach((key) => localStorage.removeItem(key));
-    window.location.href = '/login';
+    const loginUrl = `${window.location.origin}/login?loggedOut=1`;
+    if (window.parent !== window) {
+      window.open(loginUrl, '_blank', 'noopener,noreferrer');
+      window.location.replace('/logged-out');
+      return;
+    }
+    window.location.replace(loginUrl);
   }, []);
 
   const userProfileRef = useMemoData(() => {
