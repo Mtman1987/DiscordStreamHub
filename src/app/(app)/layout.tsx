@@ -108,10 +108,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           }
           if (window.localStorage.getItem('discordUserId') || hasSpmtIdentity) {
             window.localStorage.setItem('isLoggedIn', 'true');
+            window.dispatchEvent(new Event('dsh-session-restored'));
+            setSessionReady(true);
+            return;
           }
-          window.dispatchEvent(new Event('dsh-session-restored'));
-          setSessionReady(true);
-          return;
         }
 
         if (existingUserId || hasSpmtIdentity || window.localStorage.getItem('isLoggedIn') === 'true') {
