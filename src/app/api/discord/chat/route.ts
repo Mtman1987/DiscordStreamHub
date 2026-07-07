@@ -9,8 +9,10 @@ import {
   getDiscordActivityApplicationId,
   getDiscordActivityVoiceChannelId,
   getDiscordClientId,
+  getHardcodedAdminTwitchId,
   getHardcodedGuildId,
   getHearMeOutUrl,
+  getStreamweaverUrl,
   getSpaceMountainIconUrl as getConfiguredSpaceMountainIconUrl,
 } from '@/lib/runtime-config';
 import { recordDiscordMessageActivity } from '@/lib/discord-activity-service';
@@ -351,6 +353,21 @@ async function forwardHearMeOutDiscordChat(payload: any) {
   return result;
 }
 
+async function forwardStreamWeaverDiscordChat(payload: any) {
+  const streamweaverUrl = getStreamweaverUrl().replace(/\/$/, '');
+  const response = await fetch(`${streamweaverUrl}/api/discord/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal: timeoutSignal(20_000),
+  });
+  const result = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(result?.error || `StreamWeaver returned ${response.status}`);
+  }
+  return result;
+}
+
 export async function POST(request: NextRequest) {
   try {
     let body: any;
@@ -394,6 +411,38 @@ export async function POST(request: NextRequest) {
     }
 
     const msgLower = message.toLowerCase();
+    const shouldForwardToStreamWeaver =
+      channelId &&
+      !isDirectMessage &&
+      !isBotAuthor &&
+      (
+        /^!(say|listen)(?:\s|$)/i.test(message.trim()) ||
+        !message.trim().startsWith('!')
+      );
+
+    if (shouldForwardToStreamWeaver) {
+      const streamWeaverTenantId = data.tenantId || data.twitchId || data.tenant_id || getHardcodedAdminTwitchId();
+      void forwardStreamWeaverDiscordChat({
+        ...data,
+        message,
+        content: message,
+        userId,
+        userName,
+        username: userName,
+        displayName: userName,
+        userAvatar,
+        avatarUrl: userAvatar,
+        guildId,
+        serverId: guildId,
+        channelId,
+        messageId,
+        tenantId: streamWeaverTenantId,
+        twitchId: streamWeaverTenantId,
+        source: 'discord-stream-hub',
+      }).catch((error) => {
+        console.warn('[DiscordChat] StreamWeaver fanout failed:', error?.message || error);
+      });
+    }
 
     if (dispatch && !isDirectMessage && channelId && guildId && messageId && !isBotAuthor) {
       const appOrigin = getPublicBaseUrl(request.nextUrl.origin);
