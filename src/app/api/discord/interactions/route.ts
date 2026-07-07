@@ -987,10 +987,16 @@ export async function POST(request: NextRequest) {
         return new Response(null, { status: 202 });
       }
 
-      if (customId.startsWith('check_rank_')) {
-        const serverId = customId.replace('check_rank_', '');
+      if (customId === 'check_rank' || customId.startsWith('check_rank_')) {
+        const serverId = customId.startsWith('check_rank_')
+          ? customId.replace('check_rank_', '')
+          : body.guild_id;
         const userId = body.member?.user?.id || body.user?.id;
         const username = body.member?.user?.username || body.user?.username;
+
+        if (!serverId) {
+          return ephemeral('🚫 Unable to identify server.');
+        }
 
         if (!userId) {
           return ephemeral('🚫 Unable to identify user.');

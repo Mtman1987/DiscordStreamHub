@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
             type: 2,
             style: 1,
             label: 'Check My Rank',
-            custom_id: 'check_rank',
+            custom_id: `check_rank_${serverId}`,
           },
         ],
       },
