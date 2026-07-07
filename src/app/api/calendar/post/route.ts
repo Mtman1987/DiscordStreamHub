@@ -15,8 +15,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(result);
 
   } catch (error) {
-    console.error('Calendar post error:', error);
     const message = error instanceof Error ? error.message : 'Internal server error';
-    return NextResponse.json({ error: message }, { status: 500 });
+    const status = /Unknown Channel|code["']?:\s*10003|404/i.test(message) ? 400 : 500;
+    if (status >= 500) {
+      console.error('Calendar post error:', error);
+    }
+    const hint = status === 400 ? 'The configured Discord calendar channel is missing or the bot cannot access it. Pick a valid channel and try again.' : undefined;
+    return NextResponse.json({ error: message, hint }, { status });
   }
 }

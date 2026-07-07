@@ -37,8 +37,12 @@ export async function POST(request: NextRequest) {
 
     if (!discordResponse.ok) {
       const errorData = await discordResponse.text();
-      console.error('Discord API error:', errorData);
-      return NextResponse.json({ error: 'Failed to post to Discord' }, { status: 500 });
+      const status = discordResponse.status === 404 && /Unknown Channel|10003/i.test(errorData) ? 400 : 500;
+      if (status >= 500) {
+        console.error('Discord API error:', errorData);
+      }
+      const hint = status === 400 ? 'The configured Discord calendar channel is missing or the bot cannot access it. Pick a valid channel and try again.' : undefined;
+      return NextResponse.json({ error: 'Failed to post to Discord', details: errorData, hint }, { status });
     }
 
     const message = await discordResponse.json();

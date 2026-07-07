@@ -14,6 +14,7 @@ import {
   getSpaceMountainIconUrl as getConfiguredSpaceMountainIconUrl,
 } from '@/lib/runtime-config';
 import { recordDiscordMessageActivity } from '@/lib/discord-activity-service';
+import { parseDiscordChatPayload } from '@/lib/discord-chat-payload';
 
 const COOLDOWN_MS = 5 * 60 * 1000; // 1 point per 5 min per user
 const discordChatCooldowns = new Map<string, number>();
@@ -356,10 +357,13 @@ export async function POST(request: NextRequest) {
     let body: any;
     try {
       const raw = await request.text();
-      body = JSON.parse(raw.replace(/[\x00-\x1F\x7F]/g, ''));
+      body = parseDiscordChatPayload(raw);
+      if (!body) {
+        return NextResponse.json({ success: true, skipped: 'invalid-json' });
+      }
     } catch (error) {
       console.error('[DiscordChat] Invalid JSON payload:', error);
-      return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 });
+      return NextResponse.json({ success: true, skipped: 'invalid-json' });
     }
     console.log('[DiscordChat] Received:', JSON.stringify(body).slice(0, 200));
 

@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getHardcodedAdminDiscordId } from '@/lib/runtime-config';
 
 const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
+const DISCORD_SNOWFLAKE_RE = /^\d{17,20}$/;
 
 async function fetchDiscord(endpoint: string) {
   if (!BOT_TOKEN) return null;
@@ -40,6 +41,19 @@ export async function POST(request: NextRequest) {
 
     if (!serverId || !userId) {
       return NextResponse.json({ error: 'Missing serverId or userId' }, { status: 400 });
+    }
+
+    if (!DISCORD_SNOWFLAKE_RE.test(serverId) || !DISCORD_SNOWFLAKE_RE.test(userId)) {
+      return NextResponse.json({
+        success: true,
+        serverId,
+        userId,
+        isAdmin: false,
+        isMod: false,
+        isOwner: false,
+        matchedBy: null,
+        skipped: 'invalid-discord-id',
+      });
     }
 
     const existingServer = db.get('servers', serverId) || {};
