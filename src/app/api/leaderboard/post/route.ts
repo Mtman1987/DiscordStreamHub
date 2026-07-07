@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateLeaderboardImage } from '@/ai/flows/generate-leaderboard-image';
 import { saveFile } from '@/lib/local-storage-service';
+import { getAppUrl } from '@/lib/runtime-config';
 
 export async function POST(request: NextRequest) {
   try {
@@ -20,6 +21,16 @@ export async function POST(request: NextRequest) {
     const imageBuffer = Buffer.from(base64Data, 'base64');
     const fileName = `leaderboard-images/${serverId}/leaderboard-${Date.now()}.png`;
     const imageUrl = await saveFile(fileName, imageBuffer);
+    const publicBaseUrl = (getAppUrl() || request.nextUrl.origin).replace(/\/$/, '');
+    const publicImageUrl = imageUrl.startsWith('http') ? imageUrl : `${publicBaseUrl}${imageUrl}`;
+
+    const embed = {
+      title: '🏆 Community Leaderboard',
+      description: 'Top contributors in the community.',
+      color: 0x667eea,
+      image: { url: publicImageUrl },
+      timestamp: new Date().toISOString(),
+    };
 
     const components = [
       {
@@ -42,9 +53,9 @@ export async function POST(request: NextRequest) {
         Authorization: `Bot ${botToken}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ 
-        content: imageUrl,
-        components 
+      body: JSON.stringify({
+        embeds: [embed],
+        components
       }),
     });
 
