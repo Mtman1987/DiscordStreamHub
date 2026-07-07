@@ -148,7 +148,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <DataClientProvider>
       <SidebarProvider collapsible="icon">
-        <div className="flex min-h-screen">
+        <div className="flex h-screen overflow-hidden">
           <Sidebar className="border-r group">
             <SidebarHeader className="p-4 flex items-center justify-between">
               <Link
@@ -182,7 +182,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </div>
             </SidebarFooter>
           </Sidebar>
-          <div className="flex flex-1 flex-col">
+          <div className="flex min-h-0 flex-1 flex-col">
             <header className="flex h-14 items-center gap-4 border-b bg-card px-6">
               <div className="md:hidden">
                 <SidebarTrigger />
@@ -191,7 +191,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 {/* Future header content can go here, like a search bar */}
               </div>
             </header>
-            <main className="flex-1 overflow-y-auto p-4 md:p-8">
+            <main className="min-h-0 flex-1 overflow-y-auto p-4 md:p-8">
               {children}
             </main>
           </div>

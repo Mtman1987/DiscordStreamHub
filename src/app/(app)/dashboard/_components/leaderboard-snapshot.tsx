@@ -79,22 +79,25 @@ export function LeaderboardSnapshot() {
             ))}
           </div>
         ) : topUsers.length > 0 ? (
-          <div className="space-y-3">
+          <div className="space-y-2">
             {topUsers.map((item, index) => (
-              <div key={item.id} className="flex items-center gap-3">
+              <div key={item.id} className="flex min-h-[64px] items-center gap-3 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-cyan-300/25 bg-cyan-300/10 text-sm font-bold text-cyan-100">
+                  {index + 1}
+                </div>
                 <div className="relative">
                   <Avatar className="h-10 w-10">
                     <AvatarImage src={item.user?.avatarUrl} alt={item.user?.username} />
                     <AvatarFallback>{item.user?.username?.charAt(0)}</AvatarFallback>
                   </Avatar>
                   {index === 0 && (
-                    <div className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-yellow-500 flex items-center justify-center">
+                    <div className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-yellow-500">
                       <Trophy className="h-3 w-3 text-white" />
                     </div>
                   )}
                 </div>
-                <div className="flex-1">
-                  <p className="font-medium text-sm">{item.user?.username}</p>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">{item.user?.username}</p>
                   <p className="text-xs text-muted-foreground">{item.points.toLocaleString()} points</p>
                 </div>
               </div>

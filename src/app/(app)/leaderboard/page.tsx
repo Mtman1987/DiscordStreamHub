@@ -281,6 +281,7 @@ export default function LeaderboardPage() {
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
+                  <div className="max-h-[min(58vh,680px)] overflow-y-auto pr-2">
                    <Table>
                         <TableHeader>
                             <TableRow>
@@ -313,23 +314,24 @@ export default function LeaderboardPage() {
                                         {entry.rank === 3 && <Trophy className="w-6 h-6 text-orange-400" />}
                                         {entry.rank > 3 && entry.rank}
                                     </TableCell>
-                                    <TableCell>
-                                        <div className="flex items-center gap-4">
-                                            <Avatar>
-                                                <AvatarImage src={entry.user?.avatarUrl} alt={entry.user?.username}/>
-                                                <AvatarFallback>{entry.user?.username?.charAt(0) ?? '?'}</AvatarFallback>
-                                            </Avatar>
-                                            <div>
-                                                <p className="font-medium">{entry.user?.username ?? 'Unknown User'}</p>
-                                                <p className="text-sm text-muted-foreground">ID: {entry.userProfileId}</p>
-                                            </div>
-                                        </div>
-                                    </TableCell>
+                                     <TableCell>
+                                         <div className="flex min-w-0 items-center gap-4">
+                                             <Avatar>
+                                                 <AvatarImage src={entry.user?.avatarUrl} alt={entry.user?.username}/>
+                                                 <AvatarFallback>{entry.user?.username?.charAt(0) ?? '?'}</AvatarFallback>
+                                             </Avatar>
+                                             <div className="min-w-0">
+                                                 <p className="truncate font-medium">{entry.user?.username ?? 'Unknown User'}</p>
+                                                 <p className="truncate text-sm text-muted-foreground">ID: {entry.userProfileId}</p>
+                                             </div>
+                                         </div>
+                                     </TableCell>
                                     <TableCell className="text-right font-mono text-lg">{entry.points.toLocaleString()}</TableCell>
                                 </TableRow>
                             ))}
                         </TableBody>
                    </Table>
+                  </div>
                     {!finalIsLoading && leaderboardData.length === 0 && (
                         <p className="text-center text-muted-foreground py-12">No leaderboard data found.</p>
                     )}
@@ -347,6 +349,7 @@ export default function LeaderboardPage() {
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
+                  <div className="max-h-[min(46vh,520px)] overflow-y-auto pr-2">
                    <Table>
                         <TableHeader>
                             <TableRow>
@@ -379,23 +382,24 @@ export default function LeaderboardPage() {
                                         {entry.rank === 3 && <Trophy className="w-6 h-6 text-orange-400" />}
                                         {entry.rank > 3 && entry.rank}
                                     </TableCell>
-                                    <TableCell>
-                                        <div className="flex items-center gap-4">
-                                            <Avatar>
-                                                <AvatarImage src={entry.user?.avatarUrl} alt={entry.user?.username}/>
-                                                <AvatarFallback>{entry.user?.username?.charAt(0) ?? '?'}</AvatarFallback>
-                                            </Avatar>
-                                            <div>
-                                                <p className="font-medium">{entry.user?.username ?? 'Unknown User'}</p>
-                                                <p className="text-sm text-muted-foreground">ID: {entry.userProfileId}</p>
-                                            </div>
-                                        </div>
-                                    </TableCell>
+                                     <TableCell>
+                                         <div className="flex min-w-0 items-center gap-4">
+                                             <Avatar>
+                                                 <AvatarImage src={entry.user?.avatarUrl} alt={entry.user?.username}/>
+                                                 <AvatarFallback>{entry.user?.username?.charAt(0) ?? '?'}</AvatarFallback>
+                                             </Avatar>
+                                             <div className="min-w-0">
+                                                 <p className="truncate font-medium">{entry.user?.username ?? 'Unknown User'}</p>
+                                                 <p className="truncate text-sm text-muted-foreground">ID: {entry.userProfileId}</p>
+                                             </div>
+                                         </div>
+                                     </TableCell>
                                     <TableCell className="text-right font-mono text-lg">{entry.points.toLocaleString()}</TableCell>
                                 </TableRow>
                             ))}
                         </TableBody>
                    </Table>
+                  </div>
                     {!finalIsLoadingAdmin && adminLeaderboardData.length === 0 && (
                         <p className="text-center text-muted-foreground py-12">No admin leaderboard data found.</p>
                     )}

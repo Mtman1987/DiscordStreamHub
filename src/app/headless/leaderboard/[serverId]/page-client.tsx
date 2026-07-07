@@ -55,25 +55,20 @@ function LeaderboardComponent() {
 
       {/* Main content */}
       <div className="relative z-10 p-8">
-        <div className="text-center mb-8">
-          <h1 className="text-6xl font-bold text-white mb-4 animate-pulse">
+        <div className="text-center mb-6">
+          <h1 className="text-5xl font-bold text-white mb-3 animate-pulse">
             🚀 SPACE MOUNTAIN LEADERBOARD 🚀
           </h1>
-          <div className="text-2xl text-yellow-300 animate-bounce">
+          <div className="text-xl text-yellow-300 animate-bounce">
             ⭐ TOP SPACE CADETS ⭐
           </div>
         </div>
 
-        <div className="max-w-4xl mx-auto">
+        <div className="max-w-5xl mx-auto">
           {leaderboard.map((entry, index) => (
             <div
               key={entry.username}
-              className={`leaderboard-entry mb-4 p-6 rounded-xl backdrop-blur-sm border-2 transform transition-all duration-1000 animate-slideIn ${
-                index === 0 ? 'bg-gradient-to-r from-yellow-500/30 to-orange-500/30 border-yellow-400 scale-110' :
-                index === 1 ? 'bg-gradient-to-r from-gray-400/30 to-gray-600/30 border-gray-400 scale-105' :
-                index === 2 ? 'bg-gradient-to-r from-orange-600/30 to-yellow-600/30 border-orange-400 scale-102' :
-                'bg-gradient-to-r from-blue-500/20 to-purple-500/20 border-blue-400'
-              }`}
+              className="leaderboard-entry mb-3 rounded-xl border border-blue-300/50 bg-slate-950/70 p-4 shadow-lg shadow-cyan-500/10 backdrop-blur-sm transition-all duration-1000 animate-slideIn"
               style={{ animationDelay: `${index * 0.2}s` }}
             >
               <div className="flex items-center justify-between">
