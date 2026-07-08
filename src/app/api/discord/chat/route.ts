@@ -24,6 +24,8 @@ const PROCESSED_MESSAGE_TTL_MS = 10 * 60 * 1000;
 const CHAT_TAG_WEBHOOK_NAME = getChatTagWebhookName();
 const CHAT_TAG_AVATAR_URL = getChatTagAvatarUrl();
 const DISCORD_ACTIVITY_APPLICATION_ID = getDiscordActivityApplicationId();
+const HMO_MOVIE_SESSION_ID = 'discord-watch-room';
+const HMO_MUSIC_SESSION_ID = 'discord-music-room';
 
 function timeoutSignal(milliseconds: number) {
   const controller = new AbortController();
@@ -299,6 +301,28 @@ function extractWatchTitle(payload: any) {
   return contentTitle || undefined;
 }
 
+function getHearMeOutActivityUrl(sessionId = HMO_MOVIE_SESSION_ID) {
+  const baseUrl = getHearMeOutUrl().replace(/\/$/, '');
+  return `${baseUrl}/activity?sessionId=${encodeURIComponent(sessionId)}`;
+}
+
+function buildHearMeOutPromptControls(preferredSessionId = HMO_MOVIE_SESSION_ID, joinUrl?: string) {
+  const preferred = preferredSessionId === HMO_MUSIC_SESSION_ID ? HMO_MUSIC_SESSION_ID : HMO_MOVIE_SESSION_ID;
+  const other = preferred === HMO_MUSIC_SESSION_ID ? HMO_MOVIE_SESSION_ID : HMO_MUSIC_SESSION_ID;
+  const preferredLabel = preferred === HMO_MUSIC_SESSION_ID ? 'Music Controls' : 'Movie Controls';
+  const otherLabel = other === HMO_MUSIC_SESSION_ID ? 'Music Controls' : 'Movie Controls';
+  return [{
+    type: 1,
+    components: [
+      { type: 2, style: 1, label: preferredLabel, custom_id: `hmo_watch_controls:${preferred}`, emoji: { name: '🎛️' } },
+      { type: 2, style: 2, label: otherLabel, custom_id: `hmo_watch_controls:${other}`, emoji: { name: '🎚️' } },
+      { type: 2, style: 2, label: 'Switch Lane', custom_id: `hmo_watch_lane:${preferred}`, emoji: { name: '🔀' } },
+      { type: 2, style: 2, label: 'Volume', custom_id: `hmo_watch_volume:${preferred}`, emoji: { name: '🔊' } },
+      { type: 2, style: 5, label: 'Join Activity', url: joinUrl || getHearMeOutActivityUrl(preferred), emoji: { name: '🎬' } },
+    ],
+  }];
+}
+
 function buildHearMeOutControlsPayload(options: { activityInviteUrl?: string; includeJoinPreview?: boolean; origin?: string } = {}) {
   const { activityInviteUrl, includeJoinPreview = false, origin } = options;
   const authorIcon = getSpaceMountainIconUrl(origin);
@@ -311,19 +335,9 @@ function buildHearMeOutControlsPayload(options: { activityInviteUrl?: string; in
       description: 'Control the shared HearMeOut watch room.',
       color: 0x22c55e,
       author: { name: 'Watch Controls', ...(authorIcon ? { icon_url: authorIcon } : {}) },
-      footer: { text: 'Controls update the shared Activity playback.' },
+      footer: { text: 'Choose movie or music controls. Shared playback changes happen through Discord controls.' },
     }],
-    components: [
-      {
-        type: 1,
-        components: [
-          { type: 2, style: 3, label: 'Play/Pause', custom_id: 'hmo_watch_control:play-pause', emoji: { name: '⏯️' } },
-          { type: 2, style: 2, label: 'Mute/Unmute', custom_id: 'hmo_watch_control:mute-unmute', emoji: { name: '🔇' } },
-          { type: 2, style: 1, label: 'Next', custom_id: 'hmo_watch_control:next', emoji: { name: '⏭️' } },
-          { type: 2, style: 4, label: 'Clear', custom_id: 'hmo_watch_control:clear', emoji: { name: '🧹' } },
-        ],
-      },
-    ],
+    components: buildHearMeOutPromptControls(HMO_MOVIE_SESSION_ID, activityInviteUrl),
     allowed_mentions: { parse: [] },
   };
 }
@@ -477,7 +491,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const isForwardedWatchCommand = /^!(wr|watch)(?:\s|$)/i.test(message) || /^!(add|accept)$/i.test(message.trim());
+    const isForwardedWatchCommand = /^!(wr|watch|sr|song)(?:\s|$)/i.test(message) || /^!(add|accept)$/i.test(message.trim());
     if (isForwardedWatchCommand && channelId) {
       console.log(`[DiscordChat] Forwarding watch request to HearMeOut from ${userName}: ${message} (channelId: ${channelId})`);
       try {

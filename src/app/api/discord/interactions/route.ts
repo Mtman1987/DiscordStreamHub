@@ -30,7 +30,9 @@ function ephemeral(content: string, extra: any = {}) {
 }
 
 const CHAT_TAG_SERVICE_SECRET = process.env.CHAT_TAG_BOT_SECRET || process.env.BOT_SECRET_KEY || '1234';
-const HMO_WATCH_SESSION_ID = 'discord-watch-room';
+const HMO_MOVIE_SESSION_ID = 'discord-watch-room';
+const HMO_MUSIC_SESSION_ID = 'discord-music-room';
+const HMO_WATCH_SESSION_ID = HMO_MOVIE_SESSION_ID;
 
 function buildChatTagControlRows(serverId: string) {
   return [
@@ -92,27 +94,106 @@ function parseHearMeOutControlId(customId: string) {
   const [, action = '', ...sessionParts] = customId.split(':');
   return {
     action,
-    sessionId: sessionParts.join(':') || HMO_WATCH_SESSION_ID,
+    sessionId: normalizeHearMeOutSessionId(sessionParts.join(':')),
   };
 }
 
+function normalizeHearMeOutSessionId(sessionId?: string) {
+  const raw = String(sessionId || '').trim().toLowerCase();
+  if (raw === HMO_MUSIC_SESSION_ID || raw === 'music' || raw === 'song') return HMO_MUSIC_SESSION_ID;
+  if (raw === HMO_MOVIE_SESSION_ID || raw === 'movie' || raw === 'watch') return HMO_MOVIE_SESSION_ID;
+  return raw.startsWith('watch-') ? raw : HMO_MOVIE_SESSION_ID;
+}
+
+function getHearMeOutActivityUrl(sessionId = HMO_MOVIE_SESSION_ID) {
+  return `${getHearMeOutUrl()}/activity?sessionId=${encodeURIComponent(normalizeHearMeOutSessionId(sessionId))}`;
+}
+
 function buildHearMeOutControls(sessionId = HMO_WATCH_SESSION_ID) {
-  const id = (action: string) => `hmo_watch_control:${action}:${sessionId}`;
+  const resolvedSessionId = normalizeHearMeOutSessionId(sessionId);
+  const id = (action: string) => `hmo_watch_control:${action}:${resolvedSessionId}`;
   return [
     {
       type: 1,
       components: [
         { type: 2, style: 3, label: 'Play/Pause', custom_id: id('play-pause'), emoji: { name: '⏯️' } },
-        { type: 2, style: 2, label: 'Mute/Unmute', custom_id: id('mute-unmute'), emoji: { name: '🔇' } },
         { type: 2, style: 1, label: 'Next', custom_id: id('next'), emoji: { name: '⏭️' } },
         { type: 2, style: 4, label: 'Clear', custom_id: id('clear'), emoji: { name: '🧹' } },
+        { type: 2, style: 2, label: 'Volume', custom_id: `hmo_watch_volume:${resolvedSessionId}`, emoji: { name: '🔊' } },
+      ],
+    },
+    {
+      type: 1,
+      components: [
+        { type: 2, style: 5, label: 'Open Activity', url: getHearMeOutActivityUrl(resolvedSessionId), emoji: { name: '🎬' } },
       ],
     },
   ];
 }
 
+function buildHearMeOutLaneControls() {
+  return [
+    {
+      type: 1,
+      components: [
+        { type: 2, style: 5, label: 'Open Movies', url: getHearMeOutActivityUrl(HMO_MOVIE_SESSION_ID), emoji: { name: '🎬' } },
+        { type: 2, style: 5, label: 'Open Music', url: getHearMeOutActivityUrl(HMO_MUSIC_SESSION_ID), emoji: { name: '🎵' } },
+      ],
+    },
+    {
+      type: 1,
+      components: [
+        { type: 2, style: 1, label: 'Movie Controls', custom_id: `hmo_watch_controls:${HMO_MOVIE_SESSION_ID}`, emoji: { name: '🎛️' } },
+        { type: 2, style: 1, label: 'Music Controls', custom_id: `hmo_watch_controls:${HMO_MUSIC_SESSION_ID}`, emoji: { name: '🎚️' } },
+      ],
+    },
+  ];
+}
+
+function buildHearMeOutVolumeControls(sessionId = HMO_WATCH_SESSION_ID) {
+  const resolvedSessionId = normalizeHearMeOutSessionId(sessionId);
+  return [{
+    type: 1,
+    components: [
+      { type: 2, style: 2, label: 'Mute', custom_id: `hmo_watch_control:mute:${resolvedSessionId}`, emoji: { name: '🔇' } },
+      { type: 2, style: 2, label: 'Unmute', custom_id: `hmo_watch_control:unmute:${resolvedSessionId}`, emoji: { name: '🔊' } },
+      { type: 2, style: 1, label: 'Set Volume', custom_id: `hmo_watch_volume_modal:${resolvedSessionId}`, emoji: { name: '🎚️' } },
+    ],
+  }];
+}
+
+function buildHearMeOutVolumeModal(sessionId = HMO_WATCH_SESSION_ID) {
+  const resolvedSessionId = normalizeHearMeOutSessionId(sessionId);
+  return {
+    custom_id: `hmo_watch_volume_submit:${resolvedSessionId}`,
+    title: 'Set HearMeOut Volume',
+    components: [{
+      type: 1,
+      components: [{
+        type: 4,
+        custom_id: 'volume_value',
+        label: 'Volume 0-100',
+        style: 1,
+        required: true,
+        min_length: 1,
+        max_length: 3,
+        placeholder: '85',
+      }],
+    }],
+  };
+}
+
+function readModalValue(data: any, customId: string) {
+  for (const row of data?.components || []) {
+    for (const component of row.components || []) {
+      if (component.custom_id === customId) return component.value;
+    }
+  }
+  return '';
+}
+
 async function fetchHearMeOutWatchSession(signal: AbortSignal, sessionId = HMO_WATCH_SESSION_ID) {
-  const url = `${getHearMeOutUrl()}/api/watch/sessions/${encodeURIComponent(sessionId)}?format=json`;
+  const url = `${getHearMeOutUrl()}/api/watch/sessions/${encodeURIComponent(normalizeHearMeOutSessionId(sessionId))}/state`;
   const response = await fetch(url, { signal, cache: 'no-store' });
   const payload = await response.json().catch(() => null);
   if (!response.ok) return null;
@@ -135,7 +216,7 @@ async function runHearMeOutWatchControl(action: string, sessionId = HMO_WATCH_SE
   guildId?: string;
   channelId?: string;
   isAdmin?: boolean;
-}) {
+}, position?: number) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10_000);
   try {
@@ -148,8 +229,9 @@ async function runHearMeOutWatchControl(action: string, sessionId = HMO_WATCH_SE
     if (actor?.userId) params.set('actorUserId', actor.userId);
     if (actor?.guildId) params.set('guildId', actor.guildId);
     if (actor?.channelId) params.set('channelId', actor.channelId);
+    if (position !== undefined) params.set('position', String(position));
     params.set('isAdmin', 'true');
-    const url = `${getHearMeOutUrl()}/api/watch/sessions/${encodeURIComponent(sessionId)}/quick-control?${params.toString()}`;
+    const url = `${getHearMeOutUrl()}/api/watch/sessions/${encodeURIComponent(normalizeHearMeOutSessionId(sessionId))}/quick-control?${params.toString()}`;
     const response = await fetch(url, { signal: controller.signal, cache: 'no-store' });
     const payload = await response.json().catch(() => null);
     if (!response.ok) {
@@ -159,9 +241,11 @@ async function runHearMeOutWatchControl(action: string, sessionId = HMO_WATCH_SE
     const title = payload?.session?.current?.item?.title || 'watch room';
     const status = payload?.session?.playback?.status || 'updated';
     const muted = payload?.session?.playback?.muted;
-    const label = resolvedAction === 'next' ? 'Skipped' : resolvedAction === 'clear' ? 'Cleared' : resolvedAction[0].toUpperCase() + resolvedAction.slice(1);
+    const volume = payload?.session?.playback?.volume;
+    const label = resolvedAction === 'next' ? 'Skipped' : resolvedAction === 'clear' ? 'Cleared' : resolvedAction === 'volume' ? 'Volume set' : resolvedAction[0].toUpperCase() + resolvedAction.slice(1);
     const audio = typeof muted === 'boolean' ? (muted ? ', muted' : ', unmuted') : '';
-    return { ok: true, message: `${label}: **${title}** (${status}${audio})` };
+    const volumeText = typeof volume === 'number' ? `, volume ${volume}%` : '';
+    return { ok: true, message: `${label}: **${title}** (${status}${audio}${volumeText})` };
   } catch (error: any) {
     return { ok: false, message: error?.name === 'AbortError' ? 'HearMeOut timed out.' : 'HearMeOut control request failed.' };
   } finally {
@@ -215,9 +299,32 @@ export async function POST(request: NextRequest) {
 
     if (body.type === 3 && customId) {
       if (customId.startsWith('hmo_watch_controls:')) {
-        const sessionId = customId.split(':').slice(1).join(':') || HMO_WATCH_SESSION_ID;
+        const sessionId = normalizeHearMeOutSessionId(customId.split(':').slice(1).join(':'));
         return ephemeral('HearMeOut controls', {
           components: buildHearMeOutControls(sessionId),
+          allowed_mentions: { parse: [] },
+        });
+      }
+
+      if (customId.startsWith('hmo_watch_lane:')) {
+        return ephemeral('Choose which HearMeOut lane to open or control.', {
+          components: buildHearMeOutLaneControls(),
+          allowed_mentions: { parse: [] },
+        });
+      }
+
+      if (customId.startsWith('hmo_watch_volume_modal:')) {
+        const sessionId = normalizeHearMeOutSessionId(customId.split(':').slice(1).join(':'));
+        return NextResponse.json({
+          type: 9,
+          data: buildHearMeOutVolumeModal(sessionId),
+        });
+      }
+
+      if (customId.startsWith('hmo_watch_volume:')) {
+        const sessionId = normalizeHearMeOutSessionId(customId.split(':').slice(1).join(':'));
+        return ephemeral('Volume controls update the shared HearMeOut session.', {
+          components: buildHearMeOutVolumeControls(sessionId),
           allowed_mentions: { parse: [] },
         });
       }
@@ -240,7 +347,7 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      // ── Chat Tag button interactions ──
+      // Chat Tag button interactions
       if (customId.startsWith('chattag_')) {
         const serverId = body.guild_id || getHardcodedGuildId();
         const clickerId = body.member?.user?.id || body.user?.id;
@@ -1223,6 +1330,27 @@ export async function POST(request: NextRequest) {
           }
         });
       }
+    }
+
+    if (body.type === 5 && customId?.startsWith('hmo_watch_volume_submit:')) {
+      const sessionId = normalizeHearMeOutSessionId(customId.split(':').slice(1).join(':'));
+      const rawVolume = readModalValue(body.data, 'volume_value');
+      const volume = Math.max(0, Math.min(100, Math.round(Number(rawVolume))));
+      if (!Number.isFinite(volume)) return ephemeral('Volume must be a number from 0 to 100.');
+      const applicationId = body.application_id || getDiscordClientId();
+      runHearMeOutWatchControl('volume', sessionId, {
+        userId: body.member?.user?.id || body.user?.id,
+        guildId: body.guild_id,
+        channelId: body.channel_id,
+        isAdmin: discordMemberCanManageWatch(body.member),
+      }, volume)
+        .then((result) => updateDeferredInteraction(applicationId, body.token, result.ok ? `✅ ${result.message}` : `❌ ${result.message}`))
+        .catch((error) => updateDeferredInteraction(applicationId, body.token, `❌ ${error?.message || 'HearMeOut volume request failed.'}`));
+
+      return NextResponse.json({
+        type: 5,
+        data: { content: `Setting HearMeOut volume to ${volume}%...`, flags: 64 },
+      });
     }
 
     if (body.type === 5 && customId) {
