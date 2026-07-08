@@ -342,12 +342,8 @@ function buildHearMeOutControlsPayload(options: { activityInviteUrl?: string; in
   };
 }
 
-async function sendHearMeOutControls(channelId: string, userId?: string, origin?: string) {
+async function sendHearMeOutControls(channelId: string, origin?: string) {
   const payload = buildHearMeOutControlsPayload({ origin });
-  if (userId) {
-    const dm = await createDiscordDmChannel(userId);
-    if (dm?.id) return sendDiscordChannelMessage(dm.id, payload);
-  }
   return sendDiscordChannelMessage(channelId, payload);
 }
 
@@ -440,22 +436,16 @@ export async function POST(request: NextRequest) {
     if (/^!(controls?|watch-controls)$/i.test(message.trim()) && channelId) {
       const deletedCommand = await deleteDiscordMessage(channelId, messageId);
       try {
-        await sendHearMeOutControls(channelId, userId, request.nextUrl.origin);
-        return NextResponse.json({ success: true, commandHandled: 'hearmeout-controls', delivery: userId ? 'dm' : 'channel', deletedCommand });
+        const sent = await sendHearMeOutControls(channelId, request.nextUrl.origin);
+        return NextResponse.json({ success: true, commandHandled: 'hearmeout-controls', delivery: 'channel', deletedCommand, sent });
       } catch (error: any) {
-        const fallback = await sendDiscordChannelMessage(channelId, {
-          ...buildHearMeOutControlsPayload({ origin: request.nextUrl.origin }),
-          content: userId ? `<@${userId}> I could not DM you, so here are the controls.` : '',
-          allowed_mentions: { users: userId ? [userId] : [] },
-        });
         return NextResponse.json({
-          success: true,
+          success: false,
           commandHandled: 'hearmeout-controls',
-          delivery: 'channel-fallback',
+          delivery: 'channel',
           deletedCommand,
-          fallback,
-          dmError: error?.message || 'DM failed',
-        });
+          error: error?.message || 'Failed to send controls',
+        }, { status: 502 });
       }
     }
 
