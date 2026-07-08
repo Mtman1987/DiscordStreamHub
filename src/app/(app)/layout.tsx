@@ -119,14 +119,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           return;
         }
 
-        router.replace(`/login?next=${encodeURIComponent(pathname || '/dashboard')}`);
+        const nextPath = `${pathname || '/dashboard'}${window.location.search || ''}`;
+        router.replace(`/login?next=${encodeURIComponent(nextPath)}`);
       } catch (error) {
         if (cancelled) return;
         if (window.localStorage.getItem('discordServerId') || window.localStorage.getItem('isLoggedIn') === 'true') {
           setSessionReady(true);
           return;
         }
-        router.replace(`/login?next=${encodeURIComponent(pathname || '/dashboard')}`);
+        const nextPath = `${pathname || '/dashboard'}${window.location.search || ''}`;
+        router.replace(`/login?next=${encodeURIComponent(nextPath)}`);
       }
     }
 

@@ -17,6 +17,13 @@ function readTwitchUsername(user: any) {
   return String(user?.twitchUsername || user?.twitchLogin || user?.twitch_login || twitch.username || twitch.login || '').trim();
 }
 
+function writeSession(session: Record<string, string>) {
+  for (const [key, value] of Object.entries(session)) {
+    if (value) localStorage.setItem(key, value);
+  }
+  localStorage.setItem('isLoggedIn', 'true');
+}
+
 export default function AuthCallbackPage() {
   const router = useRouter();
   const [message, setMessage] = React.useState('Completing SPMT sign in...');
@@ -59,19 +66,27 @@ export default function AuthCallbackPage() {
         const discordUsername = String(user.discordUsername || user.discord_username || user.username || user.displayName || '').trim();
         const displayName = String(user.discordDisplayName || user.discord_display_name || user.displayName || discordUsername || '').trim();
 
-        localStorage.setItem('spmtToken', nextToken);
-        if (user.id) localStorage.setItem('spmtUserId', String(user.id));
-        if (user.username) localStorage.setItem('spmtUsername', String(user.username));
-        if (discordUserId) localStorage.setItem('discordUserId', discordUserId);
-        if (discordUsername) localStorage.setItem('discordUsername', discordUsername);
-        if (displayName) localStorage.setItem('discordDisplayName', displayName);
-        if (twitchUsername) localStorage.setItem('twitchUsername', twitchUsername);
-
         const runtimeResponse = await fetch('/api/runtime-config', { cache: 'no-store' }).catch(() => null);
         const runtime = runtimeResponse?.ok ? await runtimeResponse.json() : null;
         const defaultServerId = runtime?.publicIds?.hardcodedGuildId;
-        if (defaultServerId) localStorage.setItem('discordServerId', String(defaultServerId));
-        localStorage.setItem('isLoggedIn', 'true');
+        const session: Record<string, string> = {
+          spmtToken: nextToken,
+          ...(user.id ? { spmtUserId: String(user.id) } : {}),
+          ...(user.username ? { spmtUsername: String(user.username) } : {}),
+          ...(discordUserId ? { discordUserId } : {}),
+          ...(discordUsername ? { discordUsername } : {}),
+          ...(displayName ? { discordDisplayName: displayName } : {}),
+          ...(twitchUsername ? { twitchUsername } : {}),
+          ...(defaultServerId ? { discordServerId: String(defaultServerId) } : {}),
+        };
+        writeSession(session);
+
+        if (!cancelled && window.opener && !window.opener.closed) {
+          window.opener.postMessage({ type: 'DSH_SPMT_AUTH_COMPLETE', session, next }, window.location.origin);
+          setMessage('SPMT sign in complete. Returning to the chat popout...');
+          setTimeout(() => window.close(), 600);
+          return;
+        }
 
         if (!cancelled) router.replace(next.startsWith('/') ? next : '/dashboard');
       } catch (error) {

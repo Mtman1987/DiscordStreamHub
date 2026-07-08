@@ -136,13 +136,6 @@ function buildHearMeOutLaneControls() {
     {
       type: 1,
       components: [
-        { type: 2, style: 5, label: 'Open Movies', url: getHearMeOutActivityUrl(HMO_MOVIE_SESSION_ID), emoji: { name: '🎬' } },
-        { type: 2, style: 5, label: 'Open Music', url: getHearMeOutActivityUrl(HMO_MUSIC_SESSION_ID), emoji: { name: '🎵' } },
-      ],
-    },
-    {
-      type: 1,
-      components: [
         { type: 2, style: 1, label: 'Movie Controls', custom_id: `hmo_watch_controls:${HMO_MOVIE_SESSION_ID}`, emoji: { name: '🎛️' } },
         { type: 2, style: 1, label: 'Music Controls', custom_id: `hmo_watch_controls:${HMO_MUSIC_SESSION_ID}`, emoji: { name: '🎚️' } },
       ],
@@ -307,7 +300,7 @@ export async function POST(request: NextRequest) {
       }
 
       if (customId.startsWith('hmo_watch_lane:')) {
-        return ephemeral('Choose which HearMeOut lane to open or control.', {
+        return ephemeral('Choose which HearMeOut lane to control.', {
           components: buildHearMeOutLaneControls(),
           allowed_mentions: { parse: [] },
         });

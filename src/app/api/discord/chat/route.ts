@@ -316,7 +316,7 @@ function buildHearMeOutPromptControls(preferredSessionId = HMO_MOVIE_SESSION_ID,
     components: [
       { type: 2, style: 1, label: preferredLabel, custom_id: `hmo_watch_controls:${preferred}`, emoji: { name: '🎛️' } },
       { type: 2, style: 2, label: otherLabel, custom_id: `hmo_watch_controls:${other}`, emoji: { name: '🎚️' } },
-      { type: 2, style: 2, label: 'Switch Lane', custom_id: `hmo_watch_lane:${preferred}`, emoji: { name: '🔀' } },
+      { type: 2, style: 2, label: 'Choose Lane', custom_id: `hmo_watch_lane:${preferred}`, emoji: { name: '🔀' } },
       { type: 2, style: 2, label: 'Volume', custom_id: `hmo_watch_volume:${preferred}`, emoji: { name: '🔊' } },
       { type: 2, style: 5, label: 'Join Activity', url: joinUrl || getHearMeOutActivityUrl(preferred), emoji: { name: '🎬' } },
     ],

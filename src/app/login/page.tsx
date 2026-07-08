@@ -17,9 +17,65 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { Separator } from '@/components/ui/separator';
 
+function getSafeNextPath(value: string | null) {
+  return value && value.startsWith('/') && !value.startsWith('//') ? value : '/dashboard';
+}
+
+function applySessionPayload(payload: Record<string, unknown> = {}) {
+  for (const [key, value] of Object.entries(payload)) {
+    if (value !== undefined && value !== null && String(value).trim()) {
+      localStorage.setItem(key, String(value));
+    }
+  }
+  localStorage.setItem('isLoggedIn', 'true');
+}
+
+function applyServerIdFromNext(nextPath: string) {
+  try {
+    const url = new URL(nextPath, window.location.origin);
+    const serverId = url.searchParams.get('serverId') || url.searchParams.get('guildId') || url.searchParams.get('discordServerId');
+    if (serverId) localStorage.setItem('discordServerId', serverId);
+  } catch {}
+}
+
 export default function LoginPage() {
   const router = useRouter();
+  const [nextPath, setNextPath] = React.useState('/dashboard');
   const spmtAuthorizeUrl = 'https://spmt.live/api/oauth/authorize?client_id=discord-stream-hub&redirect_uri=https%3A%2F%2Fdiscord-stream-hub-new.fly.dev%2Fauth%2Fcallback';
+
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setNextPath(getSafeNextPath(params.get('next')));
+  }, []);
+
+  React.useEffect(() => {
+    function finishLogin(session?: Record<string, unknown>) {
+      applySessionPayload(session);
+      applyServerIdFromNext(nextPath);
+      window.dispatchEvent(new Event('dsh-session-restored'));
+      router.replace(nextPath);
+    }
+
+    function handleAuthMessage(event: MessageEvent) {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type !== 'DSH_SPMT_AUTH_COMPLETE') return;
+      finishLogin(event.data?.session || {});
+    }
+
+    function handleStorage(event: StorageEvent) {
+      if (event.key === 'isLoggedIn' && event.newValue === 'true') {
+        applyServerIdFromNext(nextPath);
+        router.replace(nextPath);
+      }
+    }
+
+    window.addEventListener('message', handleAuthMessage);
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener('message', handleAuthMessage);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, [nextPath, router]);
 
   const handleLogin = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -34,7 +90,12 @@ export default function LoginPage() {
     localStorage.setItem('twitchUsername', twitchUsername);
     localStorage.setItem('isLoggedIn', 'true');
     
-    router.push('/dashboard');
+    router.push(nextPath);
+  };
+
+  const handleSpmtLogin = () => {
+    const popup = window.open(spmtAuthorizeUrl, 'dsh-spmt-auth', 'popup=yes,width=520,height=760');
+    if (!popup) window.location.href = spmtAuthorizeUrl;
   };
   
   const handleReset = () => {
@@ -72,11 +133,9 @@ export default function LoginPage() {
               <p className="mb-3 text-sm text-muted-foreground">
                 Use your SPMT account as the ecosystem identity for Discord Stream Hub. Legacy manual login stays available below.
               </p>
-              <Button asChild className="w-full">
-                <a href={spmtAuthorizeUrl} target="_blank" rel="noopener noreferrer">
-                  <LogIn className="mr-2 h-4 w-4" />
-                  Continue with SPMT
-                </a>
+              <Button type="button" className="w-full" onClick={handleSpmtLogin}>
+                <LogIn className="mr-2 h-4 w-4" />
+                Continue with SPMT
               </Button>
               <Button asChild variant="link" className="mt-1 w-full">
                 <a href="https://spmt.live/?view=connections" target="_blank" rel="noopener noreferrer">Authorize Twitch / Discord in SPMT</a>

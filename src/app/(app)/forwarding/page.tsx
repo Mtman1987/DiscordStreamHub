@@ -140,10 +140,22 @@ export default function ForwardingPage() {
     setTwitchParent(window.location.hostname);
     const params = new URLSearchParams(window.location.search);
     const embedded = params.get('embed') === '1';
+    const mode = String(params.get('mode') || '').toLowerCase();
     const fromQuery = params.get('serverId');
+    const discordChannelId = params.get('discordChannelId') || params.get('channelId') || '';
+    const twitchChannel = params.get('twitchChannel') || '';
     setIsEmbedded(embedded);
     setServerId(fromQuery || localStorage.getItem('discordServerId'));
     setUserId(localStorage.getItem('discordUserId'));
+    if (mode === 'twitch') {
+      setShowDiscord(false);
+      setShowTwitch(true);
+    } else if (mode === 'discord') {
+      setShowDiscord(true);
+      setShowTwitch(false);
+    }
+    if (discordChannelId) setSelectedChannelId(discordChannelId);
+    if (twitchChannel) setSelectedTwitchChannel(twitchChannel.trim().replace(/^@/, '').toLowerCase());
   }, []);
 
   const { data: userProfile } = useDbDoc<{ username: string; avatarUrl: string }>(
