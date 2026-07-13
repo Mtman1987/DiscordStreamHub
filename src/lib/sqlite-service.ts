@@ -15,8 +15,13 @@ type StoredState = {
   docs: Record<string, StoredDoc>;
 };
 
-const STORAGE_PATH = process.env.NODE_ENV === 'production' ? '/data' : join(process.cwd(), 'data');
-const DB_PATH = getDatabaseFilePath() || join(STORAGE_PATH, 'app.db');
+const IS_BUILD_DB = process.env.DSH_BUILD_DB === '1';
+const STORAGE_PATH = IS_BUILD_DB
+  ? join(process.cwd(), '.next-build-data', String(process.pid))
+  : process.env.NODE_ENV === 'production'
+    ? '/data'
+    : join(process.cwd(), 'data');
+const DB_PATH = IS_BUILD_DB ? join(STORAGE_PATH, 'app.db') : getDatabaseFilePath() || join(STORAGE_PATH, 'app.db');
 const LEGACY_JSON_PATH = join(STORAGE_PATH, 'app.db.json');
 
 function ensureStorage(): void {
