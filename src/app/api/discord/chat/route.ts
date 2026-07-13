@@ -15,6 +15,7 @@ import {
 } from '@/lib/runtime-config';
 import { recordDiscordMessageActivity } from '@/lib/discord-activity-service';
 import { parseDiscordChatPayload } from '@/lib/discord-chat-payload';
+import { publishSpmtEvent } from '@/lib/spmt-client';
 
 const COOLDOWN_MS = 5 * 60 * 1000; // 1 point per 5 min per user
 const discordChatCooldowns = new Map<string, number>();
@@ -26,6 +27,32 @@ const CHAT_TAG_AVATAR_URL = getChatTagAvatarUrl();
 const DISCORD_ACTIVITY_APPLICATION_ID = getDiscordActivityApplicationId();
 const HMO_MOVIE_SESSION_ID = 'discord-watch-room';
 const HMO_MUSIC_SESSION_ID = 'discord-music-room';
+
+function publishDiscordBridgeEvent(type: string, input: {
+  userId?: string;
+  userName?: string;
+  guildId?: string;
+  channelId?: string;
+  message?: string;
+  summary: string;
+  payload?: Record<string, unknown>;
+}) {
+  void publishSpmtEvent({
+    type,
+    visibility: 'community',
+    actor: input.userId
+      ? { userId: input.userId, username: input.userName || input.userId, displayName: input.userName || input.userId }
+      : undefined,
+    payload: {
+      summary: input.summary,
+      guildId: input.guildId || null,
+      channelId: input.channelId || null,
+      message: input.message || null,
+      source: 'discord-stream-hub-discord-chat',
+      ...(input.payload || {}),
+    },
+  });
+}
 
 function timeoutSignal(milliseconds: number) {
   const controller = new AbortController();
@@ -437,6 +464,15 @@ export async function POST(request: NextRequest) {
       const deletedCommand = await deleteDiscordMessage(channelId, messageId);
       try {
         const sent = await sendHearMeOutControls(channelId, request.nextUrl.origin);
+        publishDiscordBridgeEvent('discord.hearmeout.controls_sent', {
+          userId,
+          userName,
+          guildId,
+          channelId,
+          message,
+          summary: `${userName} opened HearMeOut controls from Discord.`,
+          payload: { delivery: 'channel', deletedCommand, sentMessageId: sent?.id || null },
+        });
         return NextResponse.json({ success: true, commandHandled: 'hearmeout-controls', delivery: 'channel', deletedCommand, sent });
       } catch (error: any) {
         return NextResponse.json({
@@ -502,6 +538,20 @@ export async function POST(request: NextRequest) {
           messageId,
           source: 'discord-stream-hub',
         });
+        publishDiscordBridgeEvent('discord.hearmeout.command_forwarded', {
+          userId,
+          userName,
+          guildId,
+          channelId,
+          message,
+          summary: `${userName} forwarded a HearMeOut media command from Discord.`,
+          payload: {
+            command: message.trim().split(/\s+/)[0] || null,
+            activityVoiceChannelId: activityVoiceChannelId || null,
+            hearmeoutHandled: Boolean(result?.handled || result?.success),
+            hearmeoutAction: result?.action || result?.commandHandled || null,
+          },
+        });
         return NextResponse.json({ success: true, commandHandled: 'watch-request', hearmeout: result });
       } catch (error: any) {
         const sent = await sendDiscordChannelMessage(channelId, {
@@ -529,6 +579,15 @@ export async function POST(request: NextRequest) {
         const sent = await sendChatTagControlsButton(channelId, guildId);
         const deletedCommand = await deleteDiscordMessage(channelId, messageId);
         console.log(`[DiscordChat] Sent Chat Tag controls button: ${sent?.id || 'unknown-message-id'}`);
+        publishDiscordBridgeEvent('discord.chattag.controls_sent', {
+          userId,
+          userName,
+          guildId,
+          channelId,
+          message,
+          summary: `${userName} opened Chat Tag controls from Discord.`,
+          payload: { deletedCommand, sentMessageId: sent?.id || null },
+        });
         return NextResponse.json({ success: true, commandHandled: 'chat-tag-controls', messageId: sent?.id, deletedCommand });
       }
     }
@@ -567,6 +626,18 @@ export async function POST(request: NextRequest) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-bot-secret': CHAT_TAG_SERVICE_SECRET },
           body: JSON.stringify({ action: 'chat-activity', userId: player.id, twitchUsername: twitchLogin, channel: 'discord' }),
+        }).then((response) => {
+          if (response.ok) {
+            publishDiscordBridgeEvent('discord.chattag.activity_forwarded', {
+              userId,
+              userName,
+              guildId,
+              channelId,
+              message,
+              summary: `${userName} Discord activity was forwarded to Chat Tag.`,
+              payload: { playerId: player.id, twitchLogin },
+            });
+          }
         }).catch(() => {});
       }
     }
