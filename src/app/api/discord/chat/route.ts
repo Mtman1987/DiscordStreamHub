@@ -485,6 +485,7 @@ export async function POST(request: NextRequest) {
     if (isForwardedWatchCommand && channelId) {
       console.log(`[DiscordChat] Forwarding watch request to HearMeOut from ${userName}: ${message} (channelId: ${channelId})`);
       try {
+        const activityVoiceChannelId = getActivityVoiceChannelId(data);
         const result = await forwardHearMeOutDiscordChat({
           ...data,
           message,
@@ -495,6 +496,9 @@ export async function POST(request: NextRequest) {
           guildId,
           serverId: guildId,
           channelId,
+          activityVoiceChannelId,
+          voiceChannelId: data.voiceChannelId || activityVoiceChannelId,
+          voice_channel_id: data.voice_channel_id || activityVoiceChannelId,
           messageId,
           source: 'discord-stream-hub',
         });
