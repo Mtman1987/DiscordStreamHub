@@ -48,19 +48,26 @@ else
   ) &
 fi
 
-# 5. Optional legacy Discord watch command bot.
-# External bots can send the same command payloads to /api/discord/chat, so keep
-# this disabled unless a deploy explicitly opts into the in-container bot.
-if [ "$ENABLE_WATCH_VOICE_BOT" = "true" ] && [ -n "$DISCORD_BOT_TOKEN" ]; then
+# 5. Optional Discord voice adapter. Its public enable flag and endpoints live
+# in the volume-backed runtime config; the bot token remains a Fly secret.
+RUNTIME_CONFIG_FILE="${RUNTIME_CONFIG_FILE:-/data/runtime-config.json}"
+WATCH_VOICE_ENABLED="$(node -e "try{const c=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));process.stdout.write(c.publicFlags?.discordWatchVoiceBot===false?'false':'true')}catch{process.stdout.write('true')}" "$RUNTIME_CONFIG_FILE")"
+WATCH_VOICE_BASE_URL="$(node -e "try{const c=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));process.stdout.write(c.publicUrls?.hearmeoutUrl||'https://hearmeout-main.fly.dev')}catch{process.stdout.write('https://hearmeout-main.fly.dev')}" "$RUNTIME_CONFIG_FILE")"
+WATCH_VOICE_LIVEKIT_URL="$(node -e "try{const c=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));process.stdout.write(c.publicUrls?.livekitUrl||'wss://streamweaver-7atx04ct.livekit.cloud')}catch{process.stdout.write('wss://streamweaver-7atx04ct.livekit.cloud')}" "$RUNTIME_CONFIG_FILE")"
+WATCH_VOICE_BRIDGE_ROOM="$(node -e "try{const c=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));process.stdout.write(c.publicText?.discordVoiceBridgeRoomId||'discord-activity')}catch{process.stdout.write('discord-activity')}" "$RUNTIME_CONFIG_FILE")"
+if [ "$WATCH_VOICE_ENABLED" = "true" ] && [ -n "$DISCORD_BOT_TOKEN" ]; then
   (
-    echo "[Startup] Waiting to start watch command bot..."
+    echo "[Startup] Waiting to start Discord voice adapter..."
     sleep 25
-    WATCHROOM_DSH_BASE_URL="${WATCHROOM_DSH_BASE_URL:-http://localhost:3000}" npm run watch-voice-bot
+    WATCHROOM_DSH_BASE_URL="$WATCH_VOICE_BASE_URL" \
+      WATCHROOM_LIVEKIT_URL="$WATCH_VOICE_LIVEKIT_URL" \
+      WATCHROOM_BRIDGE_ROOM_ID="$WATCH_VOICE_BRIDGE_ROOM" \
+      npm run watch-voice-bot
   ) &
-elif [ "$ENABLE_WATCH_VOICE_BOT" = "true" ]; then
-  echo "[Startup] ENABLE_WATCH_VOICE_BOT=true but DISCORD_BOT_TOKEN is not set; watch command bot disabled"
+elif [ "$WATCH_VOICE_ENABLED" = "true" ]; then
+  echo "[Startup] Discord voice adapter enabled but DISCORD_BOT_TOKEN is not set"
 else
-  echo "[Startup] Legacy watch command bot disabled; expecting external bot to POST /api/discord/chat"
+  echo "[Startup] Discord voice adapter disabled by volume runtime config"
 fi
 
 # 6. Keep container alive with the DSH process

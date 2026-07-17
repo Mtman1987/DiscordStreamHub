@@ -1,9 +1,11 @@
 import 'dotenv/config';
 import {
   AudioPlayer,
+  AudioResource,
   AudioPlayerStatus,
   createAudioPlayer,
   createAudioResource,
+  EndBehaviorType,
   entersState,
   getVoiceConnection,
   joinVoiceChannel,
@@ -11,6 +13,9 @@ import {
   VoiceConnection,
   VoiceConnectionStatus,
 } from '@discordjs/voice';
+import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
+import { AudioFrame, AudioSource, LocalAudioTrack, Room, TrackPublishOptions, TrackSource } from '@livekit/rtc-node';
+import prism from 'prism-media';
 import {
   ChannelType,
   Client,
@@ -42,6 +47,7 @@ type WatchSession = {
     status: 'idle' | 'paused' | 'playing';
     position: number;
     updatedAt: number;
+    volume?: number;
   };
 };
 
@@ -55,6 +61,19 @@ type WatchItem = {
   title: string;
   playbackUrl: string;
   source: string;
+  metadata?: {
+    videoId?: string;
+    provider?: string;
+  };
+};
+
+type VoiceBridge = {
+  room: Room;
+  source: AudioSource;
+  track: LocalAudioTrack;
+  speakingHandler: (userId: string) => void;
+  streams: Map<string, { opus: Readable; decoder: Readable }>;
+  captureQueue: Promise<void>;
 };
 
 type WatchRequestResult =
@@ -65,14 +84,22 @@ type GuildPlayback = {
   player: AudioPlayer;
   connection: VoiceConnection;
   ffmpeg?: ChildProcessByStdio<null, Readable, Readable>;
+  resource?: AudioResource;
   currentRequestId?: string;
+  sessionId: string;
   textChannel?: TextBasedChannel;
   advancing?: boolean;
+  advanceOnIdle?: boolean;
+  pollTimer?: NodeJS.Timeout;
+  bridge?: VoiceBridge;
 };
 
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const DSH_BASE_URL = (process.env.WATCHROOM_DSH_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
-const FFMPEG_PATH = process.env.FFMPEG_PATH || 'ffmpeg';
+const FFMPEG_PATH = process.env.FFMPEG_PATH || ffmpegInstaller.path || 'ffmpeg';
+const MUSIC_SESSION_ID = process.env.WATCHROOM_MUSIC_SESSION_ID || 'discord-music-room';
+const LIVEKIT_URL = process.env.WATCHROOM_LIVEKIT_URL || '';
+const BRIDGE_ROOM_ID = process.env.WATCHROOM_BRIDGE_ROOM_ID || 'discord-activity';
 const CLEANUP_AFTER_MS = Number(process.env.WATCHROOM_COMMAND_CLEANUP_MS || 120_000);
 const IGNORE_FILE = process.env.WATCHROOM_IGNORE_FILE || join(process.cwd(), 'logs', 'watch-ignore-list.json');
 const DISCORD_ACTIVITY_APPLICATION_ID =
@@ -186,6 +213,12 @@ function parseWatchCommand(content: string) {
     command: `!${match[1].toLowerCase()}`,
     query: (match[2] || '').trim(),
   };
+}
+
+function parseDjCommand(content: string) {
+  const match = content.trim().match(/^!dj(?:\s+(join|play|leave|stop|status|bridge\s+(?:on|off)))?$/i);
+  if (!match) return null;
+  return (match[1] || 'join').toLowerCase();
 }
 
 function parseAcceptCommand(content: string) {
@@ -326,6 +359,89 @@ function stopFfmpeg(playback: GuildPlayback) {
   playback.ffmpeg = undefined;
 }
 
+async function startVoiceBridge(message: Message, playback: GuildPlayback) {
+  if (playback.bridge) return 'Discord voice bridge is already ON.';
+  if (!LIVEKIT_URL) throw new Error('LiveKit URL is not configured for the Discord voice bridge.');
+
+  playback.connection.rejoin({ channelId: playback.connection.joinConfig.channelId, selfDeaf: false, selfMute: false });
+  await entersState(playback.connection, VoiceConnectionStatus.Ready, 20_000);
+
+  const tokenResponse = await fetch(`${DSH_BASE_URL}/api/livekit-token`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-hmo-dj-worker': '1' },
+    body: JSON.stringify({ roomId: BRIDGE_ROOM_ID, userName: 'Discord Voice Bridge', musicRoom: true, isDJ: true }),
+  });
+  if (!tokenResponse.ok) throw new Error(`HearMeOut LiveKit token failed (${tokenResponse.status})`);
+  const tokenPayload = await tokenResponse.json() as { token?: string };
+  if (!tokenPayload.token) throw new Error('HearMeOut did not return a LiveKit token.');
+
+  const room = new Room();
+  await room.connect(LIVEKIT_URL, tokenPayload.token);
+  const participant = room.localParticipant;
+  if (!participant) throw new Error('LiveKit local participant is unavailable.');
+  const source = new AudioSource(48_000, 2);
+  const track = LocalAudioTrack.createAudioTrack('discord-voice-bridge', source);
+  await participant.publishTrack(track, new TrackPublishOptions({ source: TrackSource.SOURCE_MICROPHONE }));
+
+  const bridge: VoiceBridge = {
+    room,
+    source,
+    track,
+    streams: new Map(),
+    captureQueue: Promise.resolve(),
+    speakingHandler: () => {},
+  };
+
+  bridge.speakingHandler = (userId: string) => {
+    if (bridge.streams.has(userId) || userId === message.client.user.id) return;
+    const member = message.guild?.members.cache.get(userId);
+    if (member?.user.bot) return;
+
+    const opus = playback.connection.receiver.subscribe(userId, {
+      end: { behavior: EndBehaviorType.AfterSilence, duration: 250 },
+    });
+    const decoder = new prism.opus.Decoder({ rate: 48_000, channels: 2, frameSize: 960 });
+    bridge.streams.set(userId, { opus, decoder });
+    let pending = Buffer.alloc(0);
+    opus.pipe(decoder);
+    decoder.on('data', (chunk: Buffer) => {
+      pending = Buffer.concat([pending, chunk]);
+      while (pending.length >= 3_840) {
+        const pcm = Buffer.from(pending.subarray(0, 3_840));
+        pending = pending.subarray(3_840);
+        const samples = new Int16Array(pcm.buffer, pcm.byteOffset, pcm.length / 2);
+        const frame = new AudioFrame(samples, 48_000, 2, 960);
+        bridge.captureQueue = bridge.captureQueue
+          .then(() => bridge.source.captureFrame(frame))
+          .catch((error) => console.warn('[WatchVoice] Bridge frame failed:', error.message));
+      }
+    });
+    const cleanup = () => bridge.streams.delete(userId);
+    opus.once('close', cleanup);
+    opus.once('end', cleanup);
+    opus.once('error', cleanup);
+  };
+
+  playback.connection.receiver.speaking.on('start', bridge.speakingHandler);
+  playback.bridge = bridge;
+  return `Discord voice bridge is ON. Voices are being relayed to HearMeOut room **${BRIDGE_ROOM_ID}**; use \`!dj bridge off\` to stop.`;
+}
+
+async function stopVoiceBridge(playback: GuildPlayback) {
+  const bridge = playback.bridge;
+  if (!bridge) return 'Discord voice bridge is already OFF.';
+  playback.connection.receiver.speaking.off('start', bridge.speakingHandler);
+  for (const stream of bridge.streams.values()) {
+    stream.opus.destroy();
+    stream.decoder.destroy();
+  }
+  bridge.streams.clear();
+  try { await bridge.room.disconnect(); } catch {}
+  playback.bridge = undefined;
+  playback.connection.rejoin({ channelId: playback.connection.joinConfig.channelId, selfDeaf: true, selfMute: false });
+  return 'Discord voice bridge is OFF.';
+}
+
 function createFfmpegAudioStream(item: WatchItem) {
   const playbackUrl = new URL(item.playbackUrl, `${DSH_BASE_URL}/`).toString();
   const args = [
@@ -379,15 +495,23 @@ async function playCurrent(guildId: string, sessionId: string) {
   if (playback.currentRequestId === session.current.requestId) return;
 
   stopFfmpeg(playback);
+  playback.advanceOnIdle = false;
   playback.currentRequestId = session.current.requestId;
 
   const ffmpeg = createFfmpegAudioStream(session.current.item);
   playback.ffmpeg = ffmpeg;
+  ffmpeg.once('exit', (code) => {
+    playback.advanceOnIdle = code === 0;
+    if (code !== 0) {
+      sendToTextChannel(playback.textChannel, `Could not play **${session.current?.item.title || 'the current song'}** in Discord voice.`).catch(() => {});
+    }
+  });
 
   const resource = createAudioResource(ffmpeg.stdout, {
     inputType: StreamType.Raw,
     inlineVolume: true,
   });
+  playback.resource = resource;
   resource.volume?.setVolume(0.85);
 
   playback.player.play(resource);
@@ -428,6 +552,7 @@ async function getOrJoinPlayback(message: Message, sessionId: string) {
   const existing = playbackByGuild.get(message.guild.id);
   if (existing && existing.connection.joinConfig.channelId === voiceChannel.id) {
     existing.textChannel = message.channel;
+    existing.sessionId = sessionId;
     return existing;
   }
 
@@ -439,6 +564,8 @@ async function getOrJoinPlayback(message: Message, sessionId: string) {
     guildId: message.guild.id,
     adapterCreator: message.guild.voiceAdapterCreator,
     selfDeaf: true,
+    selfMute: false,
+    daveEncryption: true,
   });
 
   await entersState(connection, VoiceConnectionStatus.Ready, 20_000);
@@ -449,13 +576,21 @@ async function getOrJoinPlayback(message: Message, sessionId: string) {
   const playback: GuildPlayback = {
     player,
     connection,
+    sessionId,
     textChannel: message.channel,
   };
 
   player.on(AudioPlayerStatus.Idle, () => {
     stopFfmpeg(playback);
     skipVotes.delete(sessionId);
-    console.log('[WatchVoice] Voice audio became idle; leaving watch session current item unchanged.');
+    if (playback.advanceOnIdle) {
+      playback.advanceOnIdle = false;
+      advanceToNext(message.guild!.id, playback.sessionId).catch((error) => {
+        console.error('[WatchVoice] Automatic queue advance failed:', error);
+      });
+    } else {
+      console.log('[WatchVoice] Voice audio became idle without a completed track; leaving current item unchanged.');
+    }
   });
 
   player.on('error', (error) => {
@@ -465,15 +600,81 @@ async function getOrJoinPlayback(message: Message, sessionId: string) {
 
   connection.on(VoiceConnectionStatus.Disconnected, () => {
     stopFfmpeg(playback);
+    if (playback.pollTimer) clearInterval(playback.pollTimer);
+    if (playback.bridge) stopVoiceBridge(playback).catch(() => {});
     playbackByGuild.delete(message.guild!.id);
   });
 
   playbackByGuild.set(message.guild.id, playback);
+  playback.pollTimer = setInterval(() => {
+    getSession(playback.sessionId)
+      .then((session) => {
+        if (session.current?.requestId !== playback.currentRequestId) return playCurrent(message.guild!.id, playback.sessionId);
+        if (session.playback.status === 'paused') playback.player.pause();
+        if (session.playback.status === 'playing' && playback.player.state.status === AudioPlayerStatus.Paused) playback.player.unpause();
+        if (playback.resource?.volume && typeof session.playback.volume === 'number') {
+          playback.resource.volume.setVolume(Math.max(0, Math.min(1, session.playback.volume / 100)));
+        }
+      })
+      .catch((error) => console.warn('[WatchVoice] Music session poll failed:', error.message));
+  }, 2_000);
+  playback.pollTimer.unref?.();
   return playback;
 }
 
 async function handleMessage(message: Message) {
   if (message.author.bot || !message.guild) return;
+
+  const djCommand = parseDjCommand(message.content);
+  if (djCommand) {
+    scheduleDelete(message);
+    try {
+      const existing = playbackByGuild.get(message.guild.id);
+      if (djCommand === 'leave' || djCommand === 'stop') {
+        if (!existing) {
+          await replyAndMaybeDelete(message, 'SPMT DJ is not connected.');
+          return;
+        }
+        if (existing.bridge) await stopVoiceBridge(existing);
+        if (existing.pollTimer) clearInterval(existing.pollTimer);
+        stopFfmpeg(existing);
+        existing.connection.destroy();
+        playbackByGuild.delete(message.guild.id);
+        await replyAndMaybeDelete(message, 'SPMT DJ left the voice channel.');
+        return;
+      }
+
+      const playback = existing || await getOrJoinPlayback(message, MUSIC_SESSION_ID);
+      playback.sessionId = MUSIC_SESSION_ID;
+      const voiceState = message.guild.members.me?.voice;
+
+      if (djCommand === 'bridge on') {
+        const result = await startVoiceBridge(message, playback);
+        await replyAndMaybeDelete(message, result, true);
+        return;
+      }
+      if (djCommand === 'bridge off') {
+        const result = await stopVoiceBridge(playback);
+        await replyAndMaybeDelete(message, result, true);
+        return;
+      }
+      if (djCommand === 'status') {
+        await replyAndMaybeDelete(message, `SPMT DJ: connected=${playback.connection.state.status === VoiceConnectionStatus.Ready}, serverMuted=${voiceState?.serverMute === true}, music=${playback.currentRequestId ? 'loaded' : 'waiting'}, bridge=${playback.bridge ? 'ON' : 'OFF'}.`);
+        return;
+      }
+
+      if (voiceState?.serverMute) {
+        await replyAndMaybeDelete(message, 'SPMT DJ joined, but Discord has it server-muted. Unmute the bot, then run `!dj play`.');
+        return;
+      }
+      await playCurrent(message.guild.id, MUSIC_SESSION_ID);
+      await replyAndMaybeDelete(message, 'SPMT DJ joined and is playing HearMeOut’s shared music room. Controls in HearMeOut and Discord now target the same queue.', true);
+    } catch (error: any) {
+      console.error('[WatchVoice] DJ command failed:', error);
+      await replyAndMaybeDelete(message, error.message || 'SPMT DJ command failed.');
+    }
+    return;
+  }
 
   const ignoreCommand = parseIgnoreCommand(message.content);
   if (ignoreCommand) {

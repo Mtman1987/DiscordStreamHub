@@ -21,6 +21,7 @@ const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
     discordInviteUrl: 'https://discord.gg/spacemountain',
     clipWorkerUrl: 'https://dsh-clip-worker.fly.dev',
     crewBannerGifUrl: 'https://via.placeholder.com/1920x120/00D9FF/FFFFFF?text=SPACE+MOUNTAIN+CREW',
+    livekitUrl: 'wss://streamweaver-7atx04ct.livekit.cloud',
   },
   publicIds: {
     twitchClientId: 'rxmohc28tthq0nudfd6iwx0sgy88dp',
@@ -43,6 +44,7 @@ const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
     storagePath: '/data/clips',
     puppeteerExecutablePath: '',
     databaseFilePath: '/data/app.db',
+    discordVoiceBridgeRoomId: 'discord-activity',
   },
   publicNumbers: {
     pointsTwitchFollow: 25,
@@ -64,6 +66,7 @@ const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
   publicFlags: {
     discordChatHandleWatch: true,
     discordDebugEnvLogs: false,
+    discordWatchVoiceBot: true,
   },
 };
 
