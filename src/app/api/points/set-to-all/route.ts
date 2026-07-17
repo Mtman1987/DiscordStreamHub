@@ -1,18 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PointsService } from '@/lib/points-service';
 import { getHardcodedGuildId } from '@/lib/runtime-config';
+import { getDshPointsSecret } from '@/lib/runtime-secrets';
 
 function isAuthorized(request: NextRequest): boolean {
+  const pointsSecret = getDshPointsSecret();
+  if (!pointsSecret) return false;
   const authHeader = request.headers.get('authorization');
   return Boolean(
     authHeader &&
     authHeader.startsWith('Bearer ') &&
-    authHeader.split(' ')[1] === process.env.BOT_SECRET_KEY,
+    authHeader === `Bearer ${pointsSecret}`,
   );
 }
 
 export async function POST(request: NextRequest) {
   try {
+    if (!getDshPointsSecret()) return NextResponse.json({ error: 'Points service credential is not configured' }, { status: 503 });
     if (!isAuthorized(request)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }

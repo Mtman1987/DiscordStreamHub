@@ -1,5 +1,6 @@
 import { db } from '@/lib/db';
 import { getChatTagApiBase, getChatTagBotUrl, getChatTagChannelId } from '@/lib/runtime-config';
+import { getChatTagServiceSecret } from '@/lib/runtime-secrets';
 
 const CHAT_TAG_API = getChatTagApiBase();
 const CHAT_TAG_BOT_URL = getChatTagBotUrl();
@@ -731,7 +732,8 @@ export function buildAdminEmbed(gameState: any, serverId: string): any {
 // ── Persistent embed compatibility ──
 
 export async function postOrUpdateGameEmbed(serverId: string): Promise<{ action: string; messageId: string }> {
-  const secret = process.env.CHAT_TAG_BOT_SECRET || process.env.BOT_SECRET_KEY || '1234';
+  const secret = getChatTagServiceSecret();
+  if (!secret) throw new Error('CHAT_TAG_BOT_SECRET is not configured.');
   const response = await fetch(`${CHAT_TAG_API}/api/discord/announce`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-bot-secret': secret },
@@ -751,7 +753,8 @@ export async function postOrUpdateGameEmbed(serverId: string): Promise<{ action:
 // ── Fetch helpers for interactions ──
 
 export async function fetchGameState(): Promise<any> {
-  const secret = process.env.CHAT_TAG_BOT_SECRET || '1234';
+  const secret = getChatTagServiceSecret();
+  if (!secret) throw new Error('CHAT_TAG_BOT_SECRET is not configured.');
   return tagApi(`/api/discord/game-state?secret=${secret}`);
 }
 

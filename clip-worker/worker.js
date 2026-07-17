@@ -46,7 +46,7 @@ function getRuntimeValue(section, key, fallback = '') {
 
 // ── Config ──
 const DSH_URL = getRuntimeValue('publicUrls', 'baseUrl', process.env.DSH_URL || 'https://discord-stream-hub-new.fly.dev');
-const WORKER_SECRET = process.env.CLIP_WORKER_SECRET || process.env.BOT_SECRET_KEY || '1234';
+const WORKER_SECRET = String(process.env.CLIP_WORKER_SECRET || '').trim();
 const SERVER_ID = getRuntimeValue('publicIds', 'hardcodedGuildId', process.env.HARDCODED_GUILD_ID || '1240832965865635881');
 const TWITCH_CLIENT_ID = getRuntimeValue('publicIds', 'twitchClientId', process.env.TWITCH_CLIENT_ID || 'rxmohc28tthq0nudfd6iwx0sgy88dp');
 const TWITCH_CLIENT_SECRET = process.env.TWITCH_CLIENT_SECRET || '';
@@ -82,8 +82,13 @@ http.createServer((req, res) => {
 async function handleHttpRequest(req, res) {
   const url = new URL(req.url || '/', 'http://127.0.0.1');
   if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/health' || url.pathname === '/api/health')) {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ status: 'ok', worker: 'clip-worker' }));
+    const ready = Boolean(WORKER_SECRET);
+    res.writeHead(ready ? 200 : 503, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      status: ready ? 'ok' : 'not-ready',
+      worker: 'clip-worker',
+      dependencies: { clipWorkerCredential: ready ? 'configured' : 'unavailable' },
+    }));
     return;
   }
 

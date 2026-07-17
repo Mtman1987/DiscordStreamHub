@@ -1,19 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getChatTagApiBase, getHardcodedGuildId } from '@/lib/runtime-config';
+import { getChatTagServiceSecret } from '@/lib/runtime-secrets';
 
 export const dynamic = 'force-dynamic';
 
 const DEFAULT_SERVER_ID = getHardcodedGuildId();
-const CHAT_TAG_SERVICE_SECRET = process.env.CHAT_TAG_BOT_SECRET || process.env.BOT_SECRET_KEY || '1234';
-
 export async function POST(request: NextRequest) {
   try {
+    const chatTagServiceSecret = getChatTagServiceSecret();
+    if (!chatTagServiceSecret) {
+      return NextResponse.json({ success: false, error: 'ChatTag service credential is not configured' }, { status: 503 });
+    }
     const body = await request.json().catch(() => ({}));
     const serverId = body.serverId || body.guildId || DEFAULT_SERVER_ID;
 
     const response = await fetch(`${getChatTagApiBase()}/api/discord/announce`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-bot-secret': CHAT_TAG_SERVICE_SECRET },
+      headers: { 'Content-Type': 'application/json', 'x-bot-secret': chatTagServiceSecret },
       body: JSON.stringify({ refreshOnly: true, message: 'dsh compatibility refresh' }),
     });
     const result = await response.json().catch(() => ({}));

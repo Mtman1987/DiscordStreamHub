@@ -12,6 +12,7 @@ import {
   getHearMeOutUrl as getHearMeOutUrlFromRuntime,
 } from '@/lib/runtime-config';
 import { grandfatherDiscordIdentity } from '@/lib/spmt-client';
+import { getChatTagServiceSecret } from '@/lib/runtime-secrets';
 
 function extractValues(components: any[] = []) {
   const values: Record<string, string> = {};
@@ -30,7 +31,7 @@ function ephemeral(content: string, extra: any = {}) {
   });
 }
 
-const CHAT_TAG_SERVICE_SECRET = process.env.CHAT_TAG_BOT_SECRET || process.env.BOT_SECRET_KEY || '';
+const CHAT_TAG_SERVICE_SECRET = getChatTagServiceSecret();
 const HMO_MOVIE_SESSION_ID = 'discord-watch-room';
 const HMO_MUSIC_SESSION_ID = 'discord-music-room';
 const HMO_WATCH_SESSION_ID = HMO_MOVIE_SESSION_ID;

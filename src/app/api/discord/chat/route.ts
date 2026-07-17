@@ -16,11 +16,11 @@ import {
 import { recordDiscordMessageActivity } from '@/lib/discord-activity-service';
 import { parseDiscordChatPayload } from '@/lib/discord-chat-payload';
 import { publishSpmtEvent } from '@/lib/spmt-client';
+import { getChatTagServiceSecret } from '@/lib/runtime-secrets';
 
 const COOLDOWN_MS = 5 * 60 * 1000; // 1 point per 5 min per user
 const discordChatCooldowns = new Map<string, number>();
 const processedDiscordMessages = new Map<string, number>();
-const CHAT_TAG_SERVICE_SECRET = process.env.CHAT_TAG_BOT_SECRET || process.env.BOT_SECRET_KEY || '1234';
 const PROCESSED_MESSAGE_TTL_MS = 10 * 60 * 1000;
 const CHAT_TAG_WEBHOOK_NAME = getChatTagWebhookName();
 const CHAT_TAG_AVATAR_URL = getChatTagAvatarUrl();
@@ -624,7 +624,7 @@ export async function POST(request: NextRequest) {
       if (player) {
         fetch(`${getChatTagApiBase()}/api/tag`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-bot-secret': CHAT_TAG_SERVICE_SECRET },
+          headers: { 'Content-Type': 'application/json', 'x-bot-secret': getChatTagServiceSecret() },
           body: JSON.stringify({ action: 'chat-activity', userId: player.id, twitchUsername: twitchLogin, channel: 'discord' }),
         }).then((response) => {
           if (response.ok) {

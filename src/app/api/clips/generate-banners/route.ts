@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getClipWorkerUrl } from '@/lib/runtime-config';
-
-const WORKER_SECRET = process.env.CLIP_WORKER_SECRET || process.env.BOT_SECRET_KEY || '1234';
+import { getClipWorkerSecret } from '@/lib/runtime-secrets';
 
 export async function POST(request: NextRequest) {
   try {
+    const workerSecret = getClipWorkerSecret();
+    if (!workerSecret) {
+      return NextResponse.json({ error: 'Clip worker credential is not configured' }, { status: 503 });
+    }
     const auth = request.headers.get('authorization');
-    if (auth !== `Bearer ${WORKER_SECRET}`) {
+    if (auth !== `Bearer ${workerSecret}`) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -14,7 +17,7 @@ export async function POST(request: NextRequest) {
     const response = await fetch(`${getClipWorkerUrl().replace(/\/$/, '')}/api/banners/generate`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${WORKER_SECRET}`,
+        Authorization: `Bearer ${workerSecret}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(payload),

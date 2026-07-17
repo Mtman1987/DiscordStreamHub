@@ -59,7 +59,7 @@ const GIF_REQUEST_COOLDOWN_MS = 12 * 60 * 60 * 1000;
 const OFFLINE_DELETE_MS = 60 * 60 * 1000;
 const LIVE_OFFLINE_GRACE_MS = 20 * 60 * 1000;
 const BANNER_REQUEST_COOLDOWN_MS = 30 * 60 * 1000;
-const STREAMWEAVER_SHARED_SECRET = String(process.env.BOT_SECRET_KEY || '').trim();
+const STREAMWEAVER_SHARED_SECRET = String(process.env.STREAMWEAVER_SECRET || '').trim();
 
 function manualCollection(serverId: string) {
   return db.collection('servers').doc(serverId).collection(MANUAL_COLLECTION);

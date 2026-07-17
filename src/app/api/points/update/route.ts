@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { awardPoints, type PointsEventType } from '@/lib/points-service';
+import { getDshPointsSecret } from '@/lib/runtime-secrets';
 
 interface PointsUpdatePayload {
   serverId?: string;
@@ -18,15 +19,17 @@ function jsonResponse(
 }
 
 export async function POST(req: NextRequest) {
-  const secret = process.env.POINTS_SERVICE_SECRET;
-  if (secret) {
-    const headerSecret = req.headers.get('x-service-secret');
-    if (headerSecret !== secret) {
-      return jsonResponse(
-        { status: 'error', message: 'Unauthorized request.' },
-        { status: 401 },
-      );
-    }
+  const secret = getDshPointsSecret();
+  if (!secret) {
+    return jsonResponse({ status: 'error', message: 'Points service credential is not configured.' }, { status: 503 });
+  }
+  const headerSecret = req.headers.get('x-service-secret');
+  const bearerSecret = String(req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
+  if (headerSecret !== secret && bearerSecret !== secret) {
+    return jsonResponse(
+      { status: 'error', message: 'Unauthorized request.' },
+      { status: 401 },
+    );
   }
 
   let payload: PointsUpdatePayload;

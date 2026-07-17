@@ -4,10 +4,10 @@ import { readdir, stat } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { getHardcodedGuildId, getStoragePath } from '@/lib/runtime-config';
+import { getClipWorkerSecret } from '@/lib/runtime-secrets';
 
 const STORAGE_PATH = getStoragePath();
 const STALE_DAYS = 30;
-const WORKER_SECRET = process.env.CLIP_WORKER_SECRET || process.env.BOT_SECRET_KEY || '1234';
 
 // Folders that aren't streamer clips
 const SKIP_FOLDERS = new Set([
@@ -49,8 +49,12 @@ async function getNewestFolderActivityMs(folderName: string): Promise<number> {
 }
 
 export async function GET(request: NextRequest) {
+  const workerSecret = getClipWorkerSecret();
+  if (!workerSecret) {
+    return NextResponse.json({ error: 'Clip worker credential is not configured' }, { status: 503 });
+  }
   const auth = request.headers.get('authorization');
-  if (auth !== `Bearer ${WORKER_SECRET}`) {
+  if (auth !== `Bearer ${workerSecret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

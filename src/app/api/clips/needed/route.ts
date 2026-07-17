@@ -4,10 +4,10 @@ import { readdir } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
 import { getHardcodedGuildId, getStoragePath } from '@/lib/runtime-config';
+import { getClipWorkerSecret } from '@/lib/runtime-secrets';
 
 const STORAGE_PATH = getStoragePath();
 const COOLDOWN_MS = 12 * 60 * 60 * 1000; // 12 hours
-const WORKER_SECRET = process.env.CLIP_WORKER_SECRET || process.env.BOT_SECRET_KEY || '1234';
 
 function normalizeLogin(value: string): string {
   return String(value || '').trim().toLowerCase();
@@ -29,8 +29,12 @@ function toTimestampMs(value: unknown): number {
 }
 
 export async function GET(request: NextRequest) {
+  const workerSecret = getClipWorkerSecret();
+  if (!workerSecret) {
+    return NextResponse.json({ error: 'Clip worker credential is not configured' }, { status: 503 });
+  }
   const auth = request.headers.get('authorization');
-  if (auth !== `Bearer ${WORKER_SECRET}`) {
+  if (auth !== `Bearer ${workerSecret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

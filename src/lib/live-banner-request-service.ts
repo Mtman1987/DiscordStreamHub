@@ -4,8 +4,8 @@ import { db } from '@/lib/db';
 import { getClipWorkerUrl, getStoragePath } from '@/lib/runtime-config';
 import { existsSync } from 'fs';
 import { join } from 'path';
+import { getClipWorkerSecret } from '@/lib/runtime-secrets';
 
-const WORKER_SECRET = process.env.CLIP_WORKER_SECRET || process.env.BOT_SECRET_KEY || '1234';
 const BANNER_REQUEST_COOLDOWN_MS = 30 * 60 * 1000;
 
 function normalizeTwitchLogin(value: string): string {
@@ -21,12 +21,17 @@ function hasStoredBanner(twitchLogin: string): boolean {
 export async function requestLiveBannerFromWorker(twitchLogin: string): Promise<boolean> {
   const normalizedLogin = normalizeTwitchLogin(twitchLogin);
   if (!normalizedLogin) return false;
+  const workerSecret = getClipWorkerSecret();
+  if (!workerSecret) {
+    console.warn('[BannerRequest] CLIP_WORKER_SECRET is not configured');
+    return false;
+  }
 
   try {
     const response = await fetch(`${getClipWorkerUrl().replace(/\/$/, '')}/api/banners/generate`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${WORKER_SECRET}`,
+        Authorization: `Bearer ${workerSecret}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
