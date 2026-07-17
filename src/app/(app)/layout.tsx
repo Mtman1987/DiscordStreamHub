@@ -24,10 +24,13 @@ const dshSessionKeys = [
   'discordDisplayName',
   'discordAvatar',
   'twitchUsername',
+  // Legacy cleanup only. SPMT tokens now live in an HttpOnly cookie.
   'spmtToken',
   'spmtUserId',
   'spmtUsername',
   'isAdmin',
+  'isLoggedIn',
+  'dshAuthMode',
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -36,7 +39,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [sessionReady, setSessionReady] = React.useState(false);
 
   React.useEffect(() => {
-    function handleSpaceMountainAuth(event: MessageEvent) {
+    async function handleSpaceMountainAuth(event: MessageEvent) {
       const allowedOrigins = new Set([
         'https://spacemountain.live',
         'https://spmt.live',
@@ -46,26 +49,25 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       if (!allowedOrigins.has(event.origin)) return;
       if (event.data?.type !== 'SPACEMOUNTAIN_AUTH') return;
 
-      const profile = event.data?.profile || {};
-      const linkedAccounts = profile.linkedAccounts || profile.linked_accounts || {};
-      const twitchAccount = linkedAccounts.twitch || profile.twitch || {};
-      const discordAccount = linkedAccounts.discord || profile.discord || {};
       const token = typeof event.data?.token === 'string' ? event.data.token : '';
-      const spmtUserId = String(profile.id || profile.userId || profile.spmtUserId || '').trim();
-      const discordUserId = String(profile.discordUserId || profile.discord_user_id || profile.discordId || profile.discord_id || discordAccount.id || discordAccount.userId || '').trim();
-      const twitchUsername = String(profile.twitchUsername || profile.twitchLogin || profile.twitch_login || twitchAccount.username || twitchAccount.login || '').trim();
-      const username = String(profile.discordUsername || profile.discord_username || discordAccount.username || profile.username || profile.displayName || '').trim();
-      const displayName = String(profile.discordDisplayName || profile.discord_display_name || discordAccount.displayName || discordAccount.global_name || profile.displayName || username || '').trim();
+      if (!token) return;
+
+      const response = await fetch('/api/auth/spmt-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
+        credentials: 'include',
+      }).catch(() => null);
+      const data = response?.ok ? await response.json() : null;
+      const session = data?.session || {};
+      if (!data?.success || (!session.spmtUserId && !session.discordUserId)) return;
 
       dshSessionKeys.forEach((key) => window.localStorage.removeItem(key));
-      if (token) window.localStorage.setItem('spmtToken', token);
-      if (spmtUserId) window.localStorage.setItem('spmtUserId', spmtUserId);
-      if (profile.username) window.localStorage.setItem('spmtUsername', String(profile.username));
-      if (discordUserId) window.localStorage.setItem('discordUserId', discordUserId);
-      if (username) window.localStorage.setItem('discordUsername', username);
-      if (twitchUsername) window.localStorage.setItem('twitchUsername', twitchUsername);
-      if (displayName) window.localStorage.setItem('discordDisplayName', displayName);
-      if (spmtUserId || discordUserId) window.localStorage.setItem('isLoggedIn', 'true');
+      for (const [key, value] of Object.entries(session)) {
+        if (value !== undefined && value !== null && value !== '') {
+          window.localStorage.setItem(key, String(value));
+        }
+      }
       window.dispatchEvent(new Event('dsh-session-restored'));
       setSessionReady(true);
     }
@@ -80,9 +82,29 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
     async function hydrateSession() {
       try {
+        const cachedSpmtIdentity = Boolean(
+          window.localStorage.getItem('spmtUserId') ||
+          window.localStorage.getItem('spmtToken') ||
+          window.localStorage.getItem('dshAuthMode') === 'spmt'
+        );
+        const spmtResponse = await fetch('/api/auth/spmt-session', {
+          cache: 'no-store',
+          credentials: 'include',
+        }).catch(() => null);
+        const spmtData = spmtResponse?.ok ? await spmtResponse.json() : null;
+        if (spmtData?.success && spmtData.session) {
+          for (const [key, value] of Object.entries(spmtData.session)) {
+            if (value !== undefined && value !== null && value !== '') {
+              window.localStorage.setItem(key, String(value));
+            }
+          }
+        } else if (cachedSpmtIdentity && window.parent === window) {
+          dshSessionKeys.forEach((key) => window.localStorage.removeItem(key));
+        }
+
         const existingServerId = window.localStorage.getItem('discordServerId');
         const existingUserId = window.localStorage.getItem('discordUserId');
-        const hasSpmtIdentity = Boolean(window.localStorage.getItem('spmtUserId') || window.localStorage.getItem('spmtToken'));
+        const hasSpmtIdentity = Boolean(spmtData?.success && spmtData.session?.spmtUserId);
         const searchParams = new URLSearchParams(window.location.search);
         const queryServerId = searchParams.get('serverId') || searchParams.get('guildId') || searchParams.get('discordServerId');
         const restoreParams = new URLSearchParams();

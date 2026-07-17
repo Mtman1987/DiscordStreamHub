@@ -3,20 +3,6 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 
-const spmtBaseUrl = 'https://spmt.live';
-
-function readDiscordId(user: any) {
-  const linkedAccounts = user?.linkedAccounts || user?.linked_accounts || {};
-  const discord = linkedAccounts.discord || user?.discord || {};
-  return String(user?.discordUserId || user?.discord_user_id || user?.discordId || user?.discord_id || discord.id || discord.userId || '').trim();
-}
-
-function readTwitchUsername(user: any) {
-  const linkedAccounts = user?.linkedAccounts || user?.linked_accounts || {};
-  const twitch = linkedAccounts.twitch || user?.twitch || {};
-  return String(user?.twitchUsername || user?.twitchLogin || user?.twitch_login || twitch.username || twitch.login || '').trim();
-}
-
 function writeSession(session: Record<string, string>) {
   for (const [key, value] of Object.entries(session)) {
     if (value) localStorage.setItem(key, value);
@@ -42,43 +28,15 @@ export default function AuthCallbackPage() {
       }
 
       try {
-        const refreshResponse = await fetch(`${spmtBaseUrl}/api/auth/refresh`, {
+        const sessionResponse = await fetch('/api/auth/spmt-session', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token }),
           credentials: 'include',
         });
-        const profileResponse = refreshResponse.ok
-          ? refreshResponse
-          : await fetch(`${spmtBaseUrl}/api/me`, {
-              headers: { Authorization: `Bearer ${token}` },
-              credentials: 'include',
-            });
-
-        if (!profileResponse.ok) {
-          throw new Error('SPMT profile lookup failed');
-        }
-
-        const data = await profileResponse.json();
-        const user = data.user || data.profile || data;
-        const nextToken = data.token || token;
-        const discordUserId = readDiscordId(user);
-        const twitchUsername = readTwitchUsername(user);
-        const discordUsername = String(user.discordUsername || user.discord_username || user.username || user.displayName || '').trim();
-        const displayName = String(user.discordDisplayName || user.discord_display_name || user.displayName || discordUsername || '').trim();
-
-        const runtimeResponse = await fetch('/api/runtime-config', { cache: 'no-store' }).catch(() => null);
-        const runtime = runtimeResponse?.ok ? await runtimeResponse.json() : null;
-        const defaultServerId = runtime?.publicIds?.hardcodedGuildId;
-        const session: Record<string, string> = {
-          spmtToken: nextToken,
-          ...(user.id ? { spmtUserId: String(user.id) } : {}),
-          ...(user.username ? { spmtUsername: String(user.username) } : {}),
-          ...(discordUserId ? { discordUserId } : {}),
-          ...(discordUsername ? { discordUsername } : {}),
-          ...(displayName ? { discordDisplayName: displayName } : {}),
-          ...(twitchUsername ? { twitchUsername } : {}),
-          ...(defaultServerId ? { discordServerId: String(defaultServerId) } : {}),
-        };
+        if (!sessionResponse.ok) throw new Error('SPMT session exchange failed');
+        const data = await sessionResponse.json();
+        const session = (data.session || {}) as Record<string, string>;
         writeSession(session);
 
         if (!cancelled && window.opener && !window.opener.closed) {

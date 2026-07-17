@@ -41,7 +41,11 @@ export function UserNav() {
     return () => window.removeEventListener('dsh-session-restored', refreshLocalSession);
   }, [refreshLocalSession]);
 
-  const handleLogout = React.useCallback(() => {
+  const handleLogout = React.useCallback(async () => {
+    await fetch('/api/auth/spmt-session', {
+      method: 'DELETE',
+      credentials: 'include',
+    }).catch(() => null);
     [
       'discordServerId',
       'discordUserId',
@@ -56,6 +60,7 @@ export function UserNav() {
       'spmtToken',
       'spmtUserId',
       'spmtUsername',
+      'dshAuthMode',
     ].forEach((key) => localStorage.removeItem(key));
     const loginUrl = `${window.location.origin}/login?loggedOut=1`;
     if (window.parent !== window) {
