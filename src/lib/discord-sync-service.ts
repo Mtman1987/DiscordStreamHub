@@ -25,9 +25,19 @@ interface DiscordRole {
 
 class DiscordSyncService {
   private baseUrl = 'https://discord.com/api/v10';
+  private readonly editRetryDelaysMs = [300, 900];
 
   private isExpectedEditLifecycleError(errorText: string): boolean {
     return /Maximum number of edits to messages older than 1 hour reached|code["']?\s*:\s*30046|30046|Unknown Message/i.test(errorText);
+  }
+
+  private async waitForEditRetry(response: Response, attempt: number): Promise<void> {
+    const retryAfterSeconds = Number(response.headers.get('retry-after'));
+    const fallbackMs = this.editRetryDelaysMs[Math.min(attempt, this.editRetryDelaysMs.length - 1)];
+    const delayMs = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+      ? Math.min(5_000, retryAfterSeconds * 1_000)
+      : fallbackMs;
+    await new Promise(resolve => setTimeout(resolve, delayMs));
   }
 
   private async getBotToken(serverId: string): Promise<string> {
@@ -205,25 +215,36 @@ class DiscordSyncService {
   async editMessage(serverId: string, channelId: string, messageId: string, messageData: any): Promise<void> {
     try {
       const botToken = await this.getBotToken(serverId);
-      const response = await fetch(`${this.baseUrl}/channels/${channelId}/messages/${messageId}`, {
-        method: 'PATCH',
-        headers: {
-          'Authorization': `Bot ${botToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(messageData),
-      });
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const response = await fetch(`${this.baseUrl}/channels/${channelId}/messages/${messageId}`, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bot ${botToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(messageData),
+        });
 
-      if (!response.ok) {
+        if (response.ok) {
+          console.log(`Edited message ${messageId} in channel ${channelId}`);
+          return;
+        }
+
         const errorText = await response.text().catch(() => response.statusText);
         if (this.isExpectedEditLifecycleError(errorText)) {
           console.warn(`Discord edit needs repost for ${messageId} in ${channelId}: ${response.status} ${errorText}`);
           throw new Error(`Failed to edit message ${messageId} in ${channelId}: ${response.status} ${errorText}`);
         }
+
+        const retryable = response.status === 429 || response.status >= 500;
+        if (retryable && attempt < 2) {
+          console.warn(`Discord edit transient failure for ${messageId} in ${channelId}: ${response.status}; retry ${attempt + 1}/2`);
+          await this.waitForEditRetry(response, attempt);
+          continue;
+        }
+
         throw new Error(`Failed to edit message ${messageId} in ${channelId}: ${response.status} ${errorText}`);
       }
-
-      console.log(`Edited message ${messageId} in channel ${channelId}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (this.isExpectedEditLifecycleError(message)) {
