@@ -95,6 +95,7 @@ type GuildPlayback = {
 
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const DSH_BASE_URL = (process.env.WATCHROOM_DSH_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
+const FORWARDING_API_BASE_URL = (process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 const FFMPEG_PATH = [process.env.FFMPEG_PATH, '/usr/bin/ffmpeg']
   .find((candidate): candidate is string => Boolean(candidate && existsSync(candidate))) || 'ffmpeg';
 const MUSIC_SESSION_ID = process.env.WATCHROOM_MUSIC_SESSION_ID || 'discord-music-room';
@@ -153,7 +154,7 @@ async function notifyForwardingMessageDeleted(message: Message | PartialMessage)
   if (!DISCORD_BOT_TOKEN) return;
 
   try {
-    const response = await fetch(`${DSH_BASE_URL}/api/discord/forwarding-events`, {
+    const response = await fetch(`${FORWARDING_API_BASE_URL}/api/discord/forwarding-events`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
