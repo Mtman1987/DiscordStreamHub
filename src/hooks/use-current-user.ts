@@ -56,12 +56,18 @@ export function useCurrentUser() {
         return Promise.all([
           fetch(`/api/db?path=servers/${serverId}/users/${userId}`).then(r => r.ok ? r.json() : null),
           fetch(`/api/db?path=servers/${serverId}`).then(r => r.ok ? r.json() : null),
+          fetch('/api/admin/access', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ serverId, userId }),
+            cache: 'no-store',
+          }).then(r => r.ok ? r.json() : null),
           Promise.resolve({ hardcodedAdminId, cacheKey, displayName, userId, legacy: session?.legacy === true }),
         ]);
       })
       .then((result) => {
         if (!result) return;
-        const [data, serverData, context] = result as any;
+        const [data, serverData, roleAccess, context] = result as any;
         const { hardcodedAdminId, cacheKey, displayName, userId, legacy } = context;
         if (data?.exists && data.data) {
           const ownerRoleId = '1283213615939194955'; // 『👑』Owner
@@ -71,17 +77,20 @@ export function useCurrentUser() {
           const adminRoleSet = new Set(adminRoles.map(role => String(role).toLowerCase()));
           const ownerId = String(serverData?.data?.ownerId || '').trim();
 
-          const isOwner = !legacy && (
+          const isOwner = roleAccess?.isOwner === true || (!legacy && (
             userId === hardcodedAdminId ||
             userId === ownerId ||
-            userRoles.includes(ownerRoleId));
+            userRoles.includes(ownerRoleId)));
 
-          const isAdmin = !legacy && (
+          // The live Discord member lookup is authoritative for configured mod
+          // roles. This also keeps grandfathered sessions working without
+          // trusting a stale isAdmin flag saved during an older sync.
+          const isAdmin = roleAccess?.isAdmin === true || (!legacy && (
             data.data.isAdmin === true ||
             data.data.group === 'Crew' ||
             isOwner ||
             userRoles.some(role => adminRoleSet.has(String(role).toLowerCase())) ||
-            roleNames.some(role => adminRoleSet.has(String(role).toLowerCase())));
+            roleNames.some(role => adminRoleSet.has(String(role).toLowerCase()))));
 
           const u: CurrentUser = {
             id: userId,
