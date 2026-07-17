@@ -3,6 +3,7 @@ FROM node:22-slim
 # Cache bust: v0.4.1 — chromium for image generation
 RUN apt-get update && apt-get install -y \
     chromium \
+    ffmpeg \
     python3 \
     build-essential \
     curl \
