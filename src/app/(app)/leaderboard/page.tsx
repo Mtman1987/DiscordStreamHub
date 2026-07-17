@@ -27,6 +27,8 @@ import type { UserProfile, LeaderboardEntry } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useDshSession } from '@/hooks/use-dsh-session';
+import { useSpmtAppState } from '@/hooks/use-spmt-app-state';
 
 interface DiscordChannel {
   id: string;
@@ -48,25 +50,29 @@ export default function LeaderboardPage() {
   const [selectedAdminChannelId, setSelectedAdminChannelId] = React.useState('');
   const [isPostingLeaderboard, setIsPostingLeaderboard] = React.useState(false);
   const [isPostingAdminLeaderboard, setIsPostingAdminLeaderboard] = React.useState(false);
+  const { session, loading: sessionLoading } = useDshSession();
+  const operationalSettings = useSpmtAppState('operational-settings', { calendarChannelId: '', leaderboardChannelId: '', adminLeaderboardChannelId: '' });
 
   React.useEffect(() => {
-    const storedServerId = localStorage.getItem('discordServerId');
-    const storedChannelId = localStorage.getItem('leaderboardChannelId');
-    const storedAdminChannelId = localStorage.getItem('adminLeaderboardChannelId');
-    if (storedServerId) {
-      setServerId(storedServerId);
+    if (sessionLoading) return;
+    if (session?.discordServerId) {
+      setServerId(session.discordServerId);
     } else {
         setIsLoading(false);
         setIsLoadingAdmin(false);
         toast({
             variant: 'destructive',
             title: 'Configuration Error',
-            description: 'Could not find a Discord Server ID in local storage. Please log in again.',
+            description: 'Could not resolve the Discord server from your SPMT session. Please log in again.',
         });
     }
-    if (storedChannelId) setSelectedChannelId(storedChannelId);
-    if (storedAdminChannelId) setSelectedAdminChannelId(storedAdminChannelId);
-  }, [toast]);
+  }, [toast, session, sessionLoading]);
+
+  React.useEffect(() => {
+    if (!operationalSettings.loaded) return;
+    setSelectedChannelId(operationalSettings.value.leaderboardChannelId || '');
+    setSelectedAdminChannelId(operationalSettings.value.adminLeaderboardChannelId || '');
+  }, [operationalSettings.loaded]);
 
   const channelsConfigRef = React.useMemo(() => {
     if (!store || !serverId) return null;
@@ -175,7 +181,7 @@ export default function LeaderboardPage() {
       if (!response.ok || !data.success) {
         throw new Error(data.error || 'Failed to post leaderboard.');
       }
-      localStorage.setItem('leaderboardChannelId', selectedChannelId);
+      await operationalSettings.save({ ...operationalSettings.value, leaderboardChannelId: selectedChannelId });
       toast({ title: 'Leaderboard posted', description: 'Top 10 sent to Discord.' });
     } catch (error) {
       console.error('Failed to post leaderboard:', error);
@@ -205,7 +211,7 @@ export default function LeaderboardPage() {
       if (!response.ok || !data.success) {
         throw new Error(data.error || 'Failed to post admin leaderboard.');
       }
-      localStorage.setItem('adminLeaderboardChannelId', selectedAdminChannelId);
+      await operationalSettings.save({ ...operationalSettings.value, adminLeaderboardChannelId: selectedAdminChannelId });
       toast({ title: 'Admin leaderboard posted', description: 'Top 10 sent to Discord.' });
     } catch (error) {
       console.error('Failed to post admin leaderboard:', error);

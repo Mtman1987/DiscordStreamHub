@@ -36,8 +36,22 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
-  const token = typeof body?.token === 'string' ? body.token.trim() : '';
-  if (!token) return NextResponse.json({ success: false, error: 'Missing SPMT token' }, { status: 400 });
+  let token = typeof body?.token === 'string' ? body.token.trim() : '';
+  const code = typeof body?.code === 'string' ? body.code.trim() : '';
+  if (!token && code) {
+    const clientSecret = process.env.DSH_CLIENT_SECRET || '';
+    if (!clientSecret) return NextResponse.json({ success: false, error: 'DSH OAuth is not configured' }, { status: 503 });
+    const exchange = await fetch('https://spmt.live/api/oauth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ code, client_id: 'discord-stream-hub', client_secret: clientSecret, redirect_uri: 'https://discord-stream-hub-new.fly.dev/auth/callback' }),
+      cache: 'no-store',
+    });
+    const exchangeData = await exchange.json().catch(() => null);
+    if (!exchange.ok || !exchangeData?.access_token) return NextResponse.json({ success: false, error: 'SPMT code exchange failed' }, { status: 401 });
+    token = exchangeData.access_token;
+  }
+  if (!token) return NextResponse.json({ success: false, error: 'Missing SPMT authorization code' }, { status: 400 });
 
   try {
     const resolved = await resolveSpmtSession(token);

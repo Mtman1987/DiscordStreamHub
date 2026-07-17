@@ -3,13 +3,6 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 
-function writeSession(session: Record<string, string>) {
-  for (const [key, value] of Object.entries(session)) {
-    if (value) localStorage.setItem(key, value);
-  }
-  localStorage.setItem('isLoggedIn', 'true');
-}
-
 export default function AuthCallbackPage() {
   const router = useRouter();
   const [message, setMessage] = React.useState('Completing SPMT sign in...');
@@ -19,11 +12,11 @@ export default function AuthCallbackPage() {
 
     async function completeLogin() {
       const searchParams = new URLSearchParams(window.location.search);
-      const token = searchParams.get('auth_code') || searchParams.get('token') || searchParams.get('code') || '';
+      const code = searchParams.get('code') || '';
       const next = searchParams.get('next') || '/dashboard';
 
-      if (!token) {
-        setMessage('Missing SPMT sign-in token. Return to login and try again.');
+      if (!code) {
+        setMessage('Missing SPMT authorization code. Return to login and try again.');
         return;
       }
 
@@ -31,14 +24,12 @@ export default function AuthCallbackPage() {
         const sessionResponse = await fetch('/api/auth/spmt-session', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token }),
+          body: JSON.stringify({ code }),
           credentials: 'include',
         });
         if (!sessionResponse.ok) throw new Error('SPMT session exchange failed');
         const data = await sessionResponse.json();
         const session = (data.session || {}) as Record<string, string>;
-        writeSession(session);
-
         if (!cancelled && window.opener && !window.opener.closed) {
           window.opener.postMessage({ type: 'DSH_SPMT_AUTH_COMPLETE', session, next }, window.location.origin);
           setMessage('SPMT sign in complete. Returning to the chat popout...');

@@ -2,27 +2,28 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { useUser } from '@/data';
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { user, isUserLoading } = useUser();
   const router = useRouter();
   const pathname = usePathname();
   const [isAuthChecked, setIsAuthChecked] = useState(false);
 
   useEffect(() => {
-    if (!isUserLoading) {
-      const hasSession = localStorage.getItem('isLoggedIn') === 'true' && localStorage.getItem('discordServerId');
-      if (!user || !hasSession) {
-        // Allow access to login page without redirect loop
-        if (pathname !== '/login') {
-          router.push('/login');
+    let cancelled = false;
+    fetch('/api/auth/spmt-session', { cache: 'no-store', credentials: 'include' })
+      .then(async (response) => ({ ok: response.ok, data: await response.json().catch(() => null) }))
+      .then(({ ok, data }) => {
+        if (cancelled) return;
+        const session = data?.session;
+        if (ok && data?.success && (session?.spmtUserId || session?.discordUserId)) {
+          setIsAuthChecked(true);
+        } else if (pathname !== '/login') {
+          router.replace('/login');
         }
-      } else {
-        setIsAuthChecked(true);
-      }
-    }
-  }, [user, isUserLoading, router, pathname]);
+      })
+      .catch(() => { if (!cancelled && pathname !== '/login') router.replace('/login'); });
+    return () => { cancelled = true; };
+  }, [router, pathname]);
 
   if (!isAuthChecked) {
     return (

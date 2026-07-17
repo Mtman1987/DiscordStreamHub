@@ -11,6 +11,7 @@ import {
   getDiscordPublicKey,
   getHearMeOutUrl as getHearMeOutUrlFromRuntime,
 } from '@/lib/runtime-config';
+import { grandfatherDiscordIdentity } from '@/lib/spmt-client';
 
 function extractValues(components: any[] = []) {
   const values: Record<string, string> = {};
@@ -29,7 +30,7 @@ function ephemeral(content: string, extra: any = {}) {
   });
 }
 
-const CHAT_TAG_SERVICE_SECRET = process.env.CHAT_TAG_BOT_SECRET || process.env.BOT_SECRET_KEY || '1234';
+const CHAT_TAG_SERVICE_SECRET = process.env.CHAT_TAG_BOT_SECRET || process.env.BOT_SECRET_KEY || '';
 const HMO_MOVIE_SESSION_ID = 'discord-watch-room';
 const HMO_MUSIC_SESSION_ID = 'discord-music-room';
 const HMO_WATCH_SESSION_ID = HMO_MOVIE_SESSION_ID;
@@ -67,6 +68,7 @@ async function deleteDiscordMessage(channelId?: string, messageId?: string) {
 }
 
 async function refreshChatTagEmbed(reason: string) {
+  if (!CHAT_TAG_SERVICE_SECRET) throw new Error('Chat Tag service secret is not configured.');
   const response = await fetch(`${getChatTagApiBase()}/api/discord/announce`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-bot-secret': CHAT_TAG_SERVICE_SECRET },
@@ -291,6 +293,43 @@ export async function POST(request: NextRequest) {
     const customId: string | undefined = body.data?.custom_id;
 
     if (body.type === 3 && customId) {
+      if (customId === 'spmt_onboard') {
+        return NextResponse.json({
+          type: 9,
+          data: {
+            custom_id: 'spmt_onboard_submit',
+            title: 'Join Space Mountain',
+            components: [
+              {
+                type: 1,
+                components: [{
+                  type: 4,
+                  custom_id: 'display_name',
+                  label: 'Preferred display name',
+                  style: 1,
+                  required: false,
+                  max_length: 40,
+                  placeholder: 'Defaults to your Discord display name',
+                }],
+              },
+              {
+                type: 1,
+                components: [{
+                  type: 4,
+                  custom_id: 'twitch_username',
+                  label: 'Twitch username for shoutouts (optional)',
+                  style: 1,
+                  required: false,
+                  min_length: 3,
+                  max_length: 25,
+                  placeholder: 'No password or OAuth token needed',
+                }],
+              },
+            ],
+          },
+        });
+      }
+
       if (customId.startsWith('hmo_watch_controls:')) {
         const sessionId = normalizeHearMeOutSessionId(customId.split(':').slice(1).join(':'));
         return ephemeral('HearMeOut controls', {
@@ -1352,6 +1391,72 @@ export async function POST(request: NextRequest) {
         return ephemeral('🚫 Unable to identify user.');
       }
 
+      if (customId === 'spmt_onboard_submit') {
+        const discordUser = body.member?.user || body.user || {};
+        const values = extractValues(body.data?.components);
+        const preferredDisplayName = String(values.display_name || body.member?.nick || discordUser.global_name || discordUser.username || '').trim();
+        const twitchUsername = String(values.twitch_username || '').trim().toLowerCase();
+        if (twitchUsername && !/^[a-z0-9_]{3,25}$/.test(twitchUsername)) {
+          return ephemeral('⚠️ Twitch usernames may contain only letters, numbers, and underscores.');
+        }
+
+        const grandfathered = await grandfatherDiscordIdentity({
+          discordId: String(userId),
+          discordUsername: String(discordUser.username || userId),
+          displayName: preferredDisplayName || String(discordUser.username || userId),
+          issueSession: false,
+        });
+        if (!grandfathered?.user) {
+          return ephemeral('⚠️ SPMT onboarding is temporarily unavailable. Your Discord account was not changed; please try again shortly.');
+        }
+
+        let twitchUser: any = null;
+        if (twitchUsername) {
+          const { getUserByLogin } = await import('@/lib/twitch-api-service');
+          twitchUser = await getUserByLogin(twitchUsername);
+          if (!twitchUser) return ephemeral(`⚠️ Twitch user "${twitchUsername}" was not found. Your SPMT account is ready; use the setup button again to add Twitch later.`);
+        }
+
+        const serverId = String(body.guild_id || getHardcodedGuildId());
+        const roles: string[] = Array.isArray(body.member?.roles) ? body.member.roles : [];
+        const serverDoc = await db.collection('servers').doc(serverId).get();
+        const roleMappings = serverDoc.data()?.roleMappings || {};
+        let group = 'Community';
+        for (const [roleId, groupName] of Object.entries(roleMappings)) {
+          if (roles.includes(roleId)) { group = String(groupName); break; }
+        }
+
+        const profile: Record<string, unknown> = {
+          discordUserId: String(userId),
+          username: String(discordUser.username || userId),
+          displayName: preferredDisplayName || String(discordUser.username || userId),
+          roles,
+          group,
+          spmtUserId: grandfathered.user.id,
+          spmtUsername: grandfathered.user.username,
+          spmtCredentialState: 'provider-owned',
+          spmtOnboardedAt: new Date(),
+          isOnline: false,
+        };
+        if (twitchUser) {
+          profile.twitchLogin = twitchUsername;
+          profile.twitchId = twitchUser.id;
+          profile.twitchLinkSource = 'discord-profile-claim';
+          profile.linkedAt = new Date();
+        }
+        await db.collection('servers').doc(serverId).collection('users').doc(String(userId)).set(profile, { merge: true });
+        await db.collection('servers').doc(serverId).collection('recentActivity').add({
+          type: 'spmt_onboard',
+          discordUserId: String(userId),
+          spmtUserId: grandfathered.user.id,
+          twitchLogin: twitchUsername || null,
+          timestamp: new Date(),
+        });
+
+        const twitchLine = twitchUser ? `\nTwitch: **${twitchUsername}** (public shoutout tracking enabled)` : '\nYou can add a Twitch username later for live shoutouts.';
+        return ephemeral(`✅ Your SPMT identity **${grandfathered.user.username}** is ready.${twitchLine}\n\nNo password was sent through Discord. Commands, points, and app activity can now use your Discord-linked SPMT identity.`);
+      }
+
       if (customId.startsWith('link_twitch_modal_')) {
         const serverId = customId.replace('link_twitch_modal_', '');
         const values = extractValues(body.data?.components);
@@ -1377,6 +1482,13 @@ export async function POST(request: NextRequest) {
         if (!twitchUser) {
           return ephemeral(`⚠️ Twitch user "${twitchUsername}" not found.`);
         }
+
+        const grandfathered = await grandfatherDiscordIdentity({
+          discordId: String(userId),
+          discordUsername: String(memberData.user.username || userId),
+          displayName: String(memberData.nick || memberData.user.global_name || memberData.user.username || userId),
+          issueSession: false,
+        });
         
         // Determine group based on roles
         const serverDoc = await db.collection('servers').doc(serverId).get();
@@ -1402,7 +1514,13 @@ export async function POST(request: NextRequest) {
           group,
           roles,
           isOnline: false,
-          linkedAt: new Date()
+          linkedAt: new Date(),
+          ...(grandfathered?.user ? {
+            spmtUserId: grandfathered.user.id,
+            spmtUsername: grandfathered.user.username,
+            spmtCredentialState: 'provider-owned',
+            spmtOnboardedAt: new Date(),
+          } : {})
         }, { merge: true });
         
         // Log linking activity to dashboard recents
@@ -1416,7 +1534,7 @@ export async function POST(request: NextRequest) {
           timestamp: new Date()
         });
         
-        return ephemeral(`✅ Successfully linked Twitch account **${twitchUsername}**!\n\nYou'll get automatic shoutouts when you go live.\nGroup: **${group}**`);
+        return ephemeral(`✅ Successfully linked Twitch account **${twitchUsername}**!\n\nYou'll get automatic shoutouts when you go live.\nGroup: **${group}**${grandfathered?.user ? `\nSPMT: **${grandfathered.user.username}**` : '\nSPMT setup is temporarily unavailable; Twitch linking still succeeded.'}`);
       }
 
       if (customId.startsWith('partner_schedule_add_modal_')) {

@@ -77,12 +77,12 @@ class MemberProcessingService {
 
       const embed = {
         title: "⭐ Community Spotlight",
-        description: "Connect your Twitch username to get automatic live shoutouts and appear in the rotating community spotlight.",
+        description: "Create your Discord-linked SPMT identity for points, commands, and apps, then optionally add your Twitch username for automatic live shoutouts.",
         color: 0x9146FF, // Twitch purple
         fields: [
           {
             name: "📋 How to Link",
-            value: "Click the button below and type your Twitch username directly in Discord. No website login required.",
+            value: "Click **Set Up SPMT** and complete the private Discord form. No website redirect or password is required.",
             inline: false
           },
           {
@@ -99,15 +99,20 @@ class MemberProcessingService {
       const button = {
         type: 2, // Button
         style: 1,
-        label: "Link Twitch Username",
-        custom_id: 'link_twitch_account'
+        label: "Set Up SPMT",
+        custom_id: 'spmt_onboard'
       };
 
       return {
         embeds: [embed],
         components: [{
           type: 1, // Action row
-          components: [button]
+          components: [button, {
+            type: 2,
+            style: 2,
+            label: "Link Twitch Only",
+            custom_id: 'link_twitch_account'
+          }]
         }]
       };
 

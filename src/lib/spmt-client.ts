@@ -24,6 +24,37 @@ export function isSpmtEnabled() {
   return Boolean(SPMT_API_KEY);
 }
 
+export async function grandfatherDiscordIdentity(input: {
+  discordId: string;
+  discordUsername: string;
+  displayName?: string;
+  issueSession?: boolean;
+}) {
+  if (!SPMT_API_KEY) return null;
+  try {
+    const response = await fetch(`${SPMT_BASE_URL.replace(/\/$/, '')}/api/platform/identity/grandfather`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SPMT_API_KEY}` },
+      body: JSON.stringify({
+        provider: 'discord',
+        providerUserId: input.discordId,
+        providerUsername: input.discordUsername,
+        username: input.discordUsername,
+        displayName: input.displayName || input.discordUsername,
+        issueSession: input.issueSession === true,
+      }),
+    });
+    if (!response.ok) {
+      console.warn('[SPMT] Discord identity grandfather failed', { status: response.status });
+      return null;
+    }
+    return await response.json() as { user: { id: string; username: string }; accessToken?: string; created?: boolean };
+  } catch (error) {
+    console.warn('[SPMT] Discord identity grandfather error', error);
+    return null;
+  }
+}
+
 export async function publishSpmtEvent(event: SpmtEventInput) {
   if (!SPMT_API_KEY) return { skipped: true, reason: 'SPMT_API_KEY not configured' };
 

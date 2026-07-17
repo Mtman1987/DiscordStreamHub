@@ -17,6 +17,7 @@ import { Paintbrush, RotateCcw } from 'lucide-react';
 import { useIsClient } from '@/hooks/use-is-client';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
+import { useSpmtAppState } from '@/hooks/use-spmt-app-state';
 
 // Define the structure for theme settings
 interface ThemeSettings {
@@ -45,17 +46,20 @@ const defaultSettings: ThemeSettings = {
 export function UISettingsCard() {
   const isClient = useIsClient();
   const { theme, setTheme } = useTheme();
+  const persisted = useSpmtAppState('ui-preferences', { themeSettings: defaultSettings, followWorkspaceTheme: true, colorMode: 'dark' });
 
-  // Initialize state with values from localStorage or defaults
-  const [settings, setSettings] = React.useState<ThemeSettings>(() => {
-    if (isClient) {
-      const savedSettings = localStorage.getItem('themeSettings');
-      return savedSettings ? JSON.parse(savedSettings) : defaultSettings;
-    }
-    return defaultSettings;
-  });
+  const [settings, setSettings] = React.useState<ThemeSettings>(defaultSettings);
+  const [followWorkspaceTheme, setFollowWorkspaceTheme] = React.useState(true);
 
-  // Effect to apply CSS variables and save to localStorage whenever settings change
+  React.useEffect(() => {
+    if (!persisted.loaded) return;
+    setSettings({ ...defaultSettings, ...(persisted.value.themeSettings || {}) });
+    setFollowWorkspaceTheme(persisted.value.followWorkspaceTheme !== false);
+    setTheme(persisted.value.colorMode === 'light' ? 'light' : 'dark');
+    if (persisted.accountBacked) localStorage.removeItem('themeSettings');
+  }, [persisted.loaded]);
+
+  // Apply account-backed settings; device-local storage is only cleaned up as a migration.
   React.useEffect(() => {
     if (isClient) {
       const root = document.documentElement;
@@ -68,9 +72,16 @@ export function UISettingsCard() {
       root.style.setProperty('--sidebar-bg-opacity', (settings.sidebarOpacity / 100).toString());
       root.style.setProperty('--radius', `${settings.radius}rem`);
       
-      localStorage.setItem('themeSettings', JSON.stringify(settings));
     }
   }, [settings, isClient, theme]);
+
+  React.useEffect(() => {
+    if (!persisted.loaded) return;
+    const timer = window.setTimeout(() => {
+      void persisted.save({ themeSettings: settings, followWorkspaceTheme, colorMode: theme === 'light' ? 'light' : 'dark' }).catch(() => {});
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [settings, followWorkspaceTheme, theme, persisted.loaded]);
   
   if (!isClient) {
     return (
@@ -80,7 +91,7 @@ export function UISettingsCard() {
                 <Paintbrush className="text-primary" /> UI Theme Settings
                 </CardTitle>
                 <CardDescription>
-                Customize the look and feel of your application. Changes are saved locally.
+                Customize the look and feel of your application. Changes are saved to your SPMT account.
                 </CardDescription>
             </CardHeader>
             <CardContent>
@@ -113,7 +124,7 @@ export function UISettingsCard() {
           <Paintbrush className="text-primary" /> UI Theme Settings
         </CardTitle>
         <CardDescription>
-          Customize the look and feel of your application. Changes are saved locally.
+          Customize the look and feel of your application. Changes follow your SPMT account across devices.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -124,6 +135,11 @@ export function UISettingsCard() {
             checked={theme === 'dark'}
             onCheckedChange={(checked) => setTheme(checked ? 'dark' : 'light')}
           />
+        </div>
+
+        <div className="flex items-center justify-between rounded-lg border p-3">
+          <Label htmlFor="follow-workspace-theme" className="font-medium">Follow SpaceMountain theme</Label>
+          <Switch id="follow-workspace-theme" checked={followWorkspaceTheme} onCheckedChange={setFollowWorkspaceTheme} />
         </div>
 
         <Separator />

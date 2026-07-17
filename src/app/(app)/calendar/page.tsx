@@ -10,6 +10,8 @@ import {
   query,
 } from '@/lib/data-shim';
 import { useDataStore, useUser, useDoc, useCollection, useMemoData } from '@/data';
+import { useDshSession } from '@/hooks/use-dsh-session';
+import { useSpmtAppState } from '@/hooks/use-spmt-app-state';
 import {
   Dialog,
   DialogContent,
@@ -129,6 +131,8 @@ function SimpleEventList({ serverId }: { serverId: string | null }) {
 export default function CalendarPage() {
   const store = useDataStore();
   const { user } = useUser();
+  const { session } = useDshSession();
+  const operationalSettings = useSpmtAppState('operational-settings', { calendarChannelId: '', leaderboardChannelId: '', adminLeaderboardChannelId: '' });
   const { toast } = useToast();
   const [serverId, setServerId] = React.useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = React.useState<string | null>(null);
@@ -147,13 +151,13 @@ export default function CalendarPage() {
 
 
   React.useEffect(() => {
-    const storedServerId = localStorage.getItem('discordServerId');
-    const storedUserId = localStorage.getItem('discordUserId');
-    const storedChannelId = localStorage.getItem('calendarChannelId');
-    if (storedServerId) setServerId(storedServerId);
-    if (storedUserId) setCurrentUserId(storedUserId);
-    if (storedChannelId) setSelectedChannelId(storedChannelId);
-  }, []);
+    if (session?.discordServerId) setServerId(session.discordServerId);
+    if (session?.discordUserId || session?.spmtUserId) setCurrentUserId(session.discordUserId || session.spmtUserId || null);
+  }, [session]);
+
+  React.useEffect(() => {
+    if (operationalSettings.loaded) setSelectedChannelId(operationalSettings.value.calendarChannelId || '');
+  }, [operationalSettings.loaded]);
 
   const channelsConfigRef = React.useMemo(() => {
     if (!store || !serverId) return null;
@@ -191,13 +195,13 @@ export default function CalendarPage() {
     return {
       id: currentUserId,
       discordUserId: currentUserId,
-      username: localStorage.getItem('discordDisplayName') || localStorage.getItem('discordUsername') || currentUserId,
-      avatarUrl: localStorage.getItem('discordAvatar') || '',
+      username: session?.discordDisplayName || session?.discordUsername || session?.spmtUsername || currentUserId,
+      avatarUrl: '',
       isOnline: false,
       group: 'Community' as const,
       roles: [],
     };
-  }, [currentUserProfile, currentUserId]);
+  }, [currentUserProfile, currentUserId, session]);
 
   const { calendarEvents, monthCaptains, todaysCaptain, missionEvents } = React.useMemo(() => {
     if (!allEvents) {
@@ -454,7 +458,7 @@ export default function CalendarPage() {
         throw new Error(data.error || 'Failed to send calendar.');
       }
 
-      localStorage.setItem('calendarChannelId', selectedChannelId);
+      await operationalSettings.save({ ...operationalSettings.value, calendarChannelId: selectedChannelId });
       toast({
         title: 'Calendar dispatched',
         description: 'The latest calendar image was posted to Discord.',

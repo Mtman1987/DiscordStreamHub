@@ -22,45 +22,47 @@ export function useCurrentUser() {
   const [isLoading, setIsLoading] = useState(!_cache.fetched);
 
   useEffect(() => {
-    const userId = localStorage.getItem('discordUserId');
-    if (!userId) { setIsLoading(false); _cache = { key: null, user: null, fetched: true }; return; }
-
-    const localDisplayName = localStorage.getItem('discordDisplayName') || localStorage.getItem('discordUsername') || userId;
-    const localAvatar = localStorage.getItem('discordAvatar') || undefined;
-
-    getRuntimeConfigClient()
-      .then((runtime) => {
-        const serverId = localStorage.getItem('discordServerId') || runtime?.publicIds?.hardcodedGuildId || '';
-        const hardcodedAdminId = runtime?.publicIds?.hardcodedAdminDiscordId || '';
-        if (!serverId) {
+    Promise.all([
+      (async () => {
+        const response = await fetch('/api/auth/spmt-session', { cache: 'no-store', credentials: 'include' }).catch(() => null);
+        const data = response?.ok ? await response.json() : null;
+        if (data?.success) return data;
+        const userId = window.localStorage.getItem('discordUserId') || '';
+        const serverId = window.localStorage.getItem('discordServerId') || '';
+        if (!userId || !serverId) return null;
+        const params = new URLSearchParams({ userId, serverId });
+        const restoredResponse = await fetch(`/api/auth/restore-session?${params}`, { cache: 'no-store' }).catch(() => null);
+        const restored = restoredResponse?.ok ? await restoredResponse.json() : null;
+        if (!restored?.success || !restored?.userMatched || String(restored.discordUserId || restored.userId) !== userId) return null;
+        return { success: true, session: { ...restored, discordServerId: restored.serverId || serverId, legacy: true } };
+      })(),
+      getRuntimeConfigClient(),
+    ])
+      .then(([sessionResponse, runtime]) => {
+        const session = sessionResponse?.success ? sessionResponse.session : null;
+        const userId = String(session?.discordUserId || session?.spmtUserId || '').trim();
+        const serverId = String(session?.discordServerId || runtime?.publicIds?.hardcodedGuildId || '').trim();
+        if (!userId || !serverId) {
           _cache = { key: null, user: null, fetched: true };
           setUser(null);
           setIsLoading(false);
           return null;
         }
+        const displayName = String(session?.discordDisplayName || session?.discordUsername || session?.spmtUsername || userId);
+        const hardcodedAdminId = runtime?.publicIds?.hardcodedAdminDiscordId || '';
         const cacheKey = `${serverId}:${userId}`;
         if (_cache.fetched && _cache.key === cacheKey) { setUser(_cache.user); setIsLoading(false); return null; }
-
-        const fallbackAdmin: CurrentUser = {
-          id: userId,
-          username: localDisplayName,
-          displayName: localDisplayName,
-          avatarUrl: localAvatar,
-          isAdmin: true,
-          isOwner: true,
-          group: 'Crew',
-        };
 
         return Promise.all([
           fetch(`/api/db?path=servers/${serverId}/users/${userId}`).then(r => r.ok ? r.json() : null),
           fetch(`/api/db?path=servers/${serverId}`).then(r => r.ok ? r.json() : null),
-          Promise.resolve({ serverId, hardcodedAdminId, cacheKey, fallbackAdmin }),
+          Promise.resolve({ hardcodedAdminId, cacheKey, displayName, userId, legacy: session?.legacy === true }),
         ]);
       })
       .then((result) => {
         if (!result) return;
         const [data, serverData, context] = result as any;
-        const { hardcodedAdminId, cacheKey, fallbackAdmin } = context;
+        const { hardcodedAdminId, cacheKey, displayName, userId, legacy } = context;
         if (data?.exists && data.data) {
           const ownerRoleId = '1283213615939194955'; // 『👑』Owner
           const userRoles: string[] = data.data.roles || [];
@@ -69,23 +71,23 @@ export function useCurrentUser() {
           const adminRoleSet = new Set(adminRoles.map(role => String(role).toLowerCase()));
           const ownerId = String(serverData?.data?.ownerId || '').trim();
 
-          const isOwner =
+          const isOwner = !legacy && (
             userId === hardcodedAdminId ||
             userId === ownerId ||
-            userRoles.includes(ownerRoleId);
+            userRoles.includes(ownerRoleId));
 
-          const isAdmin = 
+          const isAdmin = !legacy && (
             data.data.isAdmin === true ||
             data.data.group === 'Crew' ||
             isOwner ||
             userRoles.some(role => adminRoleSet.has(String(role).toLowerCase())) ||
-            roleNames.some(role => adminRoleSet.has(String(role).toLowerCase()));
+            roleNames.some(role => adminRoleSet.has(String(role).toLowerCase())));
 
           const u: CurrentUser = {
             id: userId,
-            username: data.data.username || localDisplayName,
-            displayName: data.data.displayName || data.data.username || localDisplayName,
-            avatarUrl: data.data.avatarUrl || localAvatar,
+            username: data.data.username || displayName,
+            displayName: data.data.displayName || data.data.username || displayName,
+            avatarUrl: data.data.avatarUrl || undefined,
             isAdmin,
             isOwner,
             group: data.data.group,
@@ -94,25 +96,24 @@ export function useCurrentUser() {
           };
           _cache = { key: cacheKey, user: u, fetched: true };
           setUser(u);
-        } else if (userId === hardcodedAdminId) {
-          _cache = { key: cacheKey, user: fallbackAdmin, fetched: true };
-          setUser(fallbackAdmin);
+        } else if (!legacy && userId === hardcodedAdminId) {
+          const ownerUser: CurrentUser = { id: userId, username: displayName, displayName, isAdmin: true, isOwner: true, group: 'Crew' };
+          _cache = { key: cacheKey, user: ownerUser, fetched: true };
+          setUser(ownerUser);
         } else {
-          const localUser: CurrentUser = {
+          const sessionUser: CurrentUser = {
             id: userId,
-            username: localDisplayName,
-            displayName: localDisplayName,
-            avatarUrl: localAvatar,
-            isAdmin: localStorage.getItem('isAdmin') === 'true',
+            username: displayName,
+            displayName,
+            isAdmin: false,
             isOwner: false,
-            group: localStorage.getItem('isAdmin') === 'true' ? 'Crew' : undefined,
           };
-          _cache = { key: cacheKey, user: localUser, fetched: true };
-          setUser(localUser);
+          _cache = { key: cacheKey, user: sessionUser, fetched: true };
+          setUser(sessionUser);
         }
       })
       .catch(() => {
-        // DB unreachable — still let hardcoded admin in
+        // A failed authoritative lookup never grants local admin privileges.
         _cache = { key: null, user: null, fetched: true };
       })
       .finally(() => setIsLoading(false));

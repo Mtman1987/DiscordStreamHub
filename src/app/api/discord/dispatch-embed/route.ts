@@ -105,6 +105,12 @@ export async function POST(req: NextRequest) {
             components: [
               {
                 type: 2,
+                style: 3,
+                label: '🚀 Set Up SPMT + Shoutouts',
+                custom_id: 'spmt_onboard',
+              },
+              {
+                type: 2,
                 style: 1,
                 label: '🔗 Link Twitch Username',
                 custom_id: 'link_twitch_account',

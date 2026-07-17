@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getHardcodedAdminDiscordId } from '@/lib/runtime-config';
+import { grandfatherDiscordIdentity } from '@/lib/spmt-client';
+import { DSH_SPMT_COOKIE } from '@/lib/spmt-session';
 
 export const dynamic = 'force-dynamic';
 
@@ -124,7 +126,16 @@ export async function POST(request: NextRequest) {
       updatedAt: new Date().toISOString(),
     });
 
-    return NextResponse.json({
+    const grandfathered = member?.user && discordUserId
+      ? await grandfatherDiscordIdentity({
+          discordId: discordUserId,
+          discordUsername: discordUser.username || username,
+          displayName,
+          issueSession: true,
+        })
+      : null;
+
+    const response = NextResponse.json({
       success: true,
       serverId: discordServerId,
       userId: discordUserId,
@@ -136,7 +147,18 @@ export async function POST(request: NextRequest) {
       iconUrl: resolvedIconUrl,
       isAdmin,
       memberResolved: Boolean(member?.user),
+      spmtUserId: grandfathered?.user.id || null,
     });
+    if (grandfathered?.accessToken) {
+      response.cookies.set(DSH_SPMT_COOKIE, grandfathered.accessToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 7 * 24 * 60 * 60,
+      });
+    }
+    return response;
   } catch (error) {
     console.error('Save session failed:', error);
     return NextResponse.json({ error: 'Failed' }, { status: 500 });

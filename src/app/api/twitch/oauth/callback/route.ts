@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { db, ensureDb } from '@/lib/db';
 import { getAppUrl, getChatTagApiBase, getHardcodedGuildId, getHearMeOutUrl, getTwitchClientId } from '@/lib/runtime-config';
 
@@ -121,7 +122,21 @@ function popupCallbackResponse(publicUrl: string, payload: Record<string, string
 
 function chatTagCallbackResponse(payload: Record<string, string>) {
   const chatTagUrl = getChatTagApiBase();
-  const params = new URLSearchParams(payload);
+  const issuedAt = String(Date.now());
+  const signedPayload: Record<string, string> = { ...payload, issued_at: issuedAt };
+  const bridgeSecret = process.env.CHAT_TAG_BOT_SECRET || process.env.BOT_SECRET_KEY;
+  if (payload.success === 'true') {
+    if (!bridgeSecret) throw new Error('CHAT_TAG_BOT_SECRET is required for the ChatTag identity bridge.');
+    const canonical = [
+      payload.user_id || '',
+      payload.username || '',
+      payload.display_name || '',
+      payload.photo_url || '',
+      issuedAt,
+    ].join('|');
+    signedPayload.signature = crypto.createHmac('sha256', bridgeSecret).update(canonical).digest('hex');
+  }
+  const params = new URLSearchParams(signedPayload);
   return NextResponse.redirect(`${chatTagUrl}/api/auth/twitch/callback?${params}`);
 }
 
@@ -326,8 +341,13 @@ export async function GET(request: NextRequest) {
           });
       }
       const hmoUrl = getHearMeOutUrl();
+      const exp = String(Math.floor(Date.now() / 1000) + 5 * 60);
+      const redirectSecret = process.env.DSH_REDIRECT_SECRET || '';
+      if (!redirectSecret) throw new Error('DSH_REDIRECT_SECRET is required for the HearMeOut identity bridge.');
+      const sig = crypto.createHmac('sha256', redirectSecret).update(`twitch|${userId}|${exp}`).digest('hex');
       const params = new URLSearchParams({
         success: 'true', user_id: userId, username, display_name: displayName, photo_url: photoUrl,
+        exp, sig,
       });
       return NextResponse.redirect(`${hmoUrl}/api/auth/twitch/callback?${params}`);
     }
