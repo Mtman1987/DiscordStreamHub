@@ -13,7 +13,6 @@ import {
   VoiceConnection,
   VoiceConnectionStatus,
 } from '@discordjs/voice';
-import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 import { AudioFrame, AudioSource, LocalAudioTrack, Room, TrackPublishOptions, TrackSource } from '@livekit/rtc-node';
 import prism from 'prism-media';
 import {
@@ -96,7 +95,7 @@ type GuildPlayback = {
 
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const DSH_BASE_URL = (process.env.WATCHROOM_DSH_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
-const FFMPEG_PATH = [process.env.FFMPEG_PATH, ffmpegInstaller.path, '/usr/bin/ffmpeg']
+const FFMPEG_PATH = [process.env.FFMPEG_PATH, '/usr/bin/ffmpeg']
   .find((candidate): candidate is string => Boolean(candidate && existsSync(candidate))) || 'ffmpeg';
 const MUSIC_SESSION_ID = process.env.WATCHROOM_MUSIC_SESSION_ID || 'discord-music-room';
 const LIVEKIT_URL = process.env.WATCHROOM_LIVEKIT_URL || '';
