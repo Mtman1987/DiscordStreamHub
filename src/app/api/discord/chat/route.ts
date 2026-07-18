@@ -12,6 +12,7 @@ import {
   getHardcodedGuildId,
   getHearMeOutUrl,
   getSpaceMountainIconUrl as getConfiguredSpaceMountainIconUrl,
+  getStreamweaverUrl,
 } from '@/lib/runtime-config';
 import { recordDiscordMessageActivity } from '@/lib/discord-activity-service';
 import { parseDiscordChatPayload } from '@/lib/discord-chat-payload';
@@ -328,6 +329,23 @@ function extractWatchTitle(payload: any) {
   return contentTitle || undefined;
 }
 
+async function forwardStreamWeaverDiscordCommand(body: any) {
+  const response = await fetch(`${getStreamweaverUrl().replace(/\/$/, '')}/api/discord/chat`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-chat-origin': 'dsh-command-forward',
+    },
+    body: JSON.stringify(body),
+    signal: timeoutSignal(30_000),
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(`StreamWeaver command forward failed: ${response.status} ${JSON.stringify(payload)}`);
+  }
+  return payload;
+}
+
 function getHearMeOutActivityUrl(sessionId = HMO_MOVIE_SESSION_ID) {
   const baseUrl = getHearMeOutUrl().replace(/\/$/, '');
   return `${baseUrl}/activity?sessionId=${encodeURIComponent(sessionId)}`;
@@ -589,6 +607,31 @@ export async function POST(request: NextRequest) {
           payload: { deletedCommand, sentMessageId: sent?.id || null },
         });
         return NextResponse.json({ success: true, commandHandled: 'chat-tag-controls', messageId: sent?.id, deletedCommand });
+      }
+    }
+
+    // DiscordStreamHub is the ingress owner for this bot. Forward remaining
+    // bang commands once to StreamWeaver so its command dispatcher can reply
+    // through the configured Discord bot/webhook path. HearMeOut and Chat Tag
+    // commands return above and therefore are not duplicated here.
+    if (dispatch && message.trim().startsWith('!')) {
+      try {
+        const streamweaver = await forwardStreamWeaverDiscordCommand(body);
+        console.log(`[DiscordChat] Forwarded StreamWeaver command from ${userName}: ${message}`);
+        return NextResponse.json({ success: true, commandHandled: 'streamweaver', streamweaver });
+      } catch (error: any) {
+        console.error('[DiscordChat] StreamWeaver command forward failed:', error);
+        if (channelId) {
+          await sendDiscordChannelMessage(channelId, {
+            content: 'StreamWeaver could not handle that command right now. Please try again in a moment.',
+            allowed_mentions: { parse: [] },
+          }).catch(() => null);
+        }
+        return NextResponse.json({
+          success: false,
+          commandHandled: 'streamweaver',
+          error: error?.message || 'StreamWeaver command forward failed',
+        }, { status: 502 });
       }
     }
 
