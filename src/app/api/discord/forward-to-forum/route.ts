@@ -462,11 +462,11 @@ function isSourceAllowed(channelId: string, whitelist: string[]) {
 
 export async function POST(request: NextRequest) {
   try {
+    const raw = await request.text();
     let body: any;
     try {
-      body = await request.json();
+      body = JSON.parse(raw);
     } catch {
-      const raw = await request.text();
       body = JSON.parse(raw.replace(/[\x00-\x1F\x7F]/g, ''));
     }
 
