@@ -18,6 +18,8 @@ import { useIsClient } from '@/hooks/use-is-client';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import { useSpmtAppState } from '@/hooks/use-spmt-app-state';
+import type { WorkspaceThemeTokensV1 } from '@spmt/sdk';
+import { applyWorkspaceThemeTokens } from '@/lib/workspace-theme';
 
 // Define the structure for theme settings
 interface ThemeSettings {
@@ -50,6 +52,24 @@ export function UISettingsCard() {
 
   const [settings, setSettings] = React.useState<ThemeSettings>(defaultSettings);
   const [followWorkspaceTheme, setFollowWorkspaceTheme] = React.useState(true);
+  const [workspaceTokens, setWorkspaceTokens] = React.useState<WorkspaceThemeTokensV1 | null>(null);
+  const [workspaceThemeError, setWorkspaceThemeError] = React.useState('');
+
+  const loadWorkspaceTheme = React.useCallback(async () => {
+    setWorkspaceThemeError('');
+    const response = await fetch('/api/spmt/workspace-theme', { cache: 'no-store', credentials: 'include' });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.tokens) {
+      setWorkspaceTokens(null);
+      setWorkspaceThemeError(data.error || 'SpaceMountain theme unavailable');
+      return;
+    }
+    setWorkspaceTokens(data.tokens);
+  }, []);
+
+  React.useEffect(() => {
+    if (persisted.loaded && followWorkspaceTheme) void loadWorkspaceTheme();
+  }, [persisted.loaded, followWorkspaceTheme, loadWorkspaceTheme]);
 
   React.useEffect(() => {
     if (!persisted.loaded) return;
@@ -61,7 +81,11 @@ export function UISettingsCard() {
 
   // Apply account-backed settings; device-local storage is only cleaned up as a migration.
   React.useEffect(() => {
-    if (isClient) {
+    if (isClient && followWorkspaceTheme && workspaceTokens) {
+      applyWorkspaceThemeTokens(document.documentElement, workspaceTokens);
+      return;
+    }
+    if (isClient && !followWorkspaceTheme) {
       const root = document.documentElement;
       root.style.setProperty('--primary-hue', settings.primaryHue.toString());
       root.style.setProperty('--background-hue', settings.backgroundHue.toString());
@@ -73,7 +97,7 @@ export function UISettingsCard() {
       root.style.setProperty('--radius', `${settings.radius}rem`);
       
     }
-  }, [settings, isClient, theme]);
+  }, [settings, isClient, theme, followWorkspaceTheme, workspaceTokens]);
 
   React.useEffect(() => {
     if (!persisted.loaded) return;
@@ -141,6 +165,15 @@ export function UISettingsCard() {
           <Label htmlFor="follow-workspace-theme" className="font-medium">Follow SpaceMountain theme</Label>
           <Switch id="follow-workspace-theme" checked={followWorkspaceTheme} onCheckedChange={setFollowWorkspaceTheme} />
         </div>
+        {followWorkspaceTheme && workspaceTokens && (
+          <p className="text-xs text-muted-foreground">Using SpaceMountain theme: {workspaceTokens.themeId}</p>
+        )}
+        {followWorkspaceTheme && workspaceThemeError && (
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-destructive/50 p-3 text-sm text-destructive">
+            <span>{workspaceThemeError}</span>
+            <Button type="button" variant="outline" size="sm" onClick={() => void loadWorkspaceTheme()}>Retry</Button>
+          </div>
+        )}
 
         <Separator />
 
