@@ -538,6 +538,7 @@ export async function POST(request: NextRequest) {
     const isForwardedWatchCommand = /^!(wr|watch|sr|song)(?:\s|$)/i.test(message) || /^!(add|accept)$/i.test(message.trim());
     if (isForwardedWatchCommand && channelId) {
       console.log(`[DiscordChat] Forwarding watch request to HearMeOut from ${userName}: ${message} (channelId: ${channelId})`);
+      const deletedCommand = await deleteDiscordMessage(channelId, messageId);
       try {
         const activityVoiceChannelId = getActivityVoiceChannelId(data);
         const result = await forwardHearMeOutDiscordChat({
@@ -570,13 +571,13 @@ export async function POST(request: NextRequest) {
             hearmeoutAction: result?.action || result?.commandHandled || null,
           },
         });
-        return NextResponse.json({ success: true, commandHandled: 'watch-request', hearmeout: result });
+        return NextResponse.json({ success: true, commandHandled: 'watch-request', deletedCommand, hearmeout: result });
       } catch (error: any) {
         const sent = await sendDiscordChannelMessage(channelId, {
           content: `HearMeOut could not handle that watch request: ${error?.message || 'unknown error'}`,
           allowed_mentions: { parse: [] },
         });
-        return NextResponse.json({ success: false, commandHandled: 'watch-request', error: error?.message || 'HearMeOut request failed', sent }, { status: 502 });
+        return NextResponse.json({ success: false, commandHandled: 'watch-request', deletedCommand, error: error?.message || 'HearMeOut request failed', sent }, { status: 502 });
       }
     }
 
