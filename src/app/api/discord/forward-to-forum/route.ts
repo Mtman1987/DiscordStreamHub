@@ -467,7 +467,12 @@ export async function POST(request: NextRequest) {
     try {
       body = JSON.parse(raw);
     } catch {
-      body = JSON.parse(raw.replace(/[\x00-\x1F\x7F]/g, ''));
+      try {
+        body = JSON.parse(raw.replace(/[\x00-\x1F\x7F]/g, ''));
+      } catch {
+        console.log('[ForwardForum] Rejected malformed JSON payload.');
+        return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 });
+      }
     }
 
     const data = body.root || body;
