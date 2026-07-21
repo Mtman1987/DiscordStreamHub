@@ -37,6 +37,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [sessionReady, setSessionReady] = React.useState(false);
+  const [isEmbedded, setIsEmbedded] = React.useState(false);
+
+  React.useEffect(() => {
+    setIsEmbedded(new URLSearchParams(window.location.search).get('embed') === '1');
+  }, [pathname]);
 
   React.useEffect(() => {
     async function handleSpaceMountainAuth(event: MessageEvent) {
@@ -166,6 +171,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <div className="flex min-h-screen items-center justify-center bg-background text-sm text-muted-foreground">
         Checking Discord Stream Hub session...
       </div>
+    );
+  }
+
+  if (isEmbedded) {
+    return (
+      <DataClientProvider>
+        <main className="h-screen min-h-0 overflow-hidden bg-background">{children}</main>
+      </DataClientProvider>
     );
   }
 

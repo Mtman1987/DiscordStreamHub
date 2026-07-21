@@ -279,14 +279,14 @@ export default function ForwardingPage() {
 
   return (
     <div className={`h-screen flex flex-col overflow-hidden ${isEmbedded ? 'p-3' : 'p-8'}`}>
-      <div className="flex items-center gap-2 mb-4">
+      {!isEmbedded && <div className="flex items-center gap-2 mb-4">
         <Button variant={showDiscord ? 'default' : 'outline'} size="sm" onClick={() => setShowDiscord(!showDiscord)}>
           <MessageSquare className="h-4 w-4 mr-1" /> Discord
         </Button>
         <Button variant={showTwitch ? 'default' : 'outline'} size="sm" onClick={() => setShowTwitch(!showTwitch)}>
           <Monitor className="h-4 w-4 mr-1" /> Twitch
         </Button>
-      </div>
+      </div>}
 
       {showTwitch && selectedTwitchChannel && (
         <Card
@@ -302,7 +302,7 @@ export default function ForwardingPage() {
         </Card>
       )}
 
-      <div className="flex-1 grid grid-cols-1 xl:grid-cols-2 gap-4 min-h-0">
+      <div className={`flex-1 grid grid-cols-1 ${panelCount > 1 ? 'xl:grid-cols-2' : ''} gap-4 min-h-0`}>
         {showDiscord && (
           <Card className="flex-1 flex flex-col overflow-hidden">
             <CardContent className={`flex-1 flex flex-col overflow-hidden ${isEmbedded ? 'p-3' : 'p-6'}`}>
@@ -399,7 +399,7 @@ export default function ForwardingPage() {
 
         {showTwitch && (
           <div className="flex-1 flex flex-col min-h-0">
-            <div className="flex items-center gap-2 mb-3 px-2">
+            {!isEmbedded && <div className="flex items-center gap-2 mb-3 px-2">
               <Select value={selectedTwitchChannel} onValueChange={setSelectedTwitchChannel}>
                 <SelectTrigger className="flex-1"><SelectValue placeholder="Select a live channel" /></SelectTrigger>
                 <SelectContent>
@@ -420,7 +420,7 @@ export default function ForwardingPage() {
               <Button variant={showVideo ? 'default' : 'outline'} size="icon" onClick={() => setShowVideo(!showVideo)} title={showVideo ? 'Hide video' : 'Show video'}>
                 {showVideo ? <Monitor className="h-4 w-4" /> : <MonitorOff className="h-4 w-4" />}
               </Button>
-            </div>
+            </div>}
             {selectedTwitchChannel ? (
               <iframe src={twitchChatUrl} className="flex-1 rounded border" style={{ minHeight: 0, width: '100%' }} />
             ) : (
