@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { registerManualDiscordShoutout } from '@/lib/manual-discord-shoutout-service';
+import { getServiceToServiceSecrets, hasAuthorizedBearerToken } from '@/lib/runtime-secrets';
 
 function extractTwitchLogin(value: unknown): string {
   const raw = String(value || '').trim();
@@ -16,8 +17,7 @@ function extractTwitchLogin(value: unknown): string {
 
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ') || authHeader.split(' ')[1] !== process.env.BOT_SECRET_KEY) {
+    if (!hasAuthorizedBearerToken(request.headers.get('authorization'), getServiceToServiceSecrets())) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

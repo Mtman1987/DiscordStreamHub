@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { RaidPileService } from '@/lib/raid-pile-service';
 import { getRaidPilePointsReward } from '@/lib/runtime-config';
+import { getServiceToServiceSecrets, hasAuthorizedBearerToken } from '@/lib/runtime-secrets';
 
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ') || authHeader.split(' ')[1] !== process.env.BOT_SECRET_KEY) {
+    if (!hasAuthorizedBearerToken(request.headers.get('authorization'), getServiceToServiceSecrets())) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

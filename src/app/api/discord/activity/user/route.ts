@@ -1,14 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDiscordActivitySummary } from '@/lib/discord-activity-service';
 import { getHardcodedGuildId } from '@/lib/runtime-config';
+import { getServiceToServiceSecrets, hasAuthorizedBearerToken } from '@/lib/runtime-secrets';
 
 function isAuthorized(request: NextRequest): boolean {
-  const authHeader = request.headers.get('authorization');
-  return Boolean(
-    authHeader &&
-    authHeader.startsWith('Bearer ') &&
-    authHeader.split(' ')[1] === process.env.BOT_SECRET_KEY,
-  );
+  return hasAuthorizedBearerToken(request.headers.get('authorization'), getServiceToServiceSecrets());
 }
 
 export async function POST(request: NextRequest) {

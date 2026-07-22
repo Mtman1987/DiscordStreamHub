@@ -1,17 +1,16 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { getHardcodedGuildId } from '@/lib/runtime-config';
+import { getServiceToServiceSecrets, hasAuthorizedBearerToken } from '@/lib/runtime-secrets';
 import { grandfatherDiscordIdentity } from '@/lib/spmt-client';
 
 export const dynamic = 'force-dynamic';
 
 function authorized(request: NextRequest) {
-  const expected = String(process.env.BOT_SECRET_KEY || '').trim();
+  const allowedSecrets = getServiceToServiceSecrets();
+  if (allowedSecrets.length === 0) return false;
+  if (hasAuthorizedBearerToken(request.headers.get('authorization'), allowedSecrets)) return true;
   const supplied = String(request.headers.get('x-bot-secret') || '').trim();
-  if (!expected || !supplied) return false;
-  const expectedHash = createHash('sha256').update(expected).digest();
-  const suppliedHash = createHash('sha256').update(supplied).digest();
-  return timingSafeEqual(expectedHash, suppliedHash);
+  return Boolean(supplied && allowedSecrets.includes(supplied));
 }
 
 async function fetchMembers(guildId: string, after: string, limit: number) {

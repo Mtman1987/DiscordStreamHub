@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getHardcodedAdminDiscordId } from '@/lib/runtime-config';
+import { getServiceToServiceSecrets, hasAuthorizedBearerToken } from '@/lib/runtime-secrets';
 
 const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const DISCORD_SNOWFLAKE_RE = /^\d{17,20}$/;
@@ -35,6 +36,10 @@ function roleMatches(adminRoles: string[] = [], userRoles: string[] = [], guildR
 
 export async function POST(request: NextRequest) {
   try {
+    if (!hasAuthorizedBearerToken(request.headers.get('authorization'), getServiceToServiceSecrets())) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     const serverId = String(body.serverId || body.guildId || '').trim();
     const userId = String(body.userId || body.discordUserId || '').trim();

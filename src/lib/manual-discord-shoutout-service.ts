@@ -160,7 +160,7 @@ async function resolveManualTarget(input: RegisterManualDiscordShoutoutInput): P
   };
 }
 
-async function getAiShoutout(twitchLogin: string): Promise<string> {
+async function getAiShoutout(twitchLogin: string, serverId: string): Promise<string> {
   try {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -172,7 +172,7 @@ async function getAiShoutout(twitchLogin: string): Promise<string> {
     const response = await fetch(`${getStreamweaverUrl().replace(/\/$/, '')}/api/ai/shoutout`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ username: twitchLogin }),
+      body: JSON.stringify({ username: twitchLogin, tenantId: serverId }),
       cache: 'no-store',
     });
     if (!response.ok) {
@@ -349,7 +349,7 @@ export async function registerManualDiscordShoutout(input: RegisterManualDiscord
 }> {
   const resolved = await resolveManualTarget(input);
   const stream = await getStreamByLogin(resolved.twitchLogin);
-  const aiShoutout = await getAiShoutout(resolved.twitchLogin);
+  const aiShoutout = await getAiShoutout(resolved.twitchLogin, input.serverId);
   const gifUrls = await getStoredGifUrls(resolved.twitchLogin);
   const hasBanner = Boolean(getStoredBannerUrl(resolved.twitchLogin));
   const isLive = Boolean(stream);
@@ -433,7 +433,7 @@ async function deleteManualRecord(serverId: string, entry: ManualDiscordShoutout
 
 async function updateManualRecord(serverId: string, entry: ManualDiscordShoutoutRecord): Promise<void> {
   const aiShoutout = shouldRefreshAiShoutout(entry)
-    ? await getAiShoutout(entry.twitchLogin)
+    ? await getAiShoutout(entry.twitchLogin, serverId)
     : entry.aiShoutout;
   const nowIso = new Date().toISOString();
   const nextEntry: ManualDiscordShoutoutRecord = {

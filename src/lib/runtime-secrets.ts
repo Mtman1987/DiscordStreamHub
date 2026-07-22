@@ -3,6 +3,7 @@ export type RuntimeSecretName =
   | 'CHAT_TAG_BOT_SECRET'
   | 'CLIP_WORKER_SECRET'
   | 'DSH_POINTS_TOKEN'
+  | 'DSH_SERVICE_SECRET'
   | 'SPACEMOUNTAIN_SHOUTOUT_TOKEN'
   | 'SPACEMOUNTAIN_FORUM_FORWARD_TOKEN'
   | 'STREAMWEAVER_SECRET'
@@ -12,12 +13,24 @@ function readSecret(name: RuntimeSecretName): string {
   return String(process.env[name] || '').trim();
 }
 
+function readFirstSecret(names: RuntimeSecretName[]): string {
+  for (const name of names) {
+    const value = readSecret(name);
+    if (value) return value;
+  }
+  return '';
+}
+
+function uniqueNonEmpty(values: string[]): string[] {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+}
+
 export function getBotServiceSecret(): string {
-  return readSecret('BOT_SECRET_KEY');
+  return readFirstSecret(['BOT_SECRET_KEY', 'DSH_CLIENT_SECRET', 'DSH_SERVICE_SECRET']);
 }
 
 export function getChatTagServiceSecret(): string {
-  return readSecret('CHAT_TAG_BOT_SECRET');
+  return readFirstSecret(['CHAT_TAG_BOT_SECRET', 'BOT_SECRET_KEY', 'DSH_CLIENT_SECRET', 'DSH_SERVICE_SECRET']);
 }
 
 export function getClipWorkerSecret(): string {
@@ -25,7 +38,28 @@ export function getClipWorkerSecret(): string {
 }
 
 export function getDshPointsSecret(): string {
-  return readSecret('DSH_POINTS_TOKEN');
+  return readFirstSecret(['DSH_POINTS_TOKEN', 'DSH_CLIENT_SECRET', 'DSH_SERVICE_SECRET']);
+}
+
+export function getDshClientSecret(): string {
+  return readFirstSecret(['DSH_CLIENT_SECRET', 'DSH_SERVICE_SECRET', 'BOT_SECRET_KEY']);
+}
+
+export function getServiceToServiceSecrets(): string[] {
+  return uniqueNonEmpty([
+    getBotServiceSecret(),
+    getDshClientSecret(),
+    getChatTagServiceSecret(),
+    getDshPointsSecret(),
+  ]);
+}
+
+export function hasAuthorizedBearerToken(authHeader: string | null, allowedSecrets: string[]): boolean {
+  const rawHeader = String(authHeader || '').trim();
+  if (!rawHeader.toLowerCase().startsWith('bearer ')) return false;
+  const token = rawHeader.slice(7).trim();
+  if (!token) return false;
+  return uniqueNonEmpty(allowedSecrets).includes(token);
 }
 
 export function missingProductionServiceSecrets(): RuntimeSecretName[] {
@@ -36,9 +70,9 @@ export function missingProductionServiceSecrets(): RuntimeSecretName[] {
   if (!getChatTagServiceSecret()) missing.push('CHAT_TAG_BOT_SECRET');
   if (!getClipWorkerSecret()) missing.push('CLIP_WORKER_SECRET');
   if (!getDshPointsSecret()) missing.push('DSH_POINTS_TOKEN');
+  if (!getDshClientSecret()) missing.push('DSH_CLIENT_SECRET');
   if (!readSecret('SPACEMOUNTAIN_SHOUTOUT_TOKEN')) missing.push('SPACEMOUNTAIN_SHOUTOUT_TOKEN');
   if (!readSecret('SPACEMOUNTAIN_FORUM_FORWARD_TOKEN')) missing.push('SPACEMOUNTAIN_FORUM_FORWARD_TOKEN');
   if (!readSecret('STREAMWEAVER_SECRET')) missing.push('STREAMWEAVER_SECRET');
-  if (!readSecret('DSH_CLIENT_SECRET')) missing.push('DSH_CLIENT_SECRET');
   return missing;
 }

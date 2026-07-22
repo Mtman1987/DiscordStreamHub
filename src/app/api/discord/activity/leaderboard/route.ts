@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/data/server-init';
 import { getHardcodedGuildId } from '@/lib/runtime-config';
+import { getServiceToServiceSecrets, hasAuthorizedBearerToken } from '@/lib/runtime-secrets';
 
 type ActivityLeaderboardEntry = {
   userId: string;
@@ -20,12 +21,7 @@ type ActivityLeaderboardEntry = {
 };
 
 function isAuthorized(request: NextRequest): boolean {
-  const authHeader = request.headers.get('authorization');
-  return Boolean(
-    authHeader &&
-    authHeader.startsWith('Bearer ') &&
-    authHeader.split(' ')[1] === process.env.BOT_SECRET_KEY,
-  );
+  return hasAuthorizedBearerToken(request.headers.get('authorization'), getServiceToServiceSecrets());
 }
 
 function asNumber(value: unknown): number {

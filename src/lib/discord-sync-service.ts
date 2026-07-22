@@ -2,6 +2,7 @@
 
 import { db } from '@/data/server-init';
 import { getDiscordDebugEnvLogsEnabled } from '@/lib/runtime-config';
+import { toCanonicalGroup } from '@/lib/group-utils';
 
 interface DiscordMember {
   id: string;
@@ -169,7 +170,7 @@ class DiscordSyncService {
     console.log(`Synced ${guild.roles.length} roles`);
   }
 
-  private async determineGroup(roleIds: string[], serverId: string): Promise<'VIP' | 'Mountaineer' | 'Train' | 'Pile'> {
+  private async determineGroup(roleIds: string[], serverId: string): Promise<string> {
     try {
       // Get role mappings from the app database.
       const serverDoc = await db.collection('servers').doc(serverId).get();
@@ -178,15 +179,15 @@ class DiscordSyncService {
       // Check if any of the user's roles are mapped to a group
       for (const roleId of roleIds) {
         if (roleMappings[roleId]) {
-          return roleMappings[roleId];
+          return toCanonicalGroup(roleMappings[roleId]) || String(roleMappings[roleId]);
         }
       }
 
-      // Default to Mountaineer if no role mapping found
-      return 'Mountaineer';
+      // Default to Everyone Else when no role mapping is present.
+      return 'Everyone Else';
     } catch (error) {
       console.error('Error determining group:', error);
-      return 'Mountaineer';
+      return 'Everyone Else';
     }
   }
 
@@ -411,7 +412,7 @@ export async function syncChannelsAndRoles(serverId: string): Promise<void> {
 export async function getUserRolesAndGroup(
   serverId: string,
   userId: string
-): Promise<{ roles: string[]; group: 'VIP' | 'Mountaineer' | 'Train' | 'Pile' }> {
+): Promise<{ roles: string[]; group: string }> {
   const existingUser = await db.collection('servers').doc(serverId).collection('users').doc(userId).get();
   const existingData = existingUser.data();
   const existingRoles = Array.isArray(existingData?.roles) ? existingData.roles : [];
@@ -420,13 +421,13 @@ export async function getUserRolesAndGroup(
   if (existingRoles.length > 0 && typeof existingGroup === 'string') {
     return {
       roles: existingRoles,
-      group: existingGroup as 'VIP' | 'Mountaineer' | 'Train' | 'Pile',
+      group: existingGroup,
     };
   }
 
   const botToken = process.env.DISCORD_BOT_TOKEN;
   if (!botToken) {
-    return { roles: existingRoles, group: 'Mountaineer' };
+    return { roles: existingRoles, group: 'Everyone Else' };
   }
 
   const response = await fetch(`https://discord.com/api/v10/guilds/${serverId}/members/${userId}`, {
@@ -435,7 +436,7 @@ export async function getUserRolesAndGroup(
 
   if (!response.ok) {
     console.warn(`[DiscordSync] Failed to fetch member ${userId} in ${serverId}: ${response.status}`);
-    return { roles: existingRoles, group: 'Mountaineer' };
+    return { roles: existingRoles, group: 'Everyone Else' };
   }
 
   const member = await response.json();

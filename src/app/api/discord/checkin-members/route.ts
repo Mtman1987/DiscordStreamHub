@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { matchesGroup } from '@/lib/group-utils';
+import { getServiceToServiceSecrets, hasAuthorizedBearerToken } from '@/lib/runtime-secrets';
 
 function hasServiceAccess(request: NextRequest): boolean {
-  const expected = String(process.env.BOT_SECRET_KEY || '').trim();
-  const authorization = String(request.headers.get('authorization') || '');
-  return Boolean(expected && authorization === `Bearer ${expected}`);
+  return hasAuthorizedBearerToken(request.headers.get('authorization'), getServiceToServiceSecrets());
 }
 
 export async function GET(request: NextRequest) {
@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     const snapshot = await db.collection('servers').doc(serverId).collection('users').get();
     const members = snapshot.docs
       .map((doc: { id: string; data: () => any }) => ({ id: doc.id, ...doc.data() }))
-      .filter((member: any) => !group || String(member.group || '').trim().toLowerCase() === group)
+      .filter((member: any) => !group || matchesGroup(member.group, group))
       .map((member: any) => ({
         id: String(member.id || ''),
         discordUserId: String(member.discordUserId || member.id || ''),
