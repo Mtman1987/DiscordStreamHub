@@ -58,7 +58,11 @@ export async function GET() {
 function runStartupCleanup(): void {
   setTimeout(() => {
     cleanupOrphanedDiscordEmbeds(HARDCODED_SERVER_ID, { maxDeletesPerRun: 20 })
-      .then((cleanupResult) => console.log('[Startup] Discord orphan cleanup completed:', cleanupResult))
+      .then((cleanupResult) => {
+        if (cleanupResult.deleted > 0) {
+          console.log(`[Startup] Discord cleanup removed ${cleanupResult.deleted} orphaned embeds`);
+        }
+      })
       .catch((cleanupError) => console.error('[Startup] Discord orphan cleanup failed:', cleanupError));
   }, 0);
 }

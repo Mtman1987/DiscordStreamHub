@@ -56,7 +56,6 @@ class TwitchApiService {
       return this.accessToken;
     }
 
-    console.log('[TwitchAPI] Getting new access token...');
     const response = await fetch('https://id.twitch.tv/oauth2/token', {
       method: 'POST',
       headers: {
@@ -78,7 +77,6 @@ class TwitchApiService {
     const data = await response.json();
     this.accessToken = data.access_token;
     this.tokenExpiry = Date.now() + (data.expires_in * 1000) - 60000; // 1 minute buffer
-    console.log('[TwitchAPI] Access token acquired successfully');
 
     return data.access_token;
   }
@@ -243,26 +241,19 @@ class TwitchApiService {
         invalidLogins.forEach(login => statusMap.set(login, false));
       }
 
-      console.log(`[TwitchAPI] Checking ${validLogins.length} users for live status`);
-      console.log(`[TwitchAPI] Sample usernames:`, validLogins.slice(0, 5));
-
       const checkChunk = async (chunk: string[]): Promise<number> => {
         if (chunk.length === 0) return 0;
 
         const params = new URLSearchParams();
         chunk.forEach(login => params.append('user_login', login));
         const endpoint = `streams?${params.toString()}`;
-        console.log(`[TwitchAPI] Calling endpoint for ${chunk.length} users`);
-
         try {
           const data = await this.makeApiCall(endpoint);
-          console.log(`[TwitchAPI] Found ${data.data.length} live streams in this chunk`);
 
           chunk.forEach(login => statusMap.set(login, false));
 
           data.data.forEach((stream: TwitchStream) => {
             statusMap.set(stream.user_login.toLowerCase(), true);
-            console.log(`[TwitchAPI] ${stream.user_login} is live: ${stream.game_name}`);
           });
 
           return data.data.length;
@@ -292,7 +283,6 @@ class TwitchApiService {
         totalOnline += await checkChunk(chunk);
       }
 
-      console.log(`[TwitchAPI] Total online users found: ${totalOnline}`);
     } catch (error) {
       console.error('Error checking stream status:', error);
     }

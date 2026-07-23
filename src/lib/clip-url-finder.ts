@@ -17,8 +17,6 @@ export async function getClipVideoUrl(clipUrl: string): Promise<ClipVideoUrlResu
     const clipSlug = clipUrl.split('/clip/')[1]?.split('?')[0];
     if (!clipSlug) throw new Error('Invalid clip URL');
     
-    console.log(`[ClipUrlFinder] Getting video URL for clip: ${clipSlug}`);
-    
     // Use Twitch API to get clip info
     const twitchClientId = getTwitchClientId();
     const twitchClientSecret = process.env.TWITCH_CLIENT_SECRET;
@@ -53,7 +51,6 @@ export async function getClipVideoUrl(clipUrl: string): Promise<ClipVideoUrlResu
     // Convert thumbnail URL to video URL by removing -preview and adding .mp4
     const videoUrl = thumbnailUrl.split('-preview-')[0] + '.mp4';
     
-    console.log(`[ClipUrlFinder] Found URL: ${videoUrl}`);
     return videoUrl;
   } catch (error) {
     console.error(`[ClipUrlFinder] Error:`, error);

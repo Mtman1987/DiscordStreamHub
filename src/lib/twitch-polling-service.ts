@@ -845,7 +845,6 @@ class TwitchPollingService {
         isSpotlight: isCurrentSpotlight,
       });
       
-      console.log(`[TwitchPolling] Updated shoutout for ${stream.user_login}`);
     } catch (error) {
       const errorText = error instanceof Error ? error.message : String(error);
       const isTooOldEdit = /Maximum number of edits to messages older than 1 hour reached|code["']?\s*:\s*30046|30046/.test(errorText);

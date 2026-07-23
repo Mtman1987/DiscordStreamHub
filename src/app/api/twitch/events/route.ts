@@ -43,7 +43,6 @@ export async function POST(request: NextRequest) {
           quantity: 1, source: 'twitch',
           metadata: { username: username || twitchLogin, channel }
         });
-        console.log(`[TwitchEvents] Chat: ${twitchLogin} +${result.pointsAwarded}pts`);
         return NextResponse.json({ success: true, pointsAwarded: result.pointsAwarded });
       }
 

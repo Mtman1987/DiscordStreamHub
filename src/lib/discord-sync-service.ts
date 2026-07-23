@@ -93,7 +93,6 @@ class DiscordSyncService {
         lastSync: new Date(),
       });
 
-      console.log(`Discord sync completed for server ${serverId}`);
     } catch (error) {
       console.error('Discord sync failed:', error);
       throw error;
@@ -123,7 +122,6 @@ class DiscordSyncService {
     }
 
     await batch.commit();
-    console.log(`Synced ${members.length} members`);
   }
 
   private async syncChannels(serverId: string): Promise<void> {
@@ -146,7 +144,6 @@ class DiscordSyncService {
     }
 
     await batch.commit();
-    console.log(`Synced ${channels.filter((c: any) => c.type === 0).length} channels`);
   }
 
   private async syncRoles(serverId: string): Promise<void> {
@@ -167,7 +164,6 @@ class DiscordSyncService {
     }
 
     await batch.commit();
-    console.log(`Synced ${guild.roles.length} roles`);
   }
 
   private async determineGroup(roleIds: string[], serverId: string): Promise<string> {
@@ -206,7 +202,6 @@ class DiscordSyncService {
         throw new Error(`Failed to delete message ${messageId} in ${channelId}: ${response.status} ${errorText}`);
       }
 
-      console.log(`Deleted message ${messageId} from channel ${channelId}`);
     } catch (error) {
       console.error('Failed to delete message:', error);
       throw error;
@@ -227,7 +222,6 @@ class DiscordSyncService {
         });
 
         if (response.ok) {
-          console.log(`Edited message ${messageId} in channel ${channelId}`);
           return;
         }
 
@@ -284,7 +278,6 @@ class DiscordSyncService {
       }
 
       const message = await response.json();
-      console.log(`Shoutout sent to channel ${channelId}, messageId: ${message.id}`);
       return message.id;
     } catch (error) {
       console.error('Failed to send shoutout:', error);
