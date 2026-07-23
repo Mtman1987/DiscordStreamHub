@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { replaceDiscordUserMentions } from '@/lib/discord-mentions';
 import { db } from '@/lib/db';
 import { awardPoints } from '@/lib/points-service';
 import {
@@ -428,10 +429,11 @@ export async function POST(request: NextRequest) {
     const guildId = data.guildId || data.serverId || getHardcodedGuildId();
     const userName = data.userName || data.displayName || data.username || 'Unknown';
     const userAvatar = data.userAvatar || data.avatarUrl || '';
-    const message = data.message || data.content || '';
+    const rawMessage = data.message || data.content || '';
+    const message = replaceDiscordUserMentions(rawMessage, data);
     const attachments = Array.isArray(data.attachments) ? data.attachments : [];
     const embeds = Array.isArray(data.embeds) ? data.embeds : [];
-    const mentions = Array.isArray(data.mentions) ? data.mentions : [];
+    const mentions = data.mentions || [];
     const stickers = Array.isArray(data.sticker_items || data.stickers) ? (data.sticker_items || data.stickers) : [];
     const channelId = data.channelId || '';
     const messageId = data.messageId || '';
@@ -584,12 +586,12 @@ export async function POST(request: NextRequest) {
     // DSH owns button-posting flows. Regular Chat Tag commands are handled directly by
     // the Chat Tag app, so we only keep the controls-button trigger here.
     const discordClientId = getDiscordClientId();
-    const isSpmtMention = discordClientId ? message.startsWith(`<@${discordClientId}>`) || message.startsWith(`<@!${discordClientId}>`) : false;
+    const isSpmtMention = discordClientId ? rawMessage.startsWith(`<@${discordClientId}>`) || rawMessage.startsWith(`<@!${discordClientId}>`) : false;
     const isSpmtCommand = msgLower.startsWith('spmt ') || msgLower.startsWith('@spmt ') || isSpmtMention;
     if (isSpmtCommand && channelId) {
       let normalizedMsg = message;
-      if (message.startsWith('<@')) {
-        normalizedMsg = '@spmt ' + message.replace(/<@!?\d+>/g, '').trim();
+      if (rawMessage.startsWith('<@')) {
+        normalizedMsg = '@spmt ' + rawMessage.replace(/<@!?\d+>/g, '').trim();
       } else if (msgLower.startsWith('spmt ')) {
         normalizedMsg = '@spmt ' + message.substring(5);
       }
