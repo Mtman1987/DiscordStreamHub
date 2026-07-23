@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { randomUUID } from 'node:crypto';
 import { replaceDiscordUserMentions } from '@/lib/discord-mentions';
 import { db } from '@/lib/db';
 import { awardPoints } from '@/lib/points-service';
@@ -29,6 +30,15 @@ const CHAT_TAG_AVATAR_URL = getChatTagAvatarUrl();
 const DISCORD_ACTIVITY_APPLICATION_ID = getDiscordActivityApplicationId();
 const HMO_MOVIE_SESSION_ID = 'discord-watch-room';
 const HMO_MUSIC_SESSION_ID = 'discord-music-room';
+
+function logDiscordTrace(traceId: string, stage: string, details: Record<string, unknown> = {}) {
+  console.log(`[DiscordTrace] ${JSON.stringify({
+    traceId,
+    service: 'discord-stream-hub',
+    stage,
+    ...details,
+  })}`);
+}
 
 function publishDiscordBridgeEvent(type: string, input: {
   userId?: string;
@@ -330,21 +340,91 @@ function extractWatchTitle(payload: any) {
   return contentTitle || undefined;
 }
 
-async function forwardStreamWeaverDiscordCommand(body: any) {
+async function postStreamWeaverDiscordChat(
+  body: any,
+  traceId: string,
+  replyMode: 'direct' | 'collect',
+) {
   const response = await fetch(`${getStreamweaverUrl().replace(/\/$/, '')}/api/discord/chat`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-chat-origin': 'dsh-command-forward',
+      'x-chat-origin': replyMode === 'collect' ? 'dsh-fanout' : 'dsh-command-forward',
+      'x-discord-trace-id': traceId,
+      ...(replyMode === 'collect' ? { 'x-discord-reply-mode': 'collect' } : {}),
     },
     body: JSON.stringify(body),
-    signal: timeoutSignal(30_000),
+    signal: timeoutSignal(replyMode === 'collect' ? 45_000 : 30_000),
   });
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
-    throw new Error(`StreamWeaver command forward failed: ${response.status} ${JSON.stringify(payload)}`);
+    throw new Error(`StreamWeaver Discord forward failed: ${response.status} ${JSON.stringify(payload)}`);
   }
   return payload;
+}
+
+async function forwardStreamWeaverDiscordCommand(body: any, traceId: string) {
+  return postStreamWeaverDiscordChat(body, traceId, 'direct');
+}
+
+function normalizeCollectedReply(reply: any) {
+  if (typeof reply === 'string') {
+    return { content: reply, allowed_mentions: { parse: [] } };
+  }
+  return {
+    content: typeof reply?.content === 'string' ? reply.content : '',
+    ...(Array.isArray(reply?.embeds) ? { embeds: reply.embeds } : {}),
+    ...(Array.isArray(reply?.components) ? { components: reply.components } : {}),
+    allowed_mentions: reply?.allowed_mentions || { parse: [] },
+  };
+}
+
+function summarizeStreamWeaverFanout(result: Awaited<ReturnType<typeof fanoutToStreamWeaver>> | null) {
+  if (!result) return null;
+  return {
+    ok: result.ok,
+    replyCount: result.replyCount,
+    deliveredCount: result.deliveredCount,
+    context: result.ok ? result.payload?.context || null : null,
+    botResponded: result.ok ? Boolean(result.payload?.botResponded) : false,
+    error: result.ok ? result.payload?.error || null : result.error,
+  };
+}
+
+async function fanoutToStreamWeaver(body: any, channelId: string, traceId: string) {
+  const startedAt = Date.now();
+  logDiscordTrace(traceId, 'fanout-start', {
+    destination: 'streamweaver:/api/discord/chat',
+    replyMode: 'collect',
+  });
+  try {
+    const payload = await postStreamWeaverDiscordChat(body, traceId, 'collect');
+    const replies = Array.isArray(payload?.replies) ? payload.replies : [];
+    const sends = [];
+    for (const reply of replies) {
+      sends.push(await sendDiscordChannelMessage(channelId, normalizeCollectedReply(reply)));
+    }
+    logDiscordTrace(traceId, 'fanout-complete', {
+      destination: 'streamweaver:/api/discord/chat',
+      durationMs: Date.now() - startedAt,
+      ok: true,
+      botResponded: Boolean(payload?.botResponded),
+      context: payload?.context || null,
+      replyCount: replies.length,
+      deliveredCount: sends.length,
+      downstreamError: payload?.error || null,
+    });
+    return { ok: true, payload, replyCount: replies.length, deliveredCount: sends.length };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logDiscordTrace(traceId, 'fanout-failed', {
+      destination: 'streamweaver:/api/discord/chat',
+      durationMs: Date.now() - startedAt,
+      ok: false,
+      error: message,
+    });
+    return { ok: false, error: message, replyCount: 0, deliveredCount: 0 };
+  }
 }
 
 function getHearMeOutActivityUrl(sessionId = HMO_MOVIE_SESSION_ID) {
@@ -440,17 +520,35 @@ export async function POST(request: NextRequest) {
     const dispatch = data.dispatch !== false;
     const isDirectMessage = Boolean(data.isDM || data.isDirectMessage || data.is_direct_message);
     const isBotAuthor = Boolean(data.author?.bot || data.user?.bot || data.member?.user?.bot);
+    const traceId = request.headers.get('x-discord-trace-id') || messageId || randomUUID();
+
+    logDiscordTrace(traceId, 'ingress', {
+      source: request.headers.get('x-chat-origin') || 'discord-bot',
+      guildId: guildId || null,
+      channelId: channelId || null,
+      messageId: messageId || null,
+      userId: userId || null,
+      userName,
+      isDirectMessage,
+      isBotAuthor,
+      dispatch,
+      messageLength: message.length,
+      messagePreview: isDirectMessage ? '[private message]' : message.slice(0, 120),
+    });
 
     if (!userId || !guildId) {
+      logDiscordTrace(traceId, 'rejected', { reason: 'missing-user-or-guild' });
       return NextResponse.json({ error: 'userId and guildId required' }, { status: 400 });
     }
 
     if ((!message || message.length === 0) && attachments.length === 0) {
+      logDiscordTrace(traceId, 'skipped', { reason: 'empty-message' });
       return NextResponse.json({ success: true, skipped: 'empty message' });
     }
 
     if (markDiscordMessageSeen(guildId, channelId, messageId)) {
       console.log(`[DiscordChat] Duplicate message ignored: ${guildId}/${channelId}/${messageId}`);
+      logDiscordTrace(traceId, 'skipped', { reason: 'duplicate-message' });
       return NextResponse.json({ success: true, skipped: 'duplicate-message', messageId });
     }
 
@@ -619,11 +717,26 @@ export async function POST(request: NextRequest) {
     // commands return above and therefore are not duplicated here.
     if (dispatch && message.trim().startsWith('!')) {
       try {
-        const streamweaver = await forwardStreamWeaverDiscordCommand(body);
+        logDiscordTrace(traceId, 'route-selected', {
+          route: 'streamweaver-command',
+          destination: 'streamweaver:/api/discord/chat',
+        });
+        const streamweaver = await forwardStreamWeaverDiscordCommand(body, traceId);
         console.log(`[DiscordChat] Forwarded StreamWeaver command from ${userName}: ${message}`);
+        logDiscordTrace(traceId, 'route-complete', {
+          route: 'streamweaver-command',
+          ok: true,
+          botResponded: Boolean(streamweaver?.botResponded),
+          context: streamweaver?.context || null,
+          downstreamError: streamweaver?.error || null,
+        });
         return NextResponse.json({ success: true, commandHandled: 'streamweaver', streamweaver });
       } catch (error: any) {
         console.error('[DiscordChat] StreamWeaver command forward failed:', error);
+        logDiscordTrace(traceId, 'route-failed', {
+          route: 'streamweaver-command',
+          error: error?.message || 'StreamWeaver command forward failed',
+        });
         if (channelId) {
           await sendDiscordChannelMessage(channelId, {
             content: 'StreamWeaver could not handle that command right now. Please try again in a moment.',
@@ -638,11 +751,41 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    let streamweaverFanout: Awaited<ReturnType<typeof fanoutToStreamWeaver>> | null = null;
+    const shouldFanoutToStreamWeaver =
+      dispatch
+      && !isDirectMessage
+      && !isBotAuthor
+      && !isSpmtCommand
+      && Boolean(channelId)
+      && !message.trim().startsWith('!');
+
+    if (shouldFanoutToStreamWeaver) {
+      streamweaverFanout = await fanoutToStreamWeaver(body, channelId, traceId);
+    } else {
+      logDiscordTrace(traceId, 'fanout-skipped', {
+        destination: 'streamweaver:/api/discord/chat',
+        reason: !dispatch
+          ? 'dispatch-disabled'
+          : isDirectMessage
+          ? 'dm-owned-by-streamweaver-sweep'
+          : isBotAuthor
+          ? 'bot-author-loop-protection'
+          : isSpmtCommand
+          ? 'chat-tag-owned'
+          : !channelId
+          ? 'missing-channel'
+          : 'command-owned',
+      });
+    }
+    const streamweaverFanoutSummary = summarizeStreamWeaverFanout(streamweaverFanout);
+
     // Check if user is in our community
     const userDoc = await db.collection('servers').doc(guildId).collection('users').doc(userId).get();
     if (!userDoc.exists) {
       console.log(`[DiscordChat] ${userName} (${userId}) not in community DB, skipping points`);
-      return NextResponse.json({ success: true, pointsAwarded: false, reason: 'not-a-member' });
+      logDiscordTrace(traceId, 'complete', { reason: 'not-a-member', streamweaverFanout: streamweaverFanoutSummary });
+      return NextResponse.json({ success: true, pointsAwarded: false, reason: 'not-a-member', streamweaverFanout });
     }
 
     await recordDiscordMessageActivity({
@@ -692,7 +835,8 @@ export async function POST(request: NextRequest) {
     const now = Date.now();
     const lastAwarded = discordChatCooldowns.get(userId);
     if (lastAwarded && now - lastAwarded < COOLDOWN_MS) {
-      return NextResponse.json({ success: true, pointsAwarded: false, reason: 'cooldown' });
+      logDiscordTrace(traceId, 'complete', { reason: 'points-cooldown', streamweaverFanout: streamweaverFanoutSummary });
+      return NextResponse.json({ success: true, pointsAwarded: false, reason: 'cooldown', streamweaverFanout });
     }
     discordChatCooldowns.set(userId, now);
 
@@ -707,10 +851,12 @@ export async function POST(request: NextRequest) {
         metadata: { username: userName, channelId, avatarUrl: userAvatar }
       });
       console.log(`[DiscordChat] Awarded ${result.pointsAwarded} pts to ${userName}`);
-      return NextResponse.json({ success: true, pointsAwarded: true, points: result.pointsAwarded });
+      logDiscordTrace(traceId, 'complete', { pointsAwarded: result.pointsAwarded, streamweaverFanout: streamweaverFanoutSummary });
+      return NextResponse.json({ success: true, pointsAwarded: true, points: result.pointsAwarded, streamweaverFanout });
     } catch (pointsError) {
       console.error('[DiscordChat] awardPoints failed:', pointsError);
-      return NextResponse.json({ success: true, pointsAwarded: false, reason: 'award-error' });
+      logDiscordTrace(traceId, 'complete', { reason: 'award-error', streamweaverFanout: streamweaverFanoutSummary });
+      return NextResponse.json({ success: true, pointsAwarded: false, reason: 'award-error', streamweaverFanout });
     }
   } catch (error) {
     console.error('[DiscordChat] Error:', error);
