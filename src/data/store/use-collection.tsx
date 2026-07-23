@@ -114,7 +114,7 @@ export function useCollection<T = any>(
 
     return () => unsubscribe();
   }, [memoizedTargetRefOrQuery, refreshNonce]); // Re-run if the target query/reference changes.
-  if(memoizedTargetRefOrQuery && !memoizedTargetRefOrQuery.__memo) {
+  if(process.env.NODE_ENV !== 'production' && memoizedTargetRefOrQuery && !memoizedTargetRefOrQuery.__memo) {
     console.warn('[useCollection] Reference was not memoized with useMemoData — this may cause extra re-renders');
   }
   return { data, isLoading, error };

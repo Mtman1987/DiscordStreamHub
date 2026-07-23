@@ -12,7 +12,6 @@ const MAX_GIFS = 6;
 
 export async function fetchNewGifOnLive(serverId: string, discordUserId: string, twitchLogin: string): Promise<void> {
   try {
-    console.log(`[GifRotation] Checking ${twitchLogin}...`);
     const gifDoc = await db.collection('servers').doc(serverId).collection('users').doc(discordUserId)
       .collection('gifRotation').doc('storage').get();
 
@@ -21,22 +20,17 @@ export async function fetchNewGifOnLive(serverId: string, discordUserId: string,
     const now = new Date();
     
     if (lastFetch && (now.getTime() - lastFetch.getTime()) < 24 * 60 * 60 * 1000) {
-      console.log(`[GifRotation] ${twitchLogin} already fetched today`);
       return;
     }
 
-    console.log(`[GifRotation] Fetching clips for ${twitchLogin}...`);
     const clips = await getClipsForUser(twitchLogin, 1);
     if (!clips || clips.length === 0) {
-      console.log(`[GifRotation] No clips found for ${twitchLogin}`);
       return;
     }
 
-    console.log(`[GifRotation] Converting clip ${clips[0].id} for ${twitchLogin}...`);
     const clip = clips[0];
     const gifBuffer = await fetchAndConvertClip(clip.id);
     if (!gifBuffer) {
-      console.log(`[GifRotation] Failed to convert clip for ${twitchLogin}`);
       return;
     }
 
@@ -53,11 +47,9 @@ export async function fetchNewGifOnLive(serverId: string, discordUserId: string,
     }
 
     const gifPath = join(mediaPath, `${Date.now()}.gif`);
-    console.log(`[GifRotation] Writing GIF to ${gifPath}...`);
     await writeFile(gifPath, gifBuffer);
 
     await gifDoc.ref.set({ lastFetchedAt: now, currentIndex: 0 }, { merge: true });
-    console.log(`[GifRotation] ✅ Added new GIF for ${twitchLogin}`);
   } catch (error) {
     console.error(`[GifRotation] Error for ${twitchLogin}:`, error);
   }
@@ -101,40 +93,32 @@ export async function getNextGifCdnUrl(serverId: string, discordUserId: string, 
     const normalizedLogin = String(twitchLogin || '').trim().toLowerCase();
     if (!normalizedLogin) return null;
 
-    console.log(`[GifRotation] Getting GIF URL for ${normalizedLogin}...`);
     const gifDoc = await db.collection('servers').doc(serverId).collection('users').doc(discordUserId)
       .collection('gifRotation').doc('storage').get();
 
     const STORAGE_PATH = getStoragePath();
     const mediaPath = join(STORAGE_PATH, normalizedLogin);
-    console.log(`[GifRotation] Reading directory: ${mediaPath}`);
     
     const { existsSync } = await import('fs');
     const { mkdir } = await import('fs/promises');
     
     if (!existsSync(mediaPath)) {
-      console.log(`[GifRotation] Directory doesn't exist, creating: ${mediaPath}`);
       await mkdir(mediaPath, { recursive: true });
-      console.log(`[GifRotation] No GIFs available for ${normalizedLogin} (new directory)`);
       return null;
     }
     
     const files = await readdir(mediaPath);
     const gifFiles = files.filter(f => f.endsWith('.gif')).sort();
-    console.log(`[GifRotation] Found ${gifFiles.length} GIFs for ${normalizedLogin}`);
 
     if (gifFiles.length === 0) {
-      console.log(`[GifRotation] No GIFs available for ${normalizedLogin}`);
       return null;
     }
 
     const currentIndex = gifDoc.data()?.currentIndex || 0;
     const nextIndex = (currentIndex + 1) % gifFiles.length;
     const gifFile = gifFiles[nextIndex];
-    console.log(`[GifRotation] Using GIF: ${gifFile}`);
 
     const gifUrl = `${getAppUrl().replace(/\/$/, '')}/api/media/${normalizedLogin}/${gifFile}`;
-    console.log(`[GifRotation] ✅ GIF URL: ${gifUrl}`);
     
     await gifDoc.ref.set({ currentIndex: nextIndex }, { merge: true });
     return gifUrl;

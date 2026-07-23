@@ -33,13 +33,10 @@ async function replaceTrackedShoutoutMessage(
 
 export async function manageCommunitySpotlight(serverId: string): Promise<void> {
   try {
-    console.log('[CommunitySpotlight] Starting spotlight rotation...');
     const branding = await getServerBranding(serverId);
     const liveMembers = await getLiveCommunityMembers(serverId);
-    console.log(`[CommunitySpotlight] Found ${liveMembers.length} eligible live members`);
     
     if (liveMembers.length === 0) {
-      console.log('[CommunitySpotlight] No eligible members, clearing spotlight');
       await clearSpotlight(serverId);
       return;
     }
@@ -50,19 +47,11 @@ export async function manageCommunitySpotlight(serverId: string): Promise<void> 
     const newSpotlightMember = liveMembers[nextIndex];
     const oldSpotlightUserId = currentSpotlight?.userId;
     
-    console.log(`[CommunitySpotlight] Rotating from ${oldSpotlightUserId || 'none'} to ${newSpotlightMember.discordUserId} (${newSpotlightMember.twitchLogin})`);
-
     // Try to get existing GIF first, then fetch new clip if needed
     const { getNextGifCdnUrl } = await import('./gif-rotation-service');
-    let gifUrl = await getNextGifCdnUrl(serverId, newSpotlightMember.discordUserId, newSpotlightMember.twitchLogin);
-    
-    // If no existing GIF, use stream thumbnail (clip worker will create GIFs independently)
-    if (!gifUrl) {
-      console.log(`[CommunitySpotlight] No existing GIF for ${newSpotlightMember.twitchLogin}, using stream thumbnail`);
-    }
+    const gifUrl = await getNextGifCdnUrl(serverId, newSpotlightMember.discordUserId, newSpotlightMember.twitchLogin);
     
     const newClip = gifUrl ? { gifUrl } : null;
-    console.log(`[CommunitySpotlight] GIF URL for ${newSpotlightMember.twitchLogin}: ${gifUrl || 'none'}`);
 
     // Get stream info for new spotlight
     const newStream = await getStreamByLogin(newSpotlightMember.twitchLogin);
@@ -159,10 +148,8 @@ export async function manageCommunitySpotlight(serverId: string): Promise<void> 
     });
     
     // Update the pinned spotlight embed at bottom of channel
-    console.log('[CommunitySpotlight] About to call updateSpotlightPinnedEmbed...');
     try {
       await updateSpotlightPinnedEmbed(serverId, newSpotlightMember, newStream, gifUrl);
-      console.log('[CommunitySpotlight] updateSpotlightPinnedEmbed completed');
     } catch (embedError) {
       console.error('[CommunitySpotlight] updateSpotlightPinnedEmbed failed:', embedError);
     }
@@ -175,16 +162,13 @@ export async function manageCommunitySpotlight(serverId: string): Promise<void> 
 
 async function updateSpotlightPinnedEmbed(serverId: string, member: any, stream: any, gifUrl: string | null): Promise<void> {
   try {
-    console.log('[CommunitySpotlight] Updating pinned embed...');
     const { postDiscordMessage, deleteDiscordMessage } = await import('./discord-sync-service');
     const branding = await getServerBranding(serverId);
     
     // Get community channel ID
     const groupChannelsDoc = await db.collection('servers').doc(serverId).collection('config').doc('groupChannels').get();
     const channelId = groupChannelsDoc.data()?.['Everyone Else'];
-    console.log('[CommunitySpotlight] Community channel ID:', channelId);
     if (!channelId) {
-      console.log('[CommunitySpotlight] No community channel configured');
       return;
     }
     
@@ -192,7 +176,6 @@ async function updateSpotlightPinnedEmbed(serverId: string, member: any, stream:
     const spotlightDoc = await db.collection('servers').doc(serverId).collection('spotlight').doc('pinnedEmbed').get();
     if (spotlightDoc.exists && spotlightDoc.data()?.messageId) {
       const pinned = spotlightDoc.data()!;
-      console.log('[CommunitySpotlight] Deleting old pinned embed:', pinned.messageId);
       await deleteDiscordMessage(serverId, pinned.channelId || channelId, pinned.messageId);
     }
     
@@ -209,7 +192,6 @@ async function updateSpotlightPinnedEmbed(serverId: string, member: any, stream:
       ]
     };
     
-    console.log('[CommunitySpotlight] Posting pinned embed to channel:', channelId);
     // Post new pinned embed with button
     const messageId = await postDiscordMessage(serverId, channelId, { 
       embeds: [embed],
@@ -227,7 +209,6 @@ async function updateSpotlightPinnedEmbed(serverId: string, member: any, stream:
         }
       ]
     });
-    console.log('[CommunitySpotlight] Posted pinned embed with messageId:', messageId);
     
     if (!messageId) {
       console.error('[CommunitySpotlight] Failed to post pinned embed - no messageId returned');
@@ -242,7 +223,6 @@ async function updateSpotlightPinnedEmbed(serverId: string, member: any, stream:
       updatedAt: new Date()
     });
     
-    console.log(`[CommunitySpotlight] ✅ Posted pinned embed for ${member.twitchLogin}`);
   } catch (error) {
     console.error('[CommunitySpotlight] ❌ Error updating pinned embed:', error);
   }
@@ -253,7 +233,6 @@ async function getLiveCommunityMembers(serverId: string) {
     .collection('users')
     .get();
 
-  console.log(`[CommunitySpotlight] Total users: ${snapshot.size}`);
   const members = [];
   for (const doc of snapshot.docs) {
     const data = doc.data();
@@ -265,7 +244,6 @@ async function getLiveCommunityMembers(serverId: string) {
     
     const isLive = shoutoutState.exists && shoutoutState.data()?.isLive;
     if (isLive && data.twitchLogin) {
-      console.log(`[CommunitySpotlight] ${data.twitchLogin}: group=${data.group}, isLive=true`);
       members.push({
         discordUserId: doc.id,
         twitchLogin: data.twitchLogin,

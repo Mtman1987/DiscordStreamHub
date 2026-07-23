@@ -158,14 +158,12 @@ class TwitchPollingService {
       const state = this.pollingStates.get(serverId);
       if (!state || !state.isPolling) return;
 
-      console.log(`[TwitchPolling] Starting poll cycle for server ${serverId}`);
       await this.refreshBotTokenIfNeeded(serverId);
 
       // Sync channels and roles only (NOT members - that overwrites group assignments)
       try {
         const { syncChannelsAndRoles } = await import('./discord-sync-service');
         await syncChannelsAndRoles(serverId);
-        console.log(`[TwitchPolling] Discord channel/role sync completed`);
       } catch (syncErr) {
         console.error(`[TwitchPolling] Discord sync failed (non-fatal):`, syncErr);
       }
@@ -205,23 +203,17 @@ class TwitchPollingService {
 
       const linkedUsers = await this.getLinkedTwitchUsers(serverId);
       if (linkedUsers.length === 0) {
-        console.log(`[TwitchPolling] No linked users found`);
         return;
       }
 
-      console.log(`[TwitchPolling] Checking ${linkedUsers.length} linked users`);
-
       const logins = linkedUsers.map(u => u.twitchLogin);
       const liveByLogin = await getStreamsByLogins(logins);
-      console.log(`[TwitchPolling] Helix returned ${liveByLogin.size} live users`);
 
       const streamStatuses = new Map<string, any>();
       for (const user of linkedUsers) {
         const stream = liveByLogin.get(user.twitchLogin.toLowerCase()) || null;
         streamStatuses.set(user.discordUserId, stream);
       }
-
-      console.log(`[TwitchPolling] Found ${Array.from(streamStatuses.values()).filter(s => s).length} live streams`);
 
       // Process each user with rate limiting
       const isOnlineBatch = db.batch();
@@ -319,7 +311,6 @@ class TwitchPollingService {
               headers: { 'Authorization': `Bot ${botToken}`, 'Content-Type': 'application/json' },
               body: JSON.stringify({ embeds: [{ title: '\ud83c\udfc6 Community Leaderboard', description: 'Top contributors in the community!', color: 0x667eea, image: { url: imageUrl }, timestamp: new Date().toISOString() }], components: [{ type: 1, components: [{ type: 2, style: 1, label: 'Check My Rank', custom_id: `check_rank_${serverId}`, emoji: { name: '\ud83d\udcca' } }, { type: 2, style: 2, label: 'How Points Work', custom_id: `points_info_${serverId}`, emoji: { name: '\u2753' } }] }] }),
             });
-            console.log(`[TwitchPolling] Leaderboard embed updated`);
           }
         }
       } catch (lbError) {
@@ -335,7 +326,7 @@ class TwitchPollingService {
         console.error(`[TwitchPolling] Periodic sweep error:`, sweepError);
       }
 
-      console.log(`[TwitchPolling] Poll cycle completed for server ${serverId}`);
+      console.log(`[TwitchPolling] Poll complete server=${serverId} linked=${linkedUsers.length} live=${liveByLogin.size}`);
     } catch (error) {
       console.error(`[TwitchPolling] Error polling streams for server ${serverId}:`, error);
     } finally {
@@ -1208,18 +1199,14 @@ class TwitchPollingService {
 
   private async updateLinkingEmbed(serverId: string): Promise<void> {
     try {
-      console.log('[TwitchPolling] Updating linking embed...');
-      
       // Get linking embed info
       const linkingDoc = await db.collection('servers').doc(serverId).collection('config').doc('linkingEmbed').get();
       if (!linkingDoc.exists) {
-        console.log('[TwitchPolling] No linking embed configured');
         return;
       }
       
       const { messageId, channelId } = linkingDoc.data()!;
       if (!messageId || !channelId) {
-        console.log('[TwitchPolling] Linking embed missing messageId or channelId');
         return;
       }
       
@@ -1316,9 +1303,8 @@ class TwitchPollingService {
             }
           ]
         });
-        console.log('[TwitchPolling] ✅ Updated linking embed');
       } catch (editError) {
-        console.log('[TwitchPolling] Linking embed message gone, clearing stale config');
+        console.warn('[TwitchPolling] Linking embed unavailable; clearing stale config');
         await db.collection('servers').doc(serverId).collection('config').doc('linkingEmbed').delete().catch(() => {});
       }
     } catch (error) {
@@ -1327,7 +1313,6 @@ class TwitchPollingService {
   }
 
   private async sweepOrphanedMessages(serverId: string): Promise<void> {
-    console.log(`[TwitchPolling] Sweeping orphaned messages for server ${serverId}...`);
     const { deleteDiscordMessage } = await import('./discord-sync-service');
     
     // Get all users with active shoutout state
@@ -1396,7 +1381,9 @@ class TwitchPollingService {
       console.error('[TwitchPolling] Sweep: spotlight cleanup error:', err);
     }
     
-    console.log(`[TwitchPolling] Sweep complete: ${orphansFound} orphans found, ${cleaned} cleaned`);
+    if (cleaned > 0) {
+      console.log(`[TwitchPolling] Sweep cleaned ${cleaned}/${orphansFound} orphaned messages`);
+    }
   }
 
   // Cleanup method for graceful shutdown

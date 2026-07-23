@@ -53,69 +53,35 @@ export async function cleanupOrphanedDiscordEmbeds(serverId: string, options: Cl
     deleted: 0,
     kept: 0,
   };
-  const skipStats = {
-    nonBot: 0,
-    tracked: 0,
-    notTarget: 0,
-  };
-
   for (const channelInfo of channelInfos) {
-    const { channelId, sources } = channelInfo;
-    console.log(`[DiscordCleanup] Scanning channel ${channelId} from ${sources.join(', ')}`);
+    const { channelId } = channelInfo;
     const messages = await fetchRecentMessages(botToken, channelId);
-    const channelStats = {
-      scanned: 0,
-      kept: 0,
-      deleted: 0,
-      nonBot: 0,
-      tracked: 0,
-      notTarget: 0,
-    };
     for (const message of messages) {
       result.messagesScanned += 1;
-      channelStats.scanned += 1;
-      const authorId = message.author?.id || 'unknown';
       if (!isManagedBotMessage(message, botId)) {
-        skipStats.nonBot += 1;
-        channelStats.nonBot += 1;
-        console.log(`[DiscordCleanup] Skip ${message.id} in ${channelId}: non-bot message from ${authorId}`);
         continue;
       }
       if (keepMessageIds.has(message.id)) {
         result.kept += 1;
-        channelStats.kept += 1;
-        skipStats.tracked += 1;
-        channelStats.tracked += 1;
-        console.log(`[DiscordCleanup] Keep ${message.id} in ${channelId}: tracked live bot message`);
         continue;
       }
       if (!isCleanupTarget(message)) {
-        skipStats.notTarget += 1;
-        channelStats.notTarget += 1;
-        console.log(`[DiscordCleanup] Skip ${message.id} in ${channelId}: bot message is not an orphan-cleanup target`);
         continue;
       }
 
       await deleteDiscordMessage(botToken, channelId, message.id);
       result.deleted += 1;
-      channelStats.deleted += 1;
       if (result.deleted >= maxDeletes) {
-        console.log(
-          `[DiscordCleanup] Channel ${channelId} summary: scanned ${channelStats.scanned}, kept ${channelStats.kept}, deleted ${channelStats.deleted}, nonBot ${channelStats.nonBot}, tracked ${channelStats.tracked}, nonTarget ${channelStats.notTarget}`
-        );
-        console.log(`[DiscordCleanup] Delete limit ${maxDeletes} reached; remaining orphan cleanup will continue next run`);
+        console.log(`[DiscordCleanup] Deleted ${result.deleted} orphaned embeds; delete limit reached`);
         return result;
       }
       await delay(650);
     }
-    console.log(
-      `[DiscordCleanup] Channel ${channelId} summary: scanned ${channelStats.scanned}, kept ${channelStats.kept}, deleted ${channelStats.deleted}, nonBot ${channelStats.nonBot}, tracked ${channelStats.tracked}, nonTarget ${channelStats.notTarget}`
-    );
   }
 
-  console.log(
-    `[DiscordCleanup] Checked ${result.channelsChecked} channels, scanned ${result.messagesScanned} messages, kept ${result.kept}, deleted ${result.deleted} orphaned embeds; skipped non-bot=${skipStats.nonBot}, tracked=${skipStats.tracked}, non-target=${skipStats.notTarget}`
-  );
+  if (result.deleted > 0) {
+    console.log(`[DiscordCleanup] Deleted ${result.deleted} orphaned embeds across ${result.channelsChecked} channels`);
+  }
   return result;
 }
 

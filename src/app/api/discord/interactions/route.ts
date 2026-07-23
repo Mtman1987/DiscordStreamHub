@@ -31,6 +31,33 @@ function ephemeral(content: string, extra: any = {}) {
   });
 }
 
+function twitchLinkModal(serverId: string, suggestedLogin = '') {
+  const normalizedSuggestion = suggestedLogin.trim().replace(/^@/, '').toLowerCase();
+  return NextResponse.json({
+    type: 9,
+    data: {
+      custom_id: `link_twitch_modal_${serverId}`,
+      title: 'Link or Change Twitch Account',
+      components: [
+        {
+          type: 1,
+          components: [{
+            type: 4,
+            custom_id: 'twitch_username',
+            label: 'Your Twitch Username',
+            style: 1,
+            required: true,
+            min_length: 3,
+            max_length: 25,
+            placeholder: 'Type the Twitch name, even if Discord differs',
+            ...(normalizedSuggestion ? { value: normalizedSuggestion } : {}),
+          }],
+        },
+      ],
+    },
+  });
+}
+
 const CHAT_TAG_SERVICE_SECRET = getChatTagServiceSecret();
 const HMO_MOVIE_SESSION_ID = 'discord-watch-room';
 const HMO_MUSIC_SESSION_ID = 'discord-music-room';
@@ -292,6 +319,11 @@ export async function POST(request: NextRequest) {
     }
 
     const customId: string | undefined = body.data?.custom_id;
+    if ((body.type === 3 || body.type === 5) && customId) {
+      const interactionKind = body.type === 3 ? 'button' : 'modal';
+      const actorId = body.member?.user?.id || body.user?.id || 'unknown';
+      console.log(`[DiscordInteraction] ${interactionKind} action=${customId} guild=${body.guild_id || 'dm'} user=${actorId}`);
+    }
 
     if (body.type === 3 && customId) {
       if (customId === 'spmt_onboard') {
@@ -575,149 +607,29 @@ export async function POST(request: NextRequest) {
       }
 
       if (customId === 'link_twitch_account') {
-        // Generic button — need to get serverId from guild_id
-        const serverId = body.guild_id;
+        const serverId = String(body.guild_id || '').trim();
         if (!serverId) {
           return ephemeral('⚠️ Could not determine server. Please try again.');
         }
-        const userId = body.member?.user?.id || body.user?.id;
-        const botToken = process.env.DISCORD_BOT_TOKEN;
-        
-        const guildMemberRes = await fetch(`https://discord.com/api/v10/guilds/${serverId}/members/${userId}`, {
-          headers: { 'Authorization': `Bot ${botToken}` }
-        });
-        
-        if (!guildMemberRes.ok) {
-          return ephemeral('⚠️ Failed to fetch your Discord info.');
-        }
-        
-        const memberData = await guildMemberRes.json();
-        const roles = memberData.roles || [];
-        
-        const userDoc = await db.collection('servers').doc(serverId).collection('users').doc(userId).get();
-        const userData = userDoc.data();
-        
-        const serverDoc = await db.collection('servers').doc(serverId).get();
-        const roleMappings = serverDoc.data()?.roleMappings || {};
-        let group = 'Community';
-        for (const [roleId, groupName] of Object.entries(roleMappings)) {
-          if (roles.includes(roleId)) {
-            group = groupName as string;
-            break;
-          }
-        }
-        
-        await db.collection('servers').doc(serverId).collection('users').doc(userId).set({
-          discordUserId: userId,
-          username: memberData.user.username,
-          avatarUrl: memberData.user.avatar 
-            ? `https://cdn.discordapp.com/avatars/${userId}/${memberData.user.avatar}.png`
-            : 'https://cdn.discordapp.com/embed/avatars/0.png',
-          roles,
-          group,
-          isOnline: false
-        }, { merge: true });
-        
-        if (userData?.twitchLogin) {
-          return ephemeral(`✅ Account updated!\n\nTwitch: **${userData.twitchLogin}**\nGroup: **${group}**\n\nYou're all set for shoutouts!`);
-        }
-        
-        return NextResponse.json({
-          type: 9,
-          data: {
-            custom_id: `link_twitch_modal_${serverId}`,
-            title: 'Link Your Twitch Account',
-            components: [
-              {
-                type: 1,
-                components: [{
-                  type: 4,
-                  custom_id: 'twitch_username',
-                  label: 'Twitch Username',
-                  style: 1,
-                  required: true,
-                  min_length: 3,
-                  max_length: 25,
-                  placeholder: 'Enter your Twitch username'
-                }]
-              }
-            ]
-          }
-        });
+        const userId = String(body.member?.user?.id || body.user?.id || '').trim();
+        const discordUsername = String(body.member?.user?.username || body.user?.username || '').trim();
+        const userDoc = userId
+          ? await db.collection('servers').doc(serverId).collection('users').doc(userId).get()
+          : null;
+        const suggestedLogin = String(userDoc?.data()?.twitchLogin || discordUsername);
+        return twitchLinkModal(serverId, suggestedLogin);
       }
 
       if (customId.startsWith('link_twitch_') && customId !== 'link_twitch_account') {
-        const serverId = customId.replace('link_twitch_', '');
-        const userId = body.member?.user?.id || body.user?.id;
-        const botToken = process.env.DISCORD_BOT_TOKEN;
-        
-        // Always fetch fresh Discord data
-        const guildMemberRes = await fetch(`https://discord.com/api/v10/guilds/${serverId}/members/${userId}`, {
-          headers: { 'Authorization': `Bot ${botToken}` }
-        });
-        
-        if (!guildMemberRes.ok) {
-          return ephemeral('⚠️ Failed to fetch your Discord info.');
-        }
-        
-        const memberData = await guildMemberRes.json();
-        const roles = memberData.roles || [];
-        
-        // Check existing user data
-        const userDoc = await db.collection('servers').doc(serverId).collection('users').doc(userId).get();
-        const userData = userDoc.data();
-        
-        // Determine group from roles
-        const serverDoc = await db.collection('servers').doc(serverId).get();
-        const roleMappings = serverDoc.data()?.roleMappings || {};
-        let group = 'Community';
-        for (const [roleId, groupName] of Object.entries(roleMappings)) {
-          if (roles.includes(roleId)) {
-            group = groupName as string;
-            break;
-          }
-        }
-        
-        // Update Discord data regardless
-        await db.collection('servers').doc(serverId).collection('users').doc(userId).set({
-          discordUserId: userId,
-          username: memberData.user.username,
-          avatarUrl: memberData.user.avatar 
-            ? `https://cdn.discordapp.com/avatars/${userId}/${memberData.user.avatar}.png`
-            : 'https://cdn.discordapp.com/embed/avatars/0.png',
-          roles,
-          group,
-          isOnline: false
-        }, { merge: true });
-        
-        // Check if Twitch is linked
-        if (userData?.twitchLogin) {
-          return ephemeral(`✅ Account updated!\n\nTwitch: **${userData.twitchLogin}**\nGroup: **${group}**\n\nYou're all set for shoutouts!`);
-        }
-        
-        // Need Twitch username
-        return NextResponse.json({
-          type: 9,
-          data: {
-            custom_id: `link_twitch_modal_${serverId}`,
-            title: 'Link Your Twitch Account',
-            components: [
-              {
-                type: 1,
-                components: [{
-                  type: 4,
-                  custom_id: 'twitch_username',
-                  label: 'Twitch Username',
-                  style: 1,
-                  required: true,
-                  min_length: 3,
-                  max_length: 25,
-                  placeholder: 'Enter your Twitch username'
-                }]
-              }
-            ]
-          }
-        });
+        const serverId = String(customId.replace('link_twitch_', '') || body.guild_id || '').trim();
+        if (!serverId) return ephemeral('⚠️ Could not determine server. Please try again.');
+        const userId = String(body.member?.user?.id || body.user?.id || '').trim();
+        const discordUsername = String(body.member?.user?.username || body.user?.username || '').trim();
+        const userDoc = userId
+          ? await db.collection('servers').doc(serverId).collection('users').doc(userId).get()
+          : null;
+        const suggestedLogin = String(userDoc?.data()?.twitchLogin || discordUsername);
+        return twitchLinkModal(serverId, suggestedLogin);
       }
       
       if (customId.startsWith('partner_schedule_refresh_')) {
@@ -1461,7 +1373,11 @@ export async function POST(request: NextRequest) {
       if (customId.startsWith('link_twitch_modal_')) {
         const serverId = customId.replace('link_twitch_modal_', '');
         const values = extractValues(body.data?.components);
-        const twitchUsername = values.twitch_username?.toLowerCase();
+        const twitchUsername = String(values.twitch_username || '').trim().replace(/^@/, '').toLowerCase();
+        if (!/^[a-z0-9_]{3,25}$/.test(twitchUsername)) {
+          console.warn(`[DiscordInteraction] twitch-link rejected reason=invalid-login guild=${serverId} user=${userId}`);
+          return ephemeral('⚠️ Twitch usernames may contain only letters, numbers, and underscores.');
+        }
         
         // Fetch Discord user info
         const botToken = process.env.DISCORD_BOT_TOKEN;
@@ -1470,6 +1386,7 @@ export async function POST(request: NextRequest) {
         });
         
         if (!guildMemberRes.ok) {
+          console.error(`[DiscordInteraction] twitch-link failed reason=discord-member status=${guildMemberRes.status} guild=${serverId} user=${userId}`);
           return ephemeral('⚠️ Failed to fetch your Discord info.');
         }
         
@@ -1481,6 +1398,7 @@ export async function POST(request: NextRequest) {
         const twitchUser = await getUserByLogin(twitchUsername);
         
         if (!twitchUser) {
+          console.warn(`[DiscordInteraction] twitch-link rejected reason=twitch-not-found twitch=${twitchUsername} guild=${serverId} user=${userId}`);
           return ephemeral(`⚠️ Twitch user "${twitchUsername}" not found.`);
         }
 
@@ -1507,6 +1425,7 @@ export async function POST(request: NextRequest) {
         await db.collection('servers').doc(serverId).collection('users').doc(userId).set({
           discordUserId: userId,
           username: memberData.user.username,
+          displayName: memberData.nick || memberData.user.global_name || memberData.user.username,
           avatarUrl: memberData.user.avatar 
             ? `https://cdn.discordapp.com/avatars/${userId}/${memberData.user.avatar}.png`
             : 'https://cdn.discordapp.com/embed/avatars/0.png',
@@ -1516,6 +1435,7 @@ export async function POST(request: NextRequest) {
           roles,
           isOnline: false,
           linkedAt: new Date(),
+          twitchLinkSource: 'discord-link-modal',
           ...(grandfathered?.user ? {
             spmtUserId: grandfathered.user.id,
             spmtUsername: grandfathered.user.username,
@@ -1534,6 +1454,8 @@ export async function POST(request: NextRequest) {
           group,
           timestamp: new Date()
         });
+
+        console.log(`[DiscordInteraction] twitch-link success twitch=${twitchUsername} guild=${serverId} user=${userId} group=${group}`);
         
         return ephemeral(`✅ Successfully linked Twitch account **${twitchUsername}**!\n\nYou'll get automatic shoutouts when you go live.\nGroup: **${group}**${grandfathered?.user ? `\nSPMT: **${grandfathered.user.username}**` : '\nSPMT setup is temporarily unavailable; Twitch linking still succeeded.'}`);
       }
