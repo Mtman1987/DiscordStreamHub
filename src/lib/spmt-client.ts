@@ -28,6 +28,7 @@ export async function grandfatherDiscordIdentity(input: {
   discordId: string;
   discordUsername: string;
   displayName?: string;
+  avatarUrl?: string;
   issueSession?: boolean;
 }) {
   if (!SPMT_API_KEY) return null;
@@ -41,6 +42,7 @@ export async function grandfatherDiscordIdentity(input: {
         providerUsername: input.discordUsername,
         username: input.discordUsername,
         displayName: input.displayName || input.discordUsername,
+        avatarUrl: input.avatarUrl || undefined,
         issueSession: input.issueSession === true,
       }),
     });

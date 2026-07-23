@@ -131,6 +131,7 @@ export async function POST(request: NextRequest) {
           discordId: discordUserId,
           discordUsername: discordUser.username || username,
           displayName,
+          avatarUrl: resolvedAvatar,
           issueSession: true,
         })
       : null;
