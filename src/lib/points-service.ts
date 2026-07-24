@@ -62,11 +62,11 @@ const EVENT_TO_SETTING_KEY: Record<
 };
 
 const DSH_XP_EVENT_MAP: Partial<Record<PointsEventType, string>> = {
-  chat_activity: 'dsh.discord.message',
-  follow: 'dsh.twitch.follow',
-  raid: 'dsh.twitch.raid',
-  subscription: 'dsh.twitch.sub',
-  gifted_subscription: 'dsh.twitch.sub',
+  chat_activity: 'dsh-discord-message',
+  follow: 'dsh-twitch-follow',
+  raid: 'dsh-twitch-raid',
+  subscription: 'dsh-twitch-sub',
+  gifted_subscription: 'dsh-twitch-sub',
 };
 
 function calculatePointsFromSettings(

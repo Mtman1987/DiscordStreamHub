@@ -146,7 +146,7 @@ export async function awardSpmtXp(input: SpmtXpAwardInput) {
 
     if (!response.ok) {
       const body = await response.text().catch(() => '');
-      console.warn('[SPMT] XP award failed', { status: response.status, body });
+      console.warn(`[SPMT] XP award failed status=${response.status} body=${body.slice(0, 500)}`);
       return { skipped: false, ok: false, status: response.status };
     }
 
