@@ -1,6 +1,7 @@
 import { Timestamp, db } from '@/data/server-init';
 import type { LeaderboardSettings } from '@/lib/types';
 import { getHardcodedGuildId } from '@/lib/runtime-config';
+import { awardSpmtXp, grandfatherDiscordIdentity, grandfatherTwitchIdentity } from '@/lib/spmt-client';
 
 export type PointsEventType =
   | 'raid'
@@ -60,6 +61,14 @@ const EVENT_TO_SETTING_KEY: Record<
   admin_message: 'adminMessagePoints',
 };
 
+const DSH_XP_EVENT_MAP: Partial<Record<PointsEventType, string>> = {
+  chat_activity: 'dsh.discord.message',
+  follow: 'dsh.twitch.follow',
+  raid: 'dsh.twitch.raid',
+  subscription: 'dsh.twitch.sub',
+  gifted_subscription: 'dsh.twitch.sub',
+};
+
 function calculatePointsFromSettings(
   eventType: PointsEventType,
   quantity: number,
@@ -113,6 +122,100 @@ async function fetchLeaderboardSettings(
     ...DEFAULT_SETTINGS,
     ...(snapshot.data() as Partial<LeaderboardSettings>),
   };
+}
+
+function cleanXpKeyPart(value: unknown): string {
+  return String(value || '').trim().toLowerCase().replace(/[^a-z0-9._:-]+/g, '-').replace(/^-+|-+$/g, '') || 'unknown';
+}
+
+async function resolveSpmtUserForPoints(input: {
+  serverId: string;
+  userId: string;
+  source?: 'twitch' | 'discord' | 'manual';
+  metadata?: Record<string, unknown>;
+}) {
+  const metadata = input.metadata || {};
+  const username = String(metadata.username || metadata.displayName || input.userId).trim();
+  const displayName = String(metadata.displayName || metadata.username || username).trim();
+
+  if (input.source === 'discord') {
+    return grandfatherDiscordIdentity({
+      discordId: input.userId,
+      discordUsername: username || input.userId,
+      displayName: displayName || username || input.userId,
+      avatarUrl: typeof metadata.avatarUrl === 'string' ? metadata.avatarUrl : undefined,
+      issueSession: false,
+    });
+  }
+
+  if (input.source === 'twitch') {
+    const linkedUserDoc = await db.collection('servers').doc(input.serverId).collection('users').doc(input.userId).get().catch(() => null);
+    const linked = linkedUserDoc?.exists ? linkedUserDoc.data() || {} : {};
+    const twitchId = String(metadata.twitchId || linked.twitchId || input.userId || '').trim();
+    const twitchUsername = String(metadata.twitchLogin || metadata.username || linked.twitchLogin || username || '').trim().toLowerCase();
+
+    if (/^\d+$/.test(twitchId) && twitchUsername) {
+      return grandfatherTwitchIdentity({
+        twitchId,
+        twitchUsername,
+        displayName: displayName || twitchUsername,
+        issueSession: false,
+      });
+    }
+
+    if (linkedUserDoc?.exists) {
+      return grandfatherDiscordIdentity({
+        discordId: input.userId,
+        discordUsername: username || input.userId,
+        displayName: displayName || username || input.userId,
+        issueSession: false,
+      });
+    }
+  }
+
+  return null;
+}
+
+async function awardCanonicalDshXp(input: {
+  serverId: string;
+  userId: string;
+  eventType: PointsEventType;
+  pointsAwarded: number;
+  source?: 'twitch' | 'discord' | 'manual';
+  metadata?: Record<string, unknown>;
+  eventLogId: string;
+}) {
+  try {
+    const mappedEventType = DSH_XP_EVENT_MAP[input.eventType];
+    if (!mappedEventType || input.pointsAwarded <= 0 || input.source === 'manual') return;
+
+    const identity = await resolveSpmtUserForPoints(input);
+    const spmtUserId = identity?.user?.id;
+    if (!spmtUserId) return;
+
+    await awardSpmtXp({
+      userId: spmtUserId,
+      eventType: mappedEventType,
+      idempotencyKey: [
+        cleanXpKeyPart('discord-stream-hub'),
+        cleanXpKeyPart(mappedEventType),
+        cleanXpKeyPart(input.eventLogId),
+        cleanXpKeyPart(spmtUserId),
+      ].join(':').slice(0, 200),
+      delta: input.pointsAwarded,
+      metadata: {
+        schemaVersion: 1,
+        upstreamEventId: input.eventLogId,
+        serverId: input.serverId,
+        localUserId: input.userId,
+        source: input.source || 'unknown',
+        pointsEventType: input.eventType,
+        ...(input.metadata || {}),
+      },
+    });
+  } catch (error) {
+    console.warn('[DSH] SPMT XP award skipped', error);
+  }
 }
 
 export async function awardPoints({
@@ -171,6 +274,16 @@ export async function awardPoints({
     ...payload,
     pointsAwarded: pointsToAward,
     createdAt: Timestamp.now(),
+  });
+
+  void awardCanonicalDshXp({
+    serverId,
+    userId,
+    eventType,
+    pointsAwarded: pointsToAward,
+    source,
+    metadata,
+    eventLogId: logRef.id,
   });
 
   return {
