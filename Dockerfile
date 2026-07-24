@@ -1,4 +1,8 @@
 FROM node:22-slim
+ARG GITHUB_SHA=unknown
+ARG GH_SHA=$GITHUB_SHA
+LABEL GITHUB_SHA=$GITHUB_SHA
+LABEL GH_SHA=$GH_SHA
 
 # Cache bust: v0.4.1 — chromium for image generation
 RUN apt-get update && apt-get install -y \
