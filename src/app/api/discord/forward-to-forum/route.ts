@@ -728,6 +728,7 @@ export async function POST(request: NextRequest) {
       await fetch('https://spmt.live/api/forum/forward', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-spmt-key': process.env.SPMT_SYSTEM_KEY || '' },
+        signal: AbortSignal.timeout(1500),
         body: JSON.stringify({
           channelId: channelId || guildId,
           messageChannelId,
