@@ -9,10 +9,17 @@ const DISCORD_SNOWFLAKE_RE = /^\d{17,20}$/;
 async function fetchDiscord(endpoint: string) {
   if (!BOT_TOKEN) return null;
 
-  const res = await fetch(`https://discord.com/api/v10${endpoint}`, {
-    headers: { Authorization: `Bot ${BOT_TOKEN}` },
-    cache: 'no-store',
-  });
+  let res: Response;
+  try {
+    res = await fetch(`https://discord.com/api/v10${endpoint}`, {
+      headers: { Authorization: `Bot ${BOT_TOKEN}` },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(3500),
+    });
+  } catch (error) {
+    console.warn(`[admin/access] Discord fetch failed ${endpoint}:`, error instanceof Error ? error.message : String(error));
+    return null;
+  }
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
@@ -23,12 +30,12 @@ async function fetchDiscord(endpoint: string) {
   return res.json();
 }
 
-function roleMatches(adminRoles: string[] = [], userRoles: string[] = [], guildRoles: any[] = []) {
+function roleMatches(adminRoles: string[] = [], userRoles: string[] = [], guildRoles: any[] = [], storedRoleNames: string[] = []) {
   const normalizedAdminRoles = adminRoles.map(role => String(role).toLowerCase());
-  const roleNames = userRoles
-    .map(roleId => guildRoles.find(role => role.id === roleId)?.name)
-    .filter(Boolean)
-    .map(name => String(name).toLowerCase());
+  const roleNames = [
+    ...storedRoleNames,
+    ...userRoles.map(roleId => guildRoles.find(role => role.id === roleId)?.name),
+  ].filter(Boolean).map(name => String(name).toLowerCase());
 
   return userRoles.some(roleId => normalizedAdminRoles.includes(String(roleId).toLowerCase())) ||
     roleNames.some(name => normalizedAdminRoles.includes(name));
@@ -64,15 +71,23 @@ export async function POST(request: NextRequest) {
     const existingServer = db.get('servers', serverId) || {};
     const adminRoles: string[] = Array.isArray(existingServer.adminRoles) ? existingServer.adminRoles : [];
     const ownerId = String(existingServer.ownerId || '').trim();
+    const isOwner = Boolean(userId && (userId === getHardcodedAdminDiscordId() || userId === ownerId));
 
-    const [member, guildRoles] = await Promise.all([
-      fetchDiscord(`/guilds/${serverId}/members/${userId}`),
-      fetchDiscord(`/guilds/${serverId}/roles`),
-    ]);
+    const storedMember = db.get(`servers/${serverId}/users`, userId);
+    const storedRoles = db.get(`servers/${serverId}/config`, 'roles') || {};
+    const hasStoredMember = Boolean(storedMember && Array.isArray(storedMember.roles));
+    const hasStoredGuildRoles = Array.isArray(storedRoles.detailed);
+
+    const [member, guildRoles] = hasStoredMember && hasStoredGuildRoles
+      ? [storedMember, storedRoles.detailed]
+      : await Promise.all([
+          fetchDiscord(`/guilds/${serverId}/members/${userId}`),
+          fetchDiscord(`/guilds/${serverId}/roles`),
+        ]);
 
     const memberRoles: string[] = Array.isArray(member?.roles) ? member.roles : [];
-    const isOwner = Boolean(userId && (userId === getHardcodedAdminDiscordId() || userId === ownerId));
-    const matchedByRole = roleMatches(adminRoles, memberRoles, Array.isArray(guildRoles) ? guildRoles : []);
+    const storedRoleNames: string[] = Array.isArray(member?.roleNames) ? member.roleNames : [];
+    const matchedByRole = roleMatches(adminRoles, memberRoles, Array.isArray(guildRoles) ? guildRoles : [], storedRoleNames);
     const isAdmin = Boolean(isOwner || matchedByRole);
     const isMod = Boolean(matchedByRole);
 
