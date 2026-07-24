@@ -282,7 +282,7 @@ class TwitchPollingService {
       // Update chat channels
       try {
         const { twitchChatService } = await import('./twitch-chat-service');
-        await twitchChatService.updateChannels();
+        await twitchChatService.updateChannels(serverId);
       } catch (chatError) {
         console.error(`[TwitchPolling] Chat update error:`, chatError);
       }

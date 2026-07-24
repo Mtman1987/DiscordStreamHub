@@ -217,7 +217,10 @@ class TwitchChatService {
     });
   }
 
-  async updateChannels() {
+  async updateChannels(serverId?: string) {
+    if (serverId && this.serverId !== serverId) {
+      this.serverId = serverId;
+    }
     this.lastUpdatedAt = new Date().toISOString();
     const liveChannels = await this.getLiveChannels();
     if (!this.client) {
