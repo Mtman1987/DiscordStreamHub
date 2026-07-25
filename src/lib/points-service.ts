@@ -2,6 +2,7 @@ import { Timestamp, db } from '@/data/server-init';
 import type { LeaderboardSettings } from '@/lib/types';
 import { getHardcodedGuildId } from '@/lib/runtime-config';
 import { awardSpmtXp, grandfatherDiscordIdentity, grandfatherTwitchIdentity } from '@/lib/spmt-client';
+import { mappedXpAwardV1, type XpMappedEventTypeV1 } from '@spmt/sdk';
 
 export type PointsEventType =
   | 'raid'
@@ -61,12 +62,12 @@ const EVENT_TO_SETTING_KEY: Record<
   admin_message: 'adminMessagePoints',
 };
 
-const DSH_XP_EVENT_MAP: Partial<Record<PointsEventType, string>> = {
-  chat_activity: 'dsh-discord-message',
-  follow: 'dsh-twitch-follow',
-  raid: 'dsh-twitch-raid',
-  subscription: 'dsh-twitch-sub',
-  gifted_subscription: 'dsh-twitch-sub',
+const DSH_XP_EVENT_MAP: Partial<Record<PointsEventType, XpMappedEventTypeV1>> = {
+  chat_activity: 'dsh.discord.message',
+  follow: 'dsh.twitch.follow',
+  raid: 'dsh.twitch.raid',
+  subscription: 'dsh.twitch.sub',
+  gifted_subscription: 'dsh.twitch.sub',
 };
 
 function calculatePointsFromSettings(
@@ -122,10 +123,6 @@ async function fetchLeaderboardSettings(
     ...DEFAULT_SETTINGS,
     ...(snapshot.data() as Partial<LeaderboardSettings>),
   };
-}
-
-function cleanXpKeyPart(value: unknown): string {
-  return String(value || '').trim().toLowerCase().replace(/[^a-z0-9._:-]+/g, '-').replace(/^-+|-+$/g, '') || 'unknown';
 }
 
 async function resolveSpmtUserForPoints(input: {
@@ -193,19 +190,12 @@ async function awardCanonicalDshXp(input: {
     const spmtUserId = identity?.user?.id;
     if (!spmtUserId) return;
 
-    await awardSpmtXp({
+    const award = mappedXpAwardV1({
       userId: spmtUserId,
-      eventType: mappedEventType,
-      idempotencyKey: [
-        cleanXpKeyPart('discord-stream-hub'),
-        cleanXpKeyPart(mappedEventType),
-        cleanXpKeyPart(input.eventLogId),
-        cleanXpKeyPart(spmtUserId),
-      ].join(':').slice(0, 200),
-      delta: input.pointsAwarded,
+      mappedEventType,
+      upstreamEventId: input.eventLogId,
+      deltaOverride: input.pointsAwarded,
       metadata: {
-        schemaVersion: 1,
-        upstreamEventId: input.eventLogId,
         serverId: input.serverId,
         localUserId: input.userId,
         source: input.source || 'unknown',
@@ -213,6 +203,7 @@ async function awardCanonicalDshXp(input: {
         ...(input.metadata || {}),
       },
     });
+    await awardSpmtXp(award);
   } catch (error) {
     console.warn('[DSH] SPMT XP award skipped', error);
   }
