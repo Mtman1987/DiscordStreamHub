@@ -25,7 +25,38 @@ test('applies every shared workspace token to the DSH CSS contract', () => {
     accent: '#22d3ee',
     radius: 'md',
     density: 'comfortable',
-    motion: { enabled: true, speed: 1, particles: true },
+    motion: { enabled: true, speed: 1, particles: true, shootingStars: true },
+    appearance: {
+      themeId: 'oceanic-blue',
+      glowIntensity: 80,
+      starDensity: 70,
+      glassOpacity: 65,
+      blurStrength: 22,
+      nebulaIntensity: 80,
+      parallaxDepth: 65,
+      borderStrength: 60,
+      cornerRadius: 'md',
+      density: 'comfortable',
+      sidebarCollapsed: false,
+      sidebarStyle: 'docked',
+      sidebarPosition: 'left',
+      topbarStyle: 'transparent',
+      tabStyle: 'pills',
+      tabPosition: 'top',
+      chatTransparency: 65,
+      showAvatars: true,
+      smoothTransitions: true,
+      pushToTalk: true,
+      animation: { enabled: true, speed: 85, particles: true, shootingStars: true },
+    },
+    dockSlots: [
+      { id: 1, title: 'ChatTag Overlay', url: 'https://chat-tag-new.fly.dev/overlay', collapsed: true, volume: 1, muted: false },
+      { id: 2, title: 'Quackverse Game', url: 'https://spacemountain.live/chat-tag/quackverse', collapsed: false, volume: 1, muted: false },
+      { id: 3, title: 'DSH Dashboard', url: 'https://discord-stream-hub-new.fly.dev/dashboard', collapsed: true, volume: 1, muted: false },
+    ],
+    activeOverlaySceneId: 'main-scene',
+    ttsSubscriptions: ['streamweaver'],
+    appThemeMappings: { 'discord-stream-hub': 'follow-workspace' },
   });
 
   assert.equal(values.has('--background'), true);
@@ -36,4 +67,7 @@ test('applies every shared workspace token to the DSH CSS contract', () => {
   assert.equal(root.dataset.workspaceTheme, 'oceanic-blue');
   assert.equal(root.dataset.workspaceDensity, 'comfortable');
   assert.equal(root.dataset.workspaceMotion, 'on');
+  assert.equal(values.get('--workspace-glass-opacity'), '0.65');
+  assert.equal(root.dataset.workspaceActiveOverlaySceneId, 'main-scene');
+  assert.equal((root.dataset.workspaceDockSlots || '').length > 0, true);
 });

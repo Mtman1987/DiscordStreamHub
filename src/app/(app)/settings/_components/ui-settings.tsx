@@ -19,7 +19,7 @@ import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import { useSpmtAppState } from '@/hooks/use-spmt-app-state';
 import type { WorkspaceThemeTokensV1 } from '@spmt/sdk';
-import { applyWorkspaceThemeTokens } from '@/lib/workspace-theme';
+import { applyWorkspaceThemeTokens, clearWorkspaceThemeTokens } from '@/lib/workspace-theme';
 
 // Define the structure for theme settings
 interface ThemeSettings {
@@ -87,6 +87,7 @@ export function UISettingsCard() {
     }
     if (isClient && !followWorkspaceTheme) {
       const root = document.documentElement;
+      clearWorkspaceThemeTokens(root);
       root.style.setProperty('--primary-hue', settings.primaryHue.toString());
       root.style.setProperty('--background-hue', settings.backgroundHue.toString());
       root.style.setProperty('--background-saturation', `${settings.backgroundSaturation}%`);
