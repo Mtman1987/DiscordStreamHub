@@ -55,6 +55,26 @@ test('applies every shared workspace token to the DSH CSS contract', () => {
       { id: 3, title: 'DSH Dashboard', url: 'https://discord-stream-hub-new.fly.dev/dashboard', collapsed: true, volume: 1, muted: false },
     ],
     activeOverlaySceneId: 'main-scene',
+    overlayWorkspace: {
+      enabled: true,
+      widgets: [
+        {
+          id: 'chat-tag-overlay',
+          title: 'ChatTag Overlay',
+          kind: 'chat',
+          url: 'https://chat-tag-new.fly.dev/overlay',
+          visible: true,
+          locked: false,
+          interactive: false,
+          x: 72,
+          y: 66,
+          width: 360,
+          height: 220,
+          opacity: 1,
+        },
+      ],
+      workflows: [],
+    },
     ttsSubscriptions: ['streamweaver'],
     appThemeMappings: { 'discord-stream-hub': 'follow-workspace' },
   });
@@ -68,6 +88,7 @@ test('applies every shared workspace token to the DSH CSS contract', () => {
   assert.equal(root.dataset.workspaceDensity, 'comfortable');
   assert.equal(root.dataset.workspaceMotion, 'on');
   assert.equal(values.get('--workspace-glass-opacity'), '0.65');
-  assert.equal(root.dataset.workspaceActiveOverlaySceneId, 'main-scene');
+  assert.equal(root.dataset.workspaceOverlayEnabled, 'true');
+  assert.equal((root.dataset.workspaceOverlayWidgets || '').length > 0, true);
   assert.equal((root.dataset.workspaceDockSlots || '').length > 0, true);
 });
