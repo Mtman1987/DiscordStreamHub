@@ -363,3 +363,10 @@ This app supports multiple Discord servers:
 **Polling Interval**: Every 10 minutes
 **Supported Users**: Unlimited per server
 **Uptime**: 24/7 (recommended: Fly.io or similar)
+## Shared SpaceMountain appearance
+
+DiscordStreamHub maps the signed-in account's shared appearance onto its
+workspace shell, sidebar, top bar, tabs, avatars, Discord message surface,
+particles, and motion. The app keeps its own operational and local fallback
+settings; shared appearance does not change Discord permissions, channel
+choices, or embedded Twitch styling.

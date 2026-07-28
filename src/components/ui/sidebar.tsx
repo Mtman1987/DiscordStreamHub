@@ -51,7 +51,7 @@ const SidebarProvider = ({
   children: React.ReactNode;
   collapsible?: boolean | 'icon';
 }) => {
-  const [isCollapsed, setCollapsed] = React.useState(collapsible === 'icon');
+  const [isCollapsed, setCollapsed] = React.useState(false);
 
   return (
     <SidebarContext.Provider

@@ -13,7 +13,7 @@ import {
   SidebarSeparator,
 } from '@/components/ui/sidebar';
 import Link from 'next/link';
-import { Rocket } from 'lucide-react';
+import { Rocket, Sparkles } from 'lucide-react';
 import { MainNav } from './_components/main-nav';
 import { UserNav } from './_components/user-nav';
 import { DataClientProvider } from '@/data';
@@ -38,6 +38,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [sessionReady, setSessionReady] = React.useState(false);
   const [isEmbedded, setIsEmbedded] = React.useState(false);
+  const sectionTitle = React.useMemo(() => {
+    const section = pathname.split('/').filter(Boolean)[0] || 'dashboard';
+    return section
+      .split('-')
+      .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
+      .join(' ');
+  }, [pathname]);
 
   React.useEffect(() => {
     setIsEmbedded(new URLSearchParams(window.location.search).get('embed') === '1');
@@ -185,8 +192,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <DataClientProvider>
       <SidebarProvider collapsible="icon">
-        <div className="flex h-screen overflow-hidden">
-          <Sidebar className="border-r group">
+        <div className="flex h-screen overflow-hidden" data-workspace-shell>
+          <Sidebar className="border-r group" data-workspace-sidebar>
             <SidebarHeader className="p-4 flex items-center justify-between">
               <Link
                 href="/dashboard"
@@ -220,15 +227,22 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </SidebarFooter>
           </Sidebar>
           <div className="flex min-h-0 flex-1 flex-col">
-            <header className="flex h-14 items-center gap-4 border-b bg-card px-6">
+            <header className="flex h-14 items-center gap-4 border-b bg-card px-6" data-workspace-topbar>
               <div className="md:hidden">
                 <SidebarTrigger />
               </div>
-              <div className="flex-1">
-                {/* Future header content can go here, like a search bar */}
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+                  Space Mountain workspace
+                </p>
+                <h1 className="truncate text-base font-semibold">{sectionTitle}</h1>
+              </div>
+              <div className="hidden items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 text-xs text-primary md:flex">
+                <Sparkles className="h-3.5 w-3.5" />
+                Shared appearance
               </div>
             </header>
-            <main className="min-h-0 flex-1 overflow-y-auto p-4 md:p-8">
+            <main className="min-h-0 flex-1 overflow-y-auto p-4 md:p-8" data-workspace-main>
               {children}
             </main>
           </div>
