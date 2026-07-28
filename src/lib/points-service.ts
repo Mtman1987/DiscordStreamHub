@@ -183,6 +183,7 @@ async function awardCanonicalDshXp(input: {
   eventLogId: string;
 }) {
   try {
+    if (input.eventType === 'chat_activity' && input.source !== 'discord') return;
     const mappedEventType = DSH_XP_EVENT_MAP[input.eventType];
     if (!mappedEventType || input.pointsAwarded <= 0 || input.source === 'manual') return;
 

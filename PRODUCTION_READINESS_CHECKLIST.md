@@ -100,7 +100,9 @@ Verify these manually in staging before production:
 Do not delete these until each owner path is confirmed:
 
 - `src/lib/calendar-discord-service.ts` and `src/lib/calendar-discord-service-new.ts`
-- `src/app/api/interactions/route.ts` and `src/app/api/discord/interactions/route.ts`
+- `src/app/api/discord/interactions/route.ts` is canonical; `/api/interactions`
+  remains as a telemetry-emitting compatibility alias until its production
+  traffic reaches an observed zero window.
 - Clip/media services: clip management, clip rotation, GIF rotation, seeding, Discord GIF storage, VIP spotlight
 - Twitch wrappers: `src/lib/twitch-api-service.ts`, `src/lib/twitch-service.ts`, root `twitch-service.ts`
 - Discord send wrappers: `discord-sync-service`, `discord-bot-service`, direct Discord route fetches

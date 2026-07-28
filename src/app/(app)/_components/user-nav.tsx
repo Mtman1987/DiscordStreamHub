@@ -26,6 +26,7 @@ export function UserNav() {
   const [localDisplayName, setLocalDisplayName] = React.useState('');
   const [localAvatar, setLocalAvatar] = React.useState('');
   const [localServerName, setLocalServerName] = React.useState('');
+  const [canonicalXp, setCanonicalXp] = React.useState<{ xp: number; level: number } | null>(null);
 
   const refreshLocalSession = React.useCallback(() => {
     setUserId(localStorage.getItem('discordUserId'));
@@ -40,6 +41,32 @@ export function UserNav() {
     window.addEventListener('dsh-session-restored', refreshLocalSession);
     return () => window.removeEventListener('dsh-session-restored', refreshLocalSession);
   }, [refreshLocalSession]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    async function refreshCanonicalXp() {
+      const response = await fetch('/api/spmt/xp', {
+        credentials: 'same-origin',
+        cache: 'no-store',
+      }).catch(() => null);
+      const payload = response?.ok ? await response.json().catch(() => null) : null;
+      const xp = Number(payload?.xp);
+      const level = Number(payload?.level);
+      if (cancelled || !Number.isFinite(xp) || !Number.isFinite(level)) return;
+      setCanonicalXp({
+        xp: Math.max(0, Math.trunc(xp)),
+        level: Math.max(1, Math.trunc(level)),
+      });
+    }
+
+    void refreshCanonicalXp();
+    window.addEventListener('dsh-session-restored', refreshCanonicalXp);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('dsh-session-restored', refreshCanonicalXp);
+    };
+  }, []);
 
   const handleLogout = React.useCallback(async () => {
     await fetch('/api/auth/spmt-session', {
@@ -114,6 +141,11 @@ export function UserNav() {
         <div className="grid min-w-0 gap-0.5 text-sm group-data-[collapsed=true]:hidden">
           <div className="truncate font-medium">{displayName}</div>
           <div className="truncate text-muted-foreground">{displayServer}</div>
+          {canonicalXp && (
+            <div className="truncate text-xs text-muted-foreground">
+              LVL {canonicalXp.level} · {canonicalXp.xp.toLocaleString()} XP
+            </div>
+          )}
         </div>
       </div>
       <Button
