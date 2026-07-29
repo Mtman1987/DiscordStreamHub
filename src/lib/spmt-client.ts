@@ -175,10 +175,11 @@ export async function migrateSpmtXpBalance(input: {
         sourceApp: 'discord-stream-hub',
         userId: input.userId,
         observedBalance: input.observedBalance,
+        migrationVersion: 2,
         metadata: {
           serverId: input.serverId,
           localUserId: input.localUserId,
-          sourceStore: 'dsh-leaderboard',
+          sourceStore: 'dsh-leaderboard-events',
         },
       }),
       cache: 'no-store',
