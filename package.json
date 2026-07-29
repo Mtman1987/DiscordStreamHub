@@ -9,7 +9,8 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint . --ignore-pattern .next/** --ignore-pattern node_modules/**",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:spmt-identity": "tsx --test tests/spmt-points-identity.test.ts"
   },
   "dependencies": {
     "@cfworker/json-schema": "^4.1.1",

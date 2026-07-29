@@ -2,6 +2,7 @@ import { Timestamp, db } from '@/data/server-init';
 import type { LeaderboardSettings } from '@/lib/types';
 import { getHardcodedGuildId } from '@/lib/runtime-config';
 import { awardSpmtXp, grandfatherDiscordIdentity, grandfatherTwitchIdentity } from '@/lib/spmt-client';
+import { resolveTwitchPointsIdentity } from '@/lib/spmt-points-identity';
 import { mappedXpAwardV1, type XpMappedEventTypeV1 } from '@spmt/sdk';
 
 export type PointsEventType =
@@ -148,22 +149,27 @@ async function resolveSpmtUserForPoints(input: {
   if (input.source === 'twitch') {
     const linkedUserDoc = await db.collection('servers').doc(input.serverId).collection('users').doc(input.userId).get().catch(() => null);
     const linked = linkedUserDoc?.exists ? linkedUserDoc.data() || {} : {};
-    const twitchId = String(metadata.twitchId || linked.twitchId || input.userId || '').trim();
-    const twitchUsername = String(metadata.twitchLogin || metadata.username || linked.twitchLogin || username || '').trim().toLowerCase();
+    const identity = resolveTwitchPointsIdentity({
+      sourceUserId: input.userId,
+      fallbackUsername: username,
+      metadata,
+      linkedUser: linked,
+      linkedUserExists: Boolean(linkedUserDoc?.exists),
+    });
 
-    if (/^\d+$/.test(twitchId) && twitchUsername) {
+    if (identity?.provider === 'twitch') {
       return grandfatherTwitchIdentity({
-        twitchId,
-        twitchUsername,
-        displayName: displayName || twitchUsername,
+        twitchId: identity.providerUserId,
+        twitchUsername: identity.providerUsername,
+        displayName: displayName || identity.providerUsername,
         issueSession: false,
       });
     }
 
-    if (linkedUserDoc?.exists) {
+    if (identity?.provider === 'discord') {
       return grandfatherDiscordIdentity({
-        discordId: input.userId,
-        discordUsername: username || input.userId,
+        discordId: identity.providerUserId,
+        discordUsername: identity.providerUsername,
         displayName: displayName || username || input.userId,
         issueSession: false,
       });
