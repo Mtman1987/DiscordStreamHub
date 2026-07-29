@@ -3,7 +3,7 @@ import type { LeaderboardSettings } from '@/lib/types';
 import { getHardcodedGuildId } from '@/lib/runtime-config';
 import { awardSpmtXp, grandfatherDiscordIdentity, grandfatherTwitchIdentity } from '@/lib/spmt-client';
 import { resolveTwitchPointsIdentity } from '@/lib/spmt-points-identity';
-import { mappedXpAwardV1, type XpMappedEventTypeV1 } from '@spmt/sdk';
+import { buildXpIdempotencyKey, mappedXpAwardV1, type XpMappedEventTypeV1 } from '@spmt/sdk';
 
 export type PointsEventType =
   | 'raid'
@@ -189,27 +189,42 @@ async function awardCanonicalDshXp(input: {
   eventLogId: string;
 }) {
   try {
-    if (input.eventType === 'chat_activity' && input.source !== 'discord') return;
+    const isTwitchMessage = input.eventType === 'chat_activity' && input.source === 'twitch';
     const mappedEventType = DSH_XP_EVENT_MAP[input.eventType];
-    if (!mappedEventType || input.pointsAwarded <= 0 || input.source === 'manual') return;
+    if ((!mappedEventType && !isTwitchMessage) || input.pointsAwarded <= 0 || input.source === 'manual') return;
 
     const identity = await resolveSpmtUserForPoints(input);
     const spmtUserId = identity?.user?.id;
     if (!spmtUserId) return;
 
-    const award = mappedXpAwardV1({
-      userId: spmtUserId,
-      mappedEventType,
-      upstreamEventId: input.eventLogId,
-      deltaOverride: input.pointsAwarded,
-      metadata: {
-        serverId: input.serverId,
-        localUserId: input.userId,
-        source: input.source || 'unknown',
-        pointsEventType: input.eventType,
-        ...(input.metadata || {}),
-      },
-    });
+    const metadata = {
+      serverId: input.serverId,
+      localUserId: input.userId,
+      source: input.source || 'unknown',
+      pointsEventType: input.eventType,
+      ...(input.metadata || {}),
+    };
+    const award = isTwitchMessage
+      ? {
+          userId: spmtUserId,
+          sourceApp: 'discord-stream-hub',
+          eventType: 'dsh-twitch-message',
+          idempotencyKey: buildXpIdempotencyKey({
+            sourceApp: 'discord-stream-hub',
+            eventType: 'dsh-twitch-message',
+            upstreamEventId: input.eventLogId,
+            userId: spmtUserId,
+          }),
+          delta: input.pointsAwarded,
+          metadata: { schemaVersion: 1 as const, upstreamEventId: input.eventLogId, ...metadata },
+        }
+      : mappedXpAwardV1({
+          userId: spmtUserId,
+          mappedEventType: mappedEventType!,
+          upstreamEventId: input.eventLogId,
+          deltaOverride: input.pointsAwarded,
+          metadata,
+        });
     await awardSpmtXp(award);
   } catch (error) {
     console.warn('[DSH] SPMT XP award skipped', error);
