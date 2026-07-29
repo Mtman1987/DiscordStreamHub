@@ -15,8 +15,20 @@ export async function GET(request: NextRequest) {
     const discordUserId = String(resolved.session.discordUserId || '');
     const serverId = String(resolved.session.discordServerId || '');
     if (spmtUserId && discordUserId && serverId) {
-      const legacyDoc = await db.collection('servers').doc(serverId).collection('leaderboard').doc(discordUserId).get().catch(() => null);
-      const observedBalance = Number(legacyDoc?.exists ? legacyDoc.data()?.points : NaN);
+      const server = db.collection('servers').doc(serverId);
+      const [legacyDoc, legacyEvents] = await Promise.all([
+        server.collection('leaderboard').doc(discordUserId).get().catch(() => null),
+        server.collection('leaderboardEvents').where('userProfileId', '==', discordUserId).get().catch(() => null),
+      ]);
+      const cachedBalance = Number(legacyDoc?.exists ? legacyDoc.data()?.points : NaN);
+      const eventBalance = (legacyEvents?.docs || []).reduce(
+        (sum: number, event: any) => sum + Math.max(0, Number(event.data()?.pointsAwarded || 0)),
+        0,
+      );
+      const observedBalance = Math.max(
+        Number.isInteger(cachedBalance) ? cachedBalance : 0,
+        eventBalance,
+      );
       if (Number.isInteger(observedBalance) && observedBalance >= 0) {
         await migrateSpmtXpBalance({ userId: spmtUserId, observedBalance, serverId, localUserId: discordUserId });
       }
