@@ -304,7 +304,7 @@ export default function ForwardingPage() {
 
       <div className={`flex-1 grid grid-cols-1 ${panelCount > 1 ? 'xl:grid-cols-2' : ''} gap-4 min-h-0`}>
         {showDiscord && (
-          <Card className="flex-1 flex flex-col overflow-hidden">
+          <Card className="flex-1 flex flex-col overflow-hidden" data-workspace-chat-surface>
             <CardContent className={`flex-1 flex flex-col overflow-hidden ${isEmbedded ? 'p-3' : 'p-6'}`}>
               <ScrollArea className="flex-1 pr-4">
                 <div ref={scrollRef} className="min-h-full">
