@@ -156,3 +156,41 @@ export async function awardSpmtXp(input: SpmtXpAwardInput) {
     return { skipped: false, ok: false };
   }
 }
+
+export async function migrateSpmtXpBalance(input: {
+  userId: string;
+  observedBalance: number;
+  serverId: string;
+  localUserId: string;
+}) {
+  if (!SPMT_API_KEY) return { skipped: true, reason: 'SPMT_API_KEY not configured' };
+  try {
+    const response = await fetch(`${SPMT_BASE_URL.replace(/\/$/, '')}/api/platform/xp/migrate-balance`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${SPMT_API_KEY}`,
+      },
+      body: JSON.stringify({
+        sourceApp: 'discord-stream-hub',
+        userId: input.userId,
+        observedBalance: input.observedBalance,
+        metadata: {
+          serverId: input.serverId,
+          localUserId: input.localUserId,
+          sourceStore: 'dsh-leaderboard',
+        },
+      }),
+      cache: 'no-store',
+    });
+    const result = await response.json().catch(() => null);
+    if (!response.ok) {
+      console.warn('[SPMT] Legacy XP balance migration failed', { status: response.status, error: result?.error });
+      return { skipped: false, ok: false, status: response.status, result };
+    }
+    return { skipped: false, ok: true, result };
+  } catch (error) {
+    console.warn('[SPMT] Legacy XP balance migration error', error);
+    return { skipped: false, ok: false };
+  }
+}

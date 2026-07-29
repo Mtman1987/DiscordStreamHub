@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
         const result = await awardPoints({
           serverId, userId: discordUserId, eventType: 'chat_activity',
           quantity: 1, source: 'twitch',
-          metadata: { username: username || twitchLogin, channel }
+          metadata: { username: username || twitchLogin, twitchLogin, twitchId, channel }
         });
         return NextResponse.json({ success: true, pointsAwarded: result.pointsAwarded });
       }
@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
         const result = await awardPoints({
           serverId, userId: discordUserId, eventType: 'raid',
           quantity: 1, source: 'twitch',
-          metadata: { username: username || twitchLogin, channel, viewers }
+          metadata: { username: username || twitchLogin, twitchLogin, twitchId, channel, viewers }
         });
         console.log(`[TwitchEvents] Raid: ${twitchLogin} → ${channel} (${viewers} viewers) +${result.pointsAwarded}pts`);
         return NextResponse.json({ success: true, pointsAwarded: result.pointsAwarded });
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
         const result = await awardPoints({
           serverId, userId: discordUserId, eventType: 'subscription',
           quantity: 1, source: 'twitch',
-          metadata: { username: username || twitchLogin, channel }
+          metadata: { username: username || twitchLogin, twitchLogin, twitchId, channel }
         });
         console.log(`[TwitchEvents] Sub: ${twitchLogin} +${result.pointsAwarded}pts`);
         return NextResponse.json({ success: true, pointsAwarded: result.pointsAwarded });
@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
         const result = await awardPoints({
           serverId, userId: discordUserId, eventType: 'gifted_subscription',
           quantity: giftCount, source: 'twitch',
-          metadata: { username: username || twitchLogin, channel, recipient, giftCount }
+          metadata: { username: username || twitchLogin, twitchLogin, twitchId, channel, recipient, giftCount }
         });
         console.log(`[TwitchEvents] Gift sub: ${twitchLogin} x${giftCount} +${result.pointsAwarded}pts`);
         return NextResponse.json({ success: true, pointsAwarded: result.pointsAwarded });
@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
         const result = await awardPoints({
           serverId, userId: discordUserId, eventType: 'bits',
           quantity: bitCount, source: 'twitch',
-          metadata: { username: username || twitchLogin, channel, bits: bitCount }
+          metadata: { username: username || twitchLogin, twitchLogin, twitchId, channel, bits: bitCount }
         });
         console.log(`[TwitchEvents] Cheer: ${twitchLogin} ${bitCount} bits +${result.pointsAwarded}pts`);
         return NextResponse.json({ success: true, pointsAwarded: result.pointsAwarded });
@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
         const result = await awardPoints({
           serverId, userId: discordUserId, eventType: 'follow',
           quantity: 1, source: 'twitch',
-          metadata: { username: username || twitchLogin, channel }
+          metadata: { username: username || twitchLogin, twitchLogin, twitchId, channel }
         });
         console.log(`[TwitchEvents] Follow: ${twitchLogin} +${result.pointsAwarded}pts`);
         return NextResponse.json({ success: true, pointsAwarded: result.pointsAwarded });
