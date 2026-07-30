@@ -38,7 +38,7 @@ const navItems: NavItem[] = [
   },
   {
     title: 'Messages',
-    href: '/forwarding',
+    href: '/messages',
     icon: <MessageSquare />,
   },
   {
