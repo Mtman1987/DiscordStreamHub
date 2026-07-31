@@ -54,6 +54,17 @@ export async function spendSpmtXp(input: {
   return post('/api/platform/xp/spend', { sourceApp: 'discord-stream-hub', ...input });
 }
 
+export async function settleSpmtGamble(input: {
+  userId: string;
+  wager: number;
+  payout: number;
+  eventType: string;
+  idempotencyKey: string;
+  metadata?: Record<string, unknown>;
+}) {
+  return post('/api/platform/xp/gamble-settle', { sourceApp: 'discord-stream-hub', ...input });
+}
+
 export async function awardSpendableSpmtXp(input: {
   userId: string;
   amount: number;
