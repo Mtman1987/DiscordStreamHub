@@ -4,6 +4,7 @@ import {
   getSpmtWallet,
   getSpmtXpLeaderboard,
   resolveDiscordSpmtUser,
+  settleSpmtGamble,
   spendSpmtXp,
   transferSpmtXp,
 } from '@/lib/spmt-wallet-client';
@@ -45,6 +46,17 @@ export async function POST(request: NextRequest) {
         metadata: body?.metadata,
       });
       return NextResponse.json({ user: actor, wallet: result });
+    }
+    if (action === 'gamble-settle') {
+      const result = await settleSpmtGamble({
+        userId: actor.id,
+        wager: Number(body?.wager),
+        payout: Number(body?.payout),
+        eventType: String(body?.eventType || 'discord-gamble'),
+        idempotencyKey: String(body?.idempotencyKey || ''),
+        metadata: body?.metadata,
+      });
+      return NextResponse.json({ user: actor, result });
     }
     if (action === 'award') {
       const result = await awardSpendableSpmtXp({
