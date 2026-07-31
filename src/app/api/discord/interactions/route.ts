@@ -10,9 +10,10 @@ import {
   getHardcodedGuildId,
   getDiscordPublicKey,
   getHearMeOutUrl as getHearMeOutUrlFromRuntime,
+  getStreamweaverUrl,
 } from '@/lib/runtime-config';
 import { grandfatherDiscordIdentity } from '@/lib/spmt-client';
-import { getChatTagServiceSecret } from '@/lib/runtime-secrets';
+import { getChatTagServiceSecret, getDshClientSecret } from '@/lib/runtime-secrets';
 
 function extractValues(components: any[] = []) {
   const values: Record<string, string> = {};
@@ -287,6 +288,44 @@ async function updateDeferredInteraction(applicationId: string, token: string, c
   });
 }
 
+async function updateDeferredInteractionPayload(applicationId: string, token: string, payload: any) {
+  if (!applicationId || !token) return;
+  await fetch(`https://discord.com/api/v10/webhooks/${applicationId}/${token}/messages/@original`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  }).catch((error) => {
+    console.error('[DiscordInteractions] Failed to update StreamWeaver Pokémon response:', error);
+  });
+}
+
+async function forwardStreamWeaverPokemonTrade(body: any, customId: string) {
+  const match = customId.match(/^sw_pokemon_trade_(accept|decline):(.+)$/);
+  if (!match) throw new Error('Invalid Pokémon trade control.');
+  const secret = getDshClientSecret();
+  if (!secret) throw new Error('DiscordStreamHub service secret is not configured.');
+  const response = await fetch(`${getStreamweaverUrl().replace(/\/$/, '')}/api/discord/pokemon-interaction`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${secret}`,
+    },
+    body: JSON.stringify({
+      action: match[1],
+      tradeId: match[2],
+      actorDiscordId: body.member?.user?.id || body.user?.id,
+      actorName: body.member?.user?.global_name || body.member?.user?.username || body.user?.global_name || body.user?.username,
+      guildId: body.guild_id,
+      channelId: body.channel_id,
+      messageId: body.message?.id,
+    }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(payload?.error || `StreamWeaver returned ${response.status}.`);
+  return payload?.data || payload;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const signature = request.headers.get('x-signature-ed25519');
@@ -326,6 +365,41 @@ export async function POST(request: NextRequest) {
     }
 
     if (body.type === 3 && customId) {
+      if (customId.startsWith('sw_pokemon_trade_')) {
+        const applicationId = body.application_id || getDiscordClientId();
+        forwardStreamWeaverPokemonTrade(body, customId)
+          .then((payload) => updateDeferredInteractionPayload(applicationId, body.token, payload))
+          .catch((error) => {
+            const actor = body.member?.user || body.user || {};
+            const actorName = actor.global_name || actor.username || 'Discord User';
+            const actorAvatar = actor.id && actor.avatar
+              ? `https://cdn.discordapp.com/avatars/${actor.id}/${actor.avatar}.${String(actor.avatar).startsWith('a_') ? 'gif' : 'png'}?size=128`
+              : `${getStreamweaverUrl().replace(/\/$/, '')}/StreamWeaver.png`;
+            return updateDeferredInteractionPayload(applicationId, body.token, {
+              content: '',
+              embeds: [{
+                author: {
+                  name: 'StreamWeaver',
+                  icon_url: `${getStreamweaverUrl().replace(/\/$/, '')}/StreamWeaver.png`,
+                  url: getStreamweaverUrl(),
+                },
+                title: 'Pokémon Card Trade • Error',
+                description: `❌ ${error?.message || 'The Pokémon trade action failed.'}`,
+                thumbnail: { url: actorAvatar },
+                footer: {
+                  text: `Requested by ${actorName} • Trade control`,
+                  icon_url: actorAvatar,
+                },
+                color: 0x5865f2,
+                timestamp: new Date().toISOString(),
+              }],
+              components: body.message?.components || [],
+              allowed_mentions: { parse: [] },
+            });
+          });
+        return NextResponse.json({ type: 6 });
+      }
+
       if (customId === 'spmt_onboard') {
         return NextResponse.json({
           type: 9,
