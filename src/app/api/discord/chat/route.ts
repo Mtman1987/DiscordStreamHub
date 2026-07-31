@@ -1,4 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import {
+  deleteStreamWeaverReplySourceNow,
+  processDueStreamWeaverReplyCleanups,
+  recordStreamWeaverReplyCleanup,
+} from '@/lib/streamweaver-reply-cleanup';
 import { randomUUID } from 'node:crypto';
 import { replaceDiscordUserMentions } from '@/lib/discord-mentions';
 import { db } from '@/lib/db';
@@ -404,6 +409,19 @@ async function fanoutToStreamWeaver(body: any, channelId: string, traceId: strin
     for (const reply of replies) {
       sends.push(await sendDiscordChannelMessage(channelId, normalizeCollectedReply(reply)));
     }
+    const replyMessageIds = sends
+      .map((sent: any) => String(sent?.id || '').trim())
+      .filter(Boolean);
+    if (replyMessageIds.length > 0) {
+      await deleteStreamWeaverReplySourceNow(channelId, body?.messageId || body?.message_id).catch(() => false);
+      await recordStreamWeaverReplyCleanup({
+        channelId,
+        sourceMessageId: body?.messageId || body?.message_id,
+        replyMessageIds,
+      }).catch((error) => {
+        console.warn('[DiscordChat] StreamWeaver reply cleanup record failed:', error);
+      });
+    }
     logDiscordTrace(traceId, 'fanout-complete', {
       destination: 'streamweaver:/api/discord/chat',
       durationMs: Date.now() - startedAt,
@@ -489,6 +507,9 @@ async function forwardHearMeOutDiscordChat(payload: any) {
 }
 
 export async function POST(request: NextRequest) {
+  processDueStreamWeaverReplyCleanups().catch((error) => {
+    console.warn('[DiscordChat] StreamWeaver reply cleanup sweep failed:', error);
+  });
   try {
     let body: any;
     try {
