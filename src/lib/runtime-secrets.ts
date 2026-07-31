@@ -37,12 +37,15 @@ export function getClipWorkerSecret(): string {
   return readSecret('CLIP_WORKER_SECRET');
 }
 
+// StreamWeaver and DiscordStreamHub use one shared service credential.
+// Legacy point/client secret names are intentionally not accepted here so
+// configuration mistakes fail clearly instead of silently selecting another key.
 export function getDshPointsSecret(): string {
-  return readFirstSecret(['DSH_POINTS_TOKEN', 'DSH_CLIENT_SECRET', 'DSH_SERVICE_SECRET']);
+  return readSecret('DSH_SERVICE_SECRET');
 }
 
 export function getDshClientSecret(): string {
-  return readFirstSecret(['DSH_CLIENT_SECRET', 'DSH_SERVICE_SECRET', 'BOT_SECRET_KEY']);
+  return readSecret('DSH_SERVICE_SECRET');
 }
 
 export function getServiceToServiceSecrets(): string[] {
@@ -69,10 +72,10 @@ export function missingProductionServiceSecrets(): RuntimeSecretName[] {
   if (!getBotServiceSecret()) missing.push('BOT_SECRET_KEY');
   if (!getChatTagServiceSecret()) missing.push('CHAT_TAG_BOT_SECRET');
   if (!getClipWorkerSecret()) missing.push('CLIP_WORKER_SECRET');
-  if (!getDshPointsSecret()) missing.push('DSH_POINTS_TOKEN');
-  if (!getDshClientSecret()) missing.push('DSH_CLIENT_SECRET');
+  if (!getDshPointsSecret()) missing.push('DSH_SERVICE_SECRET');
+  if (!getDshClientSecret()) missing.push('DSH_SERVICE_SECRET');
   if (!readSecret('SPACEMOUNTAIN_SHOUTOUT_TOKEN')) missing.push('SPACEMOUNTAIN_SHOUTOUT_TOKEN');
   if (!readSecret('SPACEMOUNTAIN_FORUM_FORWARD_TOKEN')) missing.push('SPACEMOUNTAIN_FORUM_FORWARD_TOKEN');
   if (!readSecret('STREAMWEAVER_SECRET')) missing.push('STREAMWEAVER_SECRET');
-  return missing;
+  return Array.from(new Set(missing));
 }
