@@ -19,36 +19,30 @@ else
   echo "[Startup] Skipping deploy channel cleanup"
 fi
 
-# 3. Start DSH (port 3000) in background
-# Pin the port explicitly so Fly always sees the server on the configured
-# internal port, even if the runtime environment injects a different PORT.
-PORT=3000 npm run start -- -p 3000 -H 0.0.0.0 &
-DSH_PID=$!
-
-# 4. Wait for DSH to be ready, then start polling unless staging explicitly
-# disables external side effects.
+# 3. Start polling after the web server becomes healthy unless staging
+# explicitly disables external side effects.
 if [ "$DISABLE_STARTUP_SERVICES" = "true" ]; then
   echo "[Startup] DISABLE_STARTUP_SERVICES=true; skipping auto startup services"
 else
   (
     echo "[Startup] Waiting for DSH to be ready..."
-    sleep 20
-    for i in 1 2 3 4 5 6; do
-      HEALTH=$(curl -s http://localhost:3000/api/health 2>/dev/null)
+    sleep 10
+    for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+      HEALTH=$(curl -s http://127.0.0.1:3000/api/health 2>/dev/null)
       if echo "$HEALTH" | grep -q '"status":"ok"'; then
         echo "[Startup] DSH is ready, starting polling..."
-        curl -s -X POST http://localhost:3000/api/startup
+        curl -s -X POST http://127.0.0.1:3000/api/startup
         echo "[Startup] Polling started!"
         exit 0
       fi
-      echo "[Startup] Not ready yet, retrying in 10s..."
-      sleep 10
+      echo "[Startup] Not ready yet, retrying in 5s..."
+      sleep 5
     done
-    echo "[Startup] WARNING: Could not start polling after 80s"
+    echo "[Startup] WARNING: Could not start polling after 70s"
   ) &
 fi
 
-# 5. Optional Discord voice adapter. Its public enable flag and endpoints live
+# 4. Optional Discord voice adapter. Its public enable flag and endpoints live
 # in the volume-backed runtime config; the bot token remains a Fly secret.
 RUNTIME_CONFIG_FILE="${RUNTIME_CONFIG_FILE:-/data/runtime-config.json}"
 WATCH_VOICE_ENABLED="$(node -e "try{const c=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));process.stdout.write(c.publicFlags?.discordWatchVoiceBot===false?'false':'true')}catch{process.stdout.write('true')}" "$RUNTIME_CONFIG_FILE")"
@@ -70,5 +64,9 @@ else
   echo "[Startup] Discord voice adapter disabled by volume runtime config"
 fi
 
-# 6. Keep container alive with the DSH process
-wait $DSH_PID
+# 5. Make the Next server the container's PID 1. This ensures Fly observes the
+# real web process, receives its exit status, and can reach 0.0.0.0:3000.
+export PORT=3000
+export HOSTNAME=0.0.0.0
+echo "[Startup] Starting DSH on 0.0.0.0:3000"
+exec ./node_modules/.bin/next start -H 0.0.0.0 -p 3000
