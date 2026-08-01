@@ -126,7 +126,7 @@ async function fetchLeaderboardSettings(
   };
 }
 
-async function resolveSpmtUserForPoints(input: {
+export async function resolveSpmtUserForPoints(input: {
   serverId: string;
   userId: string;
   source?: 'twitch' | 'discord' | 'manual';

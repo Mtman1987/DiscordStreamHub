@@ -157,6 +157,80 @@ export async function awardSpmtXp(input: SpmtXpAwardInput) {
   }
 }
 
+export type SpmtXpWallet = {
+  /** XP the user can spend. Purchases and wagers come out of this wallet only. */
+  spendableXp: number;
+  /** Everything the user has ever earned. Ranks are computed from this wallet. */
+  lifetimeXp: number;
+  rank: number;
+  level: number;
+};
+
+async function platformXpRequest<T>(path: string, body: Record<string, unknown>): Promise<T | null> {
+  if (!SPMT_API_KEY) return null;
+  try {
+    const response = await fetch(`${SPMT_BASE_URL.replace(/\/$/, '')}/api/platform/xp${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SPMT_API_KEY}` },
+      body: JSON.stringify({ sourceApp: 'discord-stream-hub', ...body }),
+      cache: 'no-store',
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      console.warn(`[SPMT] XP ${path} failed`, { status: response.status, error: payload?.error });
+      return null;
+    }
+    return payload as T;
+  } catch (error) {
+    console.warn(`[SPMT] XP ${path} error`, error);
+    return null;
+  }
+}
+
+export async function getSpmtXpWallet(userId: string): Promise<SpmtXpWallet | null> {
+  const wallet = await platformXpRequest<SpmtXpWallet>('/balance', { userId });
+  return wallet && Number.isFinite(wallet.lifetimeXp) ? wallet : null;
+}
+
+export async function getSpmtXpLeaderboard(limit = 50): Promise<Array<{
+  rank: number;
+  userId: string;
+  username: string;
+  displayName?: string;
+  avatarUrl?: string;
+  spendableXp: number;
+  lifetimeXp: number;
+}>> {
+  const payload = await platformXpRequest<{ entries?: unknown }>('/leaderboard', { limit });
+  return Array.isArray(payload?.entries) ? payload.entries as never : [];
+}
+
+/**
+ * Settles a wager atomically: winnings refill spendable XP up to the lifetime
+ * ceiling, and anything above it is compressed 10:1 and split evenly between
+ * both wallets so a jackpot cannot bloat the leaderboard.
+ */
+export async function settleSpmtGamble(input: {
+  userId: string;
+  wager: number;
+  payout: number;
+  idempotencyKey: string;
+  eventType?: string;
+  metadata?: Record<string, unknown>;
+}): Promise<(SpmtXpWallet & { settled: boolean; duplicate: boolean; refill: number; matchedGrowth: number }) | null> {
+  return platformXpRequest('/gamble-settle', input);
+}
+
+export async function spendSpmtXp(input: {
+  userId: string;
+  amount: number;
+  idempotencyKey: string;
+  eventType?: string;
+  metadata?: Record<string, unknown>;
+}): Promise<(SpmtXpWallet & { spent: boolean; duplicate: boolean }) | null> {
+  return platformXpRequest('/spend', input);
+}
+
 export async function migrateSpmtXpBalance(input: {
   userId: string;
   observedBalance: number;
