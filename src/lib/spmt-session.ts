@@ -42,17 +42,26 @@ function readAvatarUrl(user: any): string {
   ).trim();
 }
 
+const SPMT_REQUEST_TIMEOUT_MS = 5000;
+
+function spmtAbortSignal(): AbortSignal | undefined {
+  if (typeof AbortSignal === 'undefined' || typeof AbortSignal.timeout !== 'function') return undefined;
+  return AbortSignal.timeout(SPMT_REQUEST_TIMEOUT_MS);
+}
+
 export async function resolveSpmtSession(token: string) {
   const refreshResponse = await fetch(`${SPMT_BASE_URL}/api/auth/refresh`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` },
     cache: 'no-store',
+    signal: spmtAbortSignal(),
   });
   const profileResponse = refreshResponse.ok
     ? refreshResponse
     : await fetch(`${SPMT_BASE_URL}/api/me`, {
         headers: { Authorization: `Bearer ${token}` },
         cache: 'no-store',
+        signal: spmtAbortSignal(),
       });
 
   if (!profileResponse.ok) {

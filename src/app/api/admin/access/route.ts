@@ -45,37 +45,61 @@ function roleMatches(adminRoles: string[] = [], userRoles: string[] = [], guildR
 // Signed-in dashboard users resolve their own access from the browser, where a
 // service secret can never be sent, so a matching SPMT session is accepted for
 // self lookups only.
-async function isSelfLookup(request: NextRequest, userId: string) {
+async function resolveSelfLookup(request: NextRequest, userId: string): Promise<{ matched: boolean; refreshedToken?: string }> {
   const token = request.cookies.get(DSH_SPMT_COOKIE)?.value || '';
-  if (!token || !userId) return false;
+  if (!token || !userId) return { matched: false };
 
   try {
     const resolved = await resolveSpmtSession(token);
-    return String(resolved.session.discordUserId || '').trim() === userId;
+    return {
+      matched: String(resolved.session.discordUserId || '').trim() === userId,
+      refreshedToken: resolved.token !== token ? resolved.token : undefined,
+    };
   } catch (error) {
     console.warn('[admin/access] Session validation failed:', error instanceof Error ? error.message : String(error));
-    return false;
+    return { matched: false };
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    const body = await request.json().catch(() => ({} as Record<string, unknown>));
     const serverId = String(body.serverId || body.guildId || '').trim();
     const userId = String(body.userId || body.discordUserId || '').trim();
 
-    const authorized = hasAuthorizedBearerToken(request.headers.get('authorization'), getServiceToServiceSecrets())
-      || await isSelfLookup(request, userId);
+    let refreshedToken: string | undefined;
+    let authorized = hasAuthorizedBearerToken(request.headers.get('authorization'), getServiceToServiceSecrets());
+    if (!authorized) {
+      const selfLookup = await resolveSelfLookup(request, userId);
+      authorized = selfLookup.matched;
+      refreshedToken = selfLookup.refreshedToken;
+    }
     if (!authorized) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    // SPMT can rotate the session token during validation, so hand the fresh
+    // one back instead of leaving the browser with a token it already retired.
+    const respond = (payload: Record<string, unknown>, init?: ResponseInit) => {
+      const response = NextResponse.json(payload, init);
+      if (refreshedToken) {
+        response.cookies.set(DSH_SPMT_COOKIE, refreshedToken, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax',
+          path: '/',
+          maxAge: 60 * 60 * 24 * 30,
+        });
+      }
+      return response;
+    };
+
     if (!serverId || !userId) {
-      return NextResponse.json({ error: 'Missing serverId or userId' }, { status: 400 });
+      return respond({ error: 'Missing serverId or userId' }, { status: 400 });
     }
 
     if (!DISCORD_SNOWFLAKE_RE.test(serverId) || !DISCORD_SNOWFLAKE_RE.test(userId)) {
-      return NextResponse.json({
+      return respond({
         success: true,
         serverId,
         userId,
@@ -110,7 +134,7 @@ export async function POST(request: NextRequest) {
     const isAdmin = Boolean(isOwner || matchedByRole);
     const isMod = Boolean(matchedByRole);
 
-    return NextResponse.json({
+    return respond({
       success: true,
       serverId,
       userId,
