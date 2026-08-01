@@ -14,6 +14,8 @@ import {
 } from '@/lib/runtime-config';
 import { grandfatherDiscordIdentity } from '@/lib/spmt-client';
 import { getChatTagServiceSecret, getDshClientSecret } from '@/lib/runtime-secrets';
+import { PointsService } from '@/lib/points-service';
+import { forwardPokemonInteractionToStreamWeaver } from '@/lib/streamweaver-interaction-service';
 
 function extractValues(components: any[] = []) {
   const values: Record<string, string> = {};
@@ -365,6 +367,45 @@ export async function POST(request: NextRequest) {
     }
 
     if (body.type === 3 && customId) {
+      if (customId.startsWith('sw_pokemon_')) {
+        try {
+          const forwarded = await forwardPokemonInteractionToStreamWeaver(body);
+          const payload = await forwarded.json();
+          return NextResponse.json(payload, { status: forwarded.status });
+        } catch (error) {
+          console.error('[DiscordInteractions] StreamWeaver Pokémon interaction failed:', error);
+          return ephemeral(
+            error instanceof Error ? error.message : 'The Pokémon action could not be completed.',
+          );
+        }
+      }
+
+      if (customId.startsWith('sw_dsh_rank:')) {
+        const actorId = String(body.member?.user?.id || body.user?.id || '').trim();
+        const serverId = String(customId.split(':').slice(1).join(':') || body.guild_id || '').trim();
+        if (!actorId || !serverId) {
+          return ephemeral('Unable to identify your Discord account or server.');
+        }
+
+        const linkedUsers = await db
+          .collection('servers')
+          .doc(serverId)
+          .collection('users')
+          .where('discordUserId', '==', actorId)
+          .limit(1)
+          .get();
+        const leaderboardUserId = linkedUsers.empty ? actorId : linkedUsers.docs[0].id;
+        const result = await PointsService.getInstance().getUserRank(leaderboardUserId, serverId);
+        if (!result) {
+          return ephemeral('You are not on this leaderboard yet. Start participating to earn points.');
+        }
+
+        return ephemeral(
+          `🏆 **Your Rank:** #${result.rank}\n📊 **Points:** ${result.points.toLocaleString()}`,
+          { allowed_mentions: { parse: [] } },
+        );
+      }
+
       if (customId.startsWith('sw_pokemon_trade_')) {
         const applicationId = body.application_id || getDiscordClientId();
         forwardStreamWeaverPokemonTrade(body, customId)
