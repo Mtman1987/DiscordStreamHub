@@ -8,7 +8,7 @@
     "register-activity-command": "tsx scripts/register-activity-command.ts",
     "build": "next build --webpack",
     "start": "next start",
-    "lint": "eslint . --ignore-pattern .next/** --ignore-pattern node_modules/**",
+    "lint": "eslint . --ignore-pattern '.next/**' --ignore-pattern 'node_modules/**'",
     "typecheck": "tsc --noEmit",
     "test:spmt-identity": "tsx --test tests/spmt-points-identity.test.ts"
   },
