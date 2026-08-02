@@ -1,16 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/data/server-init';
+import { getDiscordActivitySummary } from '@/lib/discord-activity-service';
 import { PointsService } from '@/lib/points-service';
 import { getHardcodedGuildId } from '@/lib/runtime-config';
 import { getDshPointsSecret, hasAuthorizedBearerToken } from '@/lib/runtime-secrets';
+import { resolveSpmtPointsWallet } from '@/lib/spmt-wallet';
+import { listTenantDescriptors } from '@/lib/tenant-registry';
+import { resolveTenantBalance } from '@/lib/tenant-utils';
 
 function isAuthorized(request: NextRequest): boolean {
   const secret = getDshPointsSecret();
   return Boolean(secret && hasAuthorizedBearerToken(request.headers.get('authorization'), [secret]));
-}
-
-function getTenantName(serverId: string, data: Record<string, unknown>): string {
-  return String(data.serverName || data.name || data.twitchChannel || serverId);
 }
 
 export async function POST(request: NextRequest) {
@@ -24,35 +23,41 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json().catch(() => ({}));
     const userId = String(body?.userId || '').trim();
+    const username = String(body?.username || '').trim();
+    const displayName = String(body?.displayName || username).trim();
     const currentServerId = String(body?.serverId || getHardcodedGuildId() || '').trim();
     if (!userId) {
       return NextResponse.json({ error: 'userId is required' }, { status: 400 });
     }
 
-    const serverSnapshot = await db.collection('servers').get();
-    const servers: Array<{ id: string; data: Record<string, unknown> }> = serverSnapshot.docs.map((doc: any) => ({
-      id: String(doc.id),
-      data: (doc.data() || {}) as Record<string, unknown>,
-    }));
-    if (currentServerId && !servers.some((server) => server.id === currentServerId)) {
-      servers.push({ id: currentServerId, data: {} });
-    }
+    const [servers, canonicalWallet] = await Promise.all([
+      listTenantDescriptors(currentServerId),
+      resolveSpmtPointsWallet({
+        serverId: currentServerId || 'default',
+        userId,
+        metadata: { username, displayName },
+      }),
+    ]);
 
     const pointsService = PointsService.getInstance();
     const tenants = (await Promise.all(servers.map(async (server) => {
-      const [points, rank] = await Promise.all([
+      const [points, rank, activity] = await Promise.all([
         pointsService.getUserPoints(userId, server.id),
         pointsService.getUserRank(userId, server.id),
+        getDiscordActivitySummary(server.id, userId),
       ]);
-      if (!points && !rank) return null;
-      const value = Number(points?.points ?? rank?.points ?? 0);
+      const isCurrentTenant = Boolean(currentServerId && server.id === currentServerId);
+      if (!points && !rank && !activity && !isCurrentTenant) return null;
+      const balance = resolveTenantBalance(
+        canonicalWallet,
+        Number(points?.points ?? rank?.points ?? 0),
+        rank?.rank ?? null,
+      );
       return {
         tenantId: server.id,
         serverId: server.id,
-        tenantName: getTenantName(server.id, server.data),
-        currentPoints: value,
-        lifetimePoints: value,
-        rank: rank?.rank ?? null,
+        tenantName: server.branding.serverName,
+        ...balance,
       };
     }))).filter((tenant): tenant is NonNullable<typeof tenant> => Boolean(tenant));
 

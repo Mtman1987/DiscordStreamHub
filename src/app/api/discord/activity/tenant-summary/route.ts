@@ -1,15 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/data/server-init';
 import { getDiscordActivitySummary } from '@/lib/discord-activity-service';
 import { getHardcodedGuildId } from '@/lib/runtime-config';
 import { getServiceToServiceSecrets, hasAuthorizedBearerToken } from '@/lib/runtime-secrets';
+import { listTenantDescriptors } from '@/lib/tenant-registry';
 
 function isAuthorized(request: NextRequest): boolean {
   return hasAuthorizedBearerToken(request.headers.get('authorization'), getServiceToServiceSecrets());
-}
-
-function getTenantName(serverId: string, data: Record<string, unknown>): string {
-  return String(data.serverName || data.name || data.twitchChannel || serverId);
 }
 
 export async function POST(request: NextRequest) {
@@ -25,14 +21,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'userId is required' }, { status: 400 });
     }
 
-    const serverSnapshot = await db.collection('servers').get();
-    const servers: Array<{ id: string; data: Record<string, unknown> }> = serverSnapshot.docs.map((doc: any) => ({
-      id: String(doc.id),
-      data: (doc.data() || {}) as Record<string, unknown>,
-    }));
-    if (currentServerId && !servers.some((server) => server.id === currentServerId)) {
-      servers.push({ id: currentServerId, data: {} });
-    }
+    const servers = await listTenantDescriptors(currentServerId);
 
     const tenants = (await Promise.all(servers.map(async (server) => {
       const summary = await getDiscordActivitySummary(server.id, userId);
@@ -40,7 +29,7 @@ export async function POST(request: NextRequest) {
       return {
         tenantId: server.id,
         serverId: server.id,
-        tenantName: getTenantName(server.id, server.data),
+        tenantName: server.branding.serverName,
         watchMinutes: Number(summary.voiceMinutes || 0),
         voiceMinutes: Number(summary.voiceMinutes || 0),
         messageCount: Number(summary.messageCount || 0),

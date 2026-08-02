@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'fs';
 import { join } from 'path';
 import { getDatabaseFilePath } from './runtime-config';
+import { discoverDirectChildIds } from './tenant-utils';
 
 const Database = require('better-sqlite3');
 
@@ -200,6 +201,18 @@ export class SQLiteService {
     }
 
     return { docs: docs.map((doc: any) => cloneData(doc)) };
+  }
+
+  listDescendantDocumentIds(collectionPath: string): string[] {
+    const normalizedCollection = collectionPath.split('/').filter(Boolean).join('/');
+    if (!normalizedCollection) return [];
+
+    const prefix = `${normalizedCollection}/`;
+    const rows = this.db
+      .prepare('SELECT path FROM docs WHERE substr(path, 1, ?) = ?')
+      .all(prefix.length, prefix) as Array<{ path: string }>;
+
+    return discoverDirectChildIds(normalizedCollection, rows.map((row) => row.path));
   }
 
   setDoc(path: string, data: any, merge: boolean = false): void {

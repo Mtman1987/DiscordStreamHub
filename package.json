@@ -10,7 +10,8 @@
     "start": "next start",
     "lint": "eslint . --ignore-pattern '.next/**' --ignore-pattern 'node_modules/**'",
     "typecheck": "tsc --noEmit",
-    "test:spmt-identity": "tsx --test tests/spmt-points-identity.test.ts"
+    "test:spmt-identity": "node --import tsx --test tests/spmt-points-identity.test.ts",
+    "test:contracts": "node --import tsx --test tests/tenant-contracts.test.ts"
   },
   "dependencies": {
     "@cfworker/json-schema": "^4.1.1",
