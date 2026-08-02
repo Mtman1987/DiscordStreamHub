@@ -36,6 +36,21 @@ test('falls back to a root tenant name instead of labeling every tenant Space Mo
   assert.equal(resolveServerBranding('tenant-3').serverName, 'tenant-3');
 });
 
+test('uses the primary-guild default only after supported legacy names', () => {
+  assert.equal(resolveServerBranding(
+    'primary-guild',
+    { twitchChannel: 'Legacy Community' },
+    {},
+    'Space Mountain',
+  ).serverName, 'Legacy Community');
+  assert.equal(resolveServerBranding(
+    'primary-guild',
+    {},
+    {},
+    'Space Mountain',
+  ).serverName, 'Space Mountain');
+});
+
 test('canonical wallet values override stale legacy points and rank', () => {
   assert.deepEqual(resolveTenantBalance({
     currentPoints: 75,

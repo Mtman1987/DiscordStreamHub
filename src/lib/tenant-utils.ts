@@ -18,6 +18,7 @@ export function resolveServerBranding(
   serverId: string,
   serverData: Record<string, unknown> = {},
   brandingData: Record<string, unknown> = {},
+  defaultServerName = '',
 ): ServerBranding {
   const rootServerName = textValue(serverData.serverName)
     || textValue(serverData.name)
@@ -26,6 +27,7 @@ export function resolveServerBranding(
   return {
     serverName: textValue(brandingData.serverName)
       || rootServerName
+      || textValue(defaultServerName)
       || textValue(serverId)
       || SPACE_MOUNTAIN_DEFAULTS.serverName,
     communityMemberName: textValue(brandingData.communityMemberName)
