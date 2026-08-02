@@ -16,21 +16,19 @@ export async function getServerBranding(serverId: string): Promise<ServerBrandin
       serverRef.collection('config').doc('branding').get(),
     ]);
 
-    const serverData = serverDoc.exists ? serverDoc.data() || {} : {};
-    const compatibleServerData = serverId === getHardcodedGuildId()
-      ? { serverName: SPACE_MOUNTAIN_DEFAULTS.serverName, ...serverData }
-      : serverData;
-
     return resolveServerBranding(
       serverId,
-      compatibleServerData,
+      serverDoc.exists ? serverDoc.data() || {} : {},
       brandingDoc.exists ? brandingDoc.data() || {} : {},
+      serverId === getHardcodedGuildId() ? SPACE_MOUNTAIN_DEFAULTS.serverName : '',
     );
   } catch (error) {
     console.error('Error fetching server branding:', error);
     return resolveServerBranding(
       serverId,
-      serverId === getHardcodedGuildId() ? { serverName: SPACE_MOUNTAIN_DEFAULTS.serverName } : {},
+      {},
+      {},
+      serverId === getHardcodedGuildId() ? SPACE_MOUNTAIN_DEFAULTS.serverName : '',
     );
   }
 }
