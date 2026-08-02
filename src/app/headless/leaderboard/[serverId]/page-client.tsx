@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation';
 import { DataComponentsProvider, useCollection, useDataStore } from '@/data';
 import { collection, query, orderBy, limit } from '@/lib/data-shim';
 import type { LeaderboardEntry, UserProfile } from '@/lib/types';
+import type { ServerBranding } from '@/lib/tenant-utils';
 import * as React from 'react';
 
 interface FormattedLeaderboardEntry {
@@ -15,11 +16,14 @@ interface FormattedLeaderboardEntry {
   avatarUrl?: string;
 }
 
-function LeaderboardComponent() {
+function LeaderboardComponent({ branding }: { branding: ServerBranding }) {
   const params = useParams();
   const serverId = params.serverId as string;
   const store = useDataStore();
   const [leaderboard, setLeaderboard] = useState<FormattedLeaderboardEntry[]>([]);
+  const serverName = branding.serverName;
+  const memberName = branding.communityMemberName;
+  const memberNamePlural = branding.communityMemberNamePlural;
 
   const leaderboardQuery = React.useMemo(() => {
     if (!store || !serverId) return null;
@@ -57,10 +61,10 @@ function LeaderboardComponent() {
       <div className="relative z-10 p-8">
         <div className="text-center mb-6">
           <h1 className="text-5xl font-bold text-white mb-3 animate-pulse">
-            🚀 SPACE MOUNTAIN LEADERBOARD 🚀
+            🚀 {serverName.toUpperCase()} LEADERBOARD 🚀
           </h1>
           <div className="text-xl text-yellow-300 animate-bounce">
-            ⭐ TOP SPACE CADETS ⭐
+            ⭐ TOP {memberNamePlural.toUpperCase()} ⭐
           </div>
         </div>
 
@@ -99,7 +103,7 @@ function LeaderboardComponent() {
                   
                   <div>
                     <div className="text-2xl font-bold text-white">{entry.username}</div>
-                    <div className="text-lg text-blue-200">Space Cadet</div>
+                    <div className="text-lg text-blue-200">{memberName}</div>
                   </div>
                 </div>
                 
@@ -116,7 +120,7 @@ function LeaderboardComponent() {
 
         <div className="text-center mt-8">
           <div className="text-xl text-white animate-bounce">
-            🌟 Join Space Mountain to climb the ranks! 🌟
+            🌟 Join {serverName} to climb the ranks! 🌟
           </div>
         </div>
       </div>
@@ -180,10 +184,10 @@ function LeaderboardComponent() {
 }
 
 
-export default function HeadlessLeaderboardClientPage() {
+export default function HeadlessLeaderboardClientPage({ branding }: { branding: ServerBranding }) {
     return (
         <DataComponentsProvider>
-            <LeaderboardComponent />
+            <LeaderboardComponent branding={branding} />
         </DataComponentsProvider>
     )
 }

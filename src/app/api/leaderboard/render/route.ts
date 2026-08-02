@@ -21,10 +21,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'serverId is required' }, { status: 400 });
     }
 
-    const [image, branding] = await Promise.all([
-      generateLeaderboardImage(serverId),
-      getServerBranding(serverId),
-    ]);
+    const branding = await getServerBranding(serverId);
+    const image = await generateLeaderboardImage(serverId, branding);
     if (!image) {
       return NextResponse.json({ error: 'Failed to render leaderboard' }, { status: 503 });
     }
