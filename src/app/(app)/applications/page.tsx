@@ -11,8 +11,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { useToast } from '@/hooks/use-toast';
-import { useDbCollection, useDbDoc, dbSet, dbDelete } from '@/hooks/use-db';
-import { Send, CheckCircle, XCircle, Trash2, ThumbsUp, ThumbsDown, Settings2, Loader2, Save } from 'lucide-react';
+import { useDbCollection, useDbDoc, dbSet } from '@/hooks/use-db';
+import { Send, CheckCircle, XCircle, ThumbsUp, ThumbsDown, Settings2, Loader2, Save } from 'lucide-react';
 import { AdminGuard } from '@/components/admin-guard';
 import { useCurrentUser } from '@/hooks/use-current-user';
 
@@ -21,10 +21,14 @@ interface DmTemplates {
   modRejected: string;
   partnerApproved: string;
   partnerRejected: string;
+  devApproved: string;
+  devRejected: string;
   modApprovedAttachmentUrl?: string;
   modRejectedAttachmentUrl?: string;
   partnerApprovedAttachmentUrl?: string;
   partnerRejectedAttachmentUrl?: string;
+  devApprovedAttachmentUrl?: string;
+  devRejectedAttachmentUrl?: string;
 }
 
 interface ProposalFormState {
@@ -41,10 +45,12 @@ interface ProposalFormState {
 }
 
 const DEFAULT_TEMPLATES: DmTemplates = {
-  modApproved: 'Congratulations! Your application to join the Mod Team has been approved! You will receive your Mod role shortly. Check the staff channels for onboarding info.',
-  modRejected: "Thank you for your interest in joining the mod team. After careful review, we've decided not to move forward at this time. You're still a valued member — keep being awesome and feel free to reapply!",
-  partnerApproved: 'Congratulations! Your partnership application has been approved! Set up your forum post in the partner section and grab your Partner role to access coordination channels.',
-  partnerRejected: "Thank you for your interest in partnering with us. After careful review, we've decided not to move forward at this time. Feel free to stay connected and explore other collaboration opportunities!",
+  modApproved: 'The Owner approved your moderation application. Authorize with SPMT, review the exact terms, and explicitly accept them to continue to onboarding.',
+  modRejected: 'Thank you for your interest in SPMT moderation. The Owner is not moving forward with this application at this time.',
+  partnerApproved: 'The Owner approved your partnership application. Authorize with SPMT, review the exact terms, and explicitly accept them to continue to onboarding.',
+  partnerRejected: 'Thank you for your partnership inquiry. The Owner is not moving forward with this application at this time.',
+  devApproved: 'The Owner approved your developer application. Authorize with SPMT, review the exact terms, and explicitly accept them before integration access is granted.',
+  devRejected: 'Thank you for your developer inquiry. The Owner is not moving forward with this application at this time.',
 };
 
 function VoteSection({ serverId, appId, status }: { serverId: string; appId: string; status: string }) {
@@ -73,7 +79,6 @@ function VoteSection({ serverId, appId, status }: { serverId: string; appId: str
   const approves = votes?.filter(v => v.vote === 'approve') || [];
   const rejects = votes?.filter(v => v.vote === 'reject') || [];
   const myVote = votes?.find(v => v.id === adminId)?.vote;
-  const formatVoters = (items: any[]) => items.map(v => v.adminName || v.adminId || v.id || 'Admin').join(', ');
 
   return (
     <div className="border rounded-lg p-3 space-y-2 bg-muted/30">
@@ -89,18 +94,14 @@ function VoteSection({ serverId, appId, status }: { serverId: string; appId: str
           <ThumbsDown className="h-3.5 w-3.5" />{rejects.length}
         </Button>
       </div>
-      <div className="grid gap-1 text-xs text-muted-foreground">
-        <div><span className="font-medium text-foreground">Approve:</span> {approves.length ? formatVoters(approves) : 'No votes yet'}</div>
-        <div><span className="font-medium text-foreground">Reject:</span> {rejects.length ? formatVoters(rejects) : 'No votes yet'}</div>
-      </div>
+      <p className="text-xs text-muted-foreground">Individual advisory votes are retained privately for audit. The Owner makes the final decision.</p>
     </div>
   );
 }
 
-function ApplicationCard({ app, serverId, type, onUpdateStatus, onDelete, canDecide }: {
-  app: any; serverId: string; type: 'mod' | 'partner';
+function ApplicationCard({ app, serverId, type, onUpdateStatus, canDecide }: {
+  app: any; serverId: string; type: 'mod' | 'partner' | 'dev';
   onUpdateStatus: (id: string, status: 'approved' | 'rejected') => void;
-  onDelete: (id: string) => void;
   canDecide: boolean;
 }) {
   const submittedDate = app.submittedAt?.seconds ? new Date(app.submittedAt.seconds * 1000) : (app.submittedAt ? new Date(app.submittedAt) : new Date());
@@ -117,7 +118,9 @@ function ApplicationCard({ app, serverId, type, onUpdateStatus, onDelete, canDec
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
-        {type === 'mod' ? (
+        {Array.isArray(app.answers) ? (
+          <div className="space-y-3 text-sm">{app.answers.map((item: any) => <div key={item.id}><span className="font-semibold">{item.question}:</span><p className="mt-1 whitespace-pre-wrap text-muted-foreground">{item.answer}</p></div>)}</div>
+        ) : type === 'mod' ? (
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div><span className="font-semibold">Timezone:</span> {app.timezone}</div>
             <div><span className="font-semibold">Member Since:</span> {app.memberDuration}</div>
@@ -130,6 +133,7 @@ function ApplicationCard({ app, serverId, type, onUpdateStatus, onDelete, canDec
             <div className="col-span-2"><span className="font-semibold">Why Partner:</span><p className="text-muted-foreground mt-1">{app.whyPartner}</p></div>
           </div>
         )}
+        {app.agreementStatus && <div className="text-sm"><span className="font-semibold">Agreement:</span> {app.agreementStatus}{app.agreementAcceptance?.acceptedAt ? ` · ${app.agreementAcceptance.acceptedAt}` : ''}</div>}
         <VoteSection serverId={serverId} appId={app.id} status={app.status} />
         <div className="flex gap-2 pt-1">
           {app.status === 'pending' && (
@@ -138,7 +142,7 @@ function ApplicationCard({ app, serverId, type, onUpdateStatus, onDelete, canDec
               <Button size="sm" variant="destructive" onClick={() => onUpdateStatus(app.id, 'rejected')} disabled={!canDecide} title={canDecide ? undefined : 'Only the owner can make final decisions'}><XCircle className="h-4 w-4 mr-1" />Reject</Button>
             </>
           )}
-          <Button size="sm" variant="ghost" onClick={() => onDelete(app.id)}><Trash2 className="h-4 w-4 mr-1" />Delete</Button>
+          {app.status === 'approved' && app.agreementStatus !== 'accepted' && <Button size="sm" variant="outline" onClick={() => onUpdateStatus(app.id, 'approved')} disabled={!canDecide}>Resend agreement</Button>}
         </div>
       </CardContent>
     </Card>
@@ -207,20 +211,12 @@ export default function ApplicationsPage() {
       }
       const notify = await fetch('/api/applications/notify', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ serverId, userId: app.userId, type: app.type, status }),
+        body: JSON.stringify({ serverId, applicationId: appId, userId: app.userId, type: app.type, status }),
       });
       if (!notify.ok) throw new Error('Decision saved, but DM notification failed');
       toast({ title: `Application ${status}`, description: 'User has been notified via DM' });
       refetchApplications();
     } catch (error) { toast({ title: 'Error', description: error instanceof Error ? error.message : 'Could not update application', variant: 'destructive' }); }
-  };
-
-  const deleteApplication = async (appId: string) => {
-    if (!serverId) return;
-    try {
-      await dbDelete(`servers/${serverId}/applications/${appId}`);
-      toast({ title: 'Application deleted' });
-    } catch { toast({ title: 'Error', variant: 'destructive' }); }
   };
 
   const saveTemplates = async () => {
@@ -259,13 +255,14 @@ export default function ApplicationsPage() {
 
   const modApps = applications?.filter(app => app.type === 'mod') || [];
   const partnerApps = applications?.filter(app => app.type === 'partner') || [];
+  const devApps = applications?.filter(app => app.type === 'dev') || [];
 
   return (
     <AdminGuard>
     <div className="container mx-auto p-6 space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Applications</h1>
-        <p className="text-muted-foreground">Review and manage mod team and partnership applications</p>
+        <p className="text-muted-foreground">Review moderation, partnership, and developer applications. Crew votes advise; the Owner decides.</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -274,19 +271,27 @@ export default function ApplicationsPage() {
             <TabsList>
               <TabsTrigger value="mod">Mod ({modApps.length})</TabsTrigger>
               <TabsTrigger value="partner">Partner ({partnerApps.length})</TabsTrigger>
+              <TabsTrigger value="dev">Developer ({devApps.length})</TabsTrigger>
             </TabsList>
             <TabsContent value="mod" className="space-y-4">
               {modApps.length === 0 ? (
                 <Card><CardContent className="py-8 text-center text-muted-foreground">No mod applications yet</CardContent></Card>
               ) : modApps.map(app => (
-                <ApplicationCard key={app.id} app={app} serverId={serverId!} type="mod" onUpdateStatus={updateStatus} onDelete={deleteApplication} canDecide={isOwner} />
+                <ApplicationCard key={app.id} app={app} serverId={serverId!} type="mod" onUpdateStatus={updateStatus} canDecide={isOwner} />
               ))}
             </TabsContent>
             <TabsContent value="partner" className="space-y-4">
               {partnerApps.length === 0 ? (
                 <Card><CardContent className="py-8 text-center text-muted-foreground">No partner applications yet</CardContent></Card>
               ) : partnerApps.map(app => (
-                <ApplicationCard key={app.id} app={app} serverId={serverId!} type="partner" onUpdateStatus={updateStatus} onDelete={deleteApplication} canDecide={isOwner} />
+                <ApplicationCard key={app.id} app={app} serverId={serverId!} type="partner" onUpdateStatus={updateStatus} canDecide={isOwner} />
+              ))}
+            </TabsContent>
+            <TabsContent value="dev" className="space-y-4">
+              {devApps.length === 0 ? (
+                <Card><CardContent className="py-8 text-center text-muted-foreground">No developer applications yet</CardContent></Card>
+              ) : devApps.map(app => (
+                <ApplicationCard key={app.id} app={app} serverId={serverId!} type="dev" onUpdateStatus={updateStatus} canDecide={isOwner} />
               ))}
             </TabsContent>
           </Tabs>
@@ -333,6 +338,16 @@ export default function ApplicationsPage() {
                   <Label className="text-xs">Partner Rejected</Label>
                   <Textarea value={templates.partnerRejected} onChange={e => setTemplates(t => ({...t, partnerRejected: e.target.value}))} rows={3} className="text-xs" />
                   <Input value={templates.partnerRejectedAttachmentUrl || ''} onChange={e => setTemplates(t => ({...t, partnerRejectedAttachmentUrl: e.target.value}))} placeholder="Optional rejected DM image/resource URL" className="text-xs" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs">Developer Approved</Label>
+                  <Textarea value={templates.devApproved} onChange={e => setTemplates(t => ({...t, devApproved: e.target.value}))} rows={3} className="text-xs" />
+                  <Input value={templates.devApprovedAttachmentUrl || ''} onChange={e => setTemplates(t => ({...t, devApprovedAttachmentUrl: e.target.value}))} placeholder="Optional approved DM image/resource URL" className="text-xs" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs">Developer Rejected</Label>
+                  <Textarea value={templates.devRejected} onChange={e => setTemplates(t => ({...t, devRejected: e.target.value}))} rows={3} className="text-xs" />
+                  <Input value={templates.devRejectedAttachmentUrl || ''} onChange={e => setTemplates(t => ({...t, devRejectedAttachmentUrl: e.target.value}))} placeholder="Optional rejected DM image/resource URL" className="text-xs" />
                 </div>
                 <Button onClick={saveTemplates} disabled={isSavingTemplates} size="sm" className="w-full">
                   {isSavingTemplates ? <Loader2 className="h-3 w-3 mr-2 animate-spin" /> : <Save className="h-3 w-3 mr-2" />}Save Templates
