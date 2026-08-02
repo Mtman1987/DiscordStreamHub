@@ -11,7 +11,8 @@
     "lint": "eslint . --ignore-pattern '.next/**' --ignore-pattern 'node_modules/**'",
     "typecheck": "tsc --noEmit",
     "test:spmt-identity": "node --import tsx --test tests/spmt-points-identity.test.ts",
-    "test:contracts": "node --import tsx --test tests/tenant-contracts.test.ts"
+    "test:contracts": "node --import tsx --test tests/tenant-contracts.test.ts",
+    "test:applications": "node --experimental-strip-types --test tests/application-flow.test.ts"
   },
   "dependencies": {
     "@cfworker/json-schema": "^4.1.1",

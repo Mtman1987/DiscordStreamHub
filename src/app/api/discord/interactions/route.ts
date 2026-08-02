@@ -14,6 +14,14 @@ import {
 } from '@/lib/runtime-config';
 import { grandfatherDiscordIdentity } from '@/lib/spmt-client';
 import { getChatTagServiceSecret, getDshClientSecret } from '@/lib/runtime-secrets';
+import {
+  APPLICATION_DEFINITIONS,
+  APPLICATION_FLOW_VERSION,
+  ApplicationType,
+  buildApplicationModal,
+  buildInquiryMessage,
+  parseApplicationType,
+} from '@/lib/application-flow';
 
 function extractValues(components: any[] = []) {
   const values: Record<string, string> = {};
@@ -30,6 +38,56 @@ function ephemeral(content: string, extra: any = {}) {
     type: 4,
     data: { content, flags: 64, ...extra },
   });
+}
+
+function discordAvatarUrl(user: any) {
+  if (!user?.id || !user?.avatar) return '';
+  const extension = String(user.avatar).startsWith('a_') ? 'gif' : 'png';
+  return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.${extension}?size=256`;
+}
+
+async function sendApplicationInquiry(body: any, type: ApplicationType, serverId: string) {
+  const applicationId = body.application_id || getDiscordClientId();
+  await fetch(`https://discord.com/api/v10/interactions/${body.id}/${body.token}/callback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 5, data: { content: 'Preparing your private SPMT information packet…', flags: 64 } }),
+  });
+
+  const botToken = process.env.DISCORD_BOT_TOKEN || '';
+  const actor = body.member?.user || body.user || {};
+  try {
+    if (!botToken || !actor.id) throw new Error('Discord DM delivery is unavailable.');
+    const [serverDoc, brandingDoc] = await Promise.all([
+      db.collection('servers').doc(serverId).get(),
+      db.collection('servers').doc(serverId).collection('config').doc('branding').get(),
+    ]);
+    const serverName = brandingDoc.data()?.serverName || serverDoc.data()?.serverName || 'SPMT';
+    const dmResponse = await fetch('https://discord.com/api/v10/users/@me/channels', {
+      method: 'POST',
+      headers: { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ recipient_id: actor.id }),
+    });
+    if (!dmResponse.ok) throw new Error('Open your Discord DMs and try again.');
+    const dm = await dmResponse.json();
+    const messageResponse = await fetch(`https://discord.com/api/v10/channels/${dm.id}/messages`, {
+      method: 'POST',
+      headers: { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(buildInquiryMessage(type, serverId, serverName)),
+    });
+    if (!messageResponse.ok) throw new Error('Discord refused the information DM.');
+    await db.collection('servers').doc(serverId).collection('applicationInquiries').add({
+      type,
+      userId: actor.id,
+      username: actor.username || actor.id,
+      sentAt: new Date().toISOString(),
+      flowVersion: APPLICATION_FLOW_VERSION,
+      status: 'informed',
+    });
+    await updateDeferredInteraction(applicationId, body.token, '✅ Check your DMs for the SPMT information packet and application button.');
+  } catch (error) {
+    await updateDeferredInteraction(applicationId, body.token, `⚠️ ${error instanceof Error ? error.message : 'Unable to send the inquiry DM.'}`);
+  }
 }
 
 function twitchLinkModal(serverId: string, suggestedLogin = '') {
@@ -1302,36 +1360,21 @@ export async function POST(request: NextRequest) {
         return new Response(null, { status: 200 });
       }
 
-      if (customId === 'apply_partner') {
-        return NextResponse.json({
-          type: 9,
-          data: {
-            title: 'Partnership Application',
-            custom_id: 'partner_application_submit',
-            components: [
-              { type: 1, components: [{ type: 4, custom_id: 'community_name', label: 'Community Name & Link', style: 1, placeholder: 'e.g. My Gaming Community - discord.gg/example', required: true, max_length: 200 }] },
-              { type: 1, components: [{ type: 4, custom_id: 'community_focus', label: 'Primary Focus of Your Community', style: 2, placeholder: 'What is your community about?', required: true, max_length: 300 }] },
-              { type: 1, components: [{ type: 4, custom_id: 'why_partner', label: 'Why Partner with Space Mountain?', style: 2, placeholder: 'What makes this partnership beneficial?', required: true, max_length: 500 }] },
-              { type: 1, components: [{ type: 4, custom_id: 'contact_info', label: 'Primary Contact (Owner/Admin)', style: 1, placeholder: 'Discord username of main point of contact', required: true, max_length: 100 }] }
-            ]
-          }
-        });
+      const inquiryParts = customId.split(':');
+      const legacyInquiryType = customId === 'apply_mod' ? 'mod' : customId === 'apply_partner' ? 'partner' : null;
+      const inquiryType = legacyInquiryType || (inquiryParts[0] === 'application_inquiry' ? parseApplicationType(inquiryParts[1]) : null);
+      if (inquiryType) {
+        const serverId = inquiryParts[0] === 'application_inquiry' ? inquiryParts.slice(2).join(':') : body.guild_id;
+        if (!serverId) return ephemeral('This inquiry is missing its SPMT server context.');
+        await sendApplicationInquiry(body, inquiryType, serverId);
+        return new Response(null, { status: 200 });
       }
 
-      if (customId === 'apply_mod') {
-        return NextResponse.json({
-          type: 9,
-          data: {
-            title: 'Mod Team Application',
-            custom_id: 'mod_application_submit',
-            components: [
-              { type: 1, components: [{ type: 4, custom_id: 'timezone', label: 'Your Timezone', style: 1, placeholder: 'e.g. EST, PST, GMT+1', required: true, max_length: 50 }] },
-              { type: 1, components: [{ type: 4, custom_id: 'member_duration', label: 'How long have you been a member?', style: 1, placeholder: 'e.g. 6 months, 1 year', required: true, max_length: 100 }] },
-              { type: 1, components: [{ type: 4, custom_id: 'why_mod', label: 'Why join the Mod Team?', style: 2, placeholder: 'What motivates you?', required: true, max_length: 500 }] },
-              { type: 1, components: [{ type: 4, custom_id: 'streamers_meaning', label: 'Streamers supporting Streamers meaning?', style: 2, placeholder: 'In your own words...', required: true, max_length: 500 }] }
-            ]
-          }
-        });
+      if (inquiryParts[0] === 'application_start') {
+        const type = parseApplicationType(inquiryParts[1]);
+        const serverId = inquiryParts.slice(2).join(':');
+        if (!type || !serverId) return ephemeral('This application link is invalid or expired.');
+        return NextResponse.json({ type: 9, data: buildApplicationModal(type, serverId) });
       }
 
       if (customId === 'apply_admin') {
@@ -1803,6 +1846,46 @@ export async function POST(request: NextRequest) {
         });
 
         return new Response(null, { status: 200 });
+      }
+
+      if (customId.startsWith('application_submit:')) {
+        const [, rawType, ...serverParts] = customId.split(':');
+        const type = parseApplicationType(rawType);
+        const serverId = serverParts.join(':');
+        if (!type || !serverId) return ephemeral('🚫 This application form is invalid or expired.');
+        const definition = APPLICATION_DEFINITIONS[type];
+        const actor = body.member?.user || body.user || {};
+        const applications = await db.collection('servers').doc(serverId).collection('applications').get();
+        const duplicate = applications.docs.find((doc: any) => {
+          const data = doc.data();
+          return String(data.userId) === String(userId) && data.type === type && data.status === 'pending';
+        });
+        if (duplicate) return ephemeral('⚠️ You already have a pending application for this role.');
+
+        const values = extractValues(body.data?.components);
+        const answers = definition.questions.map(question => ({
+          id: question.id,
+          question: question.label,
+          answer: String(values[question.id] || '').trim(),
+        }));
+        await db.collection('servers').doc(serverId).collection('applications').add({
+          type,
+          flowVersion: APPLICATION_FLOW_VERSION,
+          userId: String(userId),
+          username: actor.username || String(userId),
+          displayName: actor.global_name || actor.username || String(userId),
+          avatarUrl: discordAvatarUrl(actor),
+          answers,
+          status: 'pending',
+          submittedAt: new Date().toISOString(),
+          agreementDocument: {
+            title: definition.termsTitle,
+            url: definition.termsUrl,
+            hash: definition.termsHash,
+          },
+          stateHistory: [{ status: 'pending', at: new Date().toISOString(), actorId: String(userId) }],
+        });
+        return ephemeral(`✅ Your SPMT ${definition.name.toLowerCase()} application was submitted. Crew may advise, and the Owner makes the final decision.`);
       }
 
       if (customId === 'partner_application_submit') {

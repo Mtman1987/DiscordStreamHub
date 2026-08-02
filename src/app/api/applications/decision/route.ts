@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getHardcodedAdminDiscordId } from '@/lib/runtime-config';
+import { DSH_SPMT_COOKIE, resolveSpmtSession } from '@/lib/spmt-session';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,7 +31,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Status must be approved or rejected' }, { status: 400 });
     }
 
-    if (!isOwner(String(serverId), String(reviewerId))) {
+    const sessionToken = req.cookies.get(DSH_SPMT_COOKIE)?.value || '';
+    if (!sessionToken) return NextResponse.json({ error: 'SPMT owner authorization required' }, { status: 401 });
+    let resolved;
+    try { resolved = await resolveSpmtSession(sessionToken); }
+    catch { return NextResponse.json({ error: 'SPMT owner authorization expired' }, { status: 401 }); }
+    const sessionReviewerId = String(resolved.session.discordUserId || '');
+    if (sessionReviewerId !== String(reviewerId) || !isOwner(String(serverId), sessionReviewerId)) {
       return NextResponse.json({ error: 'Only the server owner can approve or reject applications' }, { status: 403 });
     }
 
@@ -41,13 +48,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Application not found' }, { status: 404 });
     }
 
+    const now = new Date().toISOString();
+    const application = appDoc.data() || {};
     await appRef.update({
       status,
-      reviewedAt: new Date().toISOString(),
-      reviewedBy: reviewerId,
+      reviewedAt: now,
+      reviewedBy: sessionReviewerId,
+      stateHistory: [...(application.stateHistory || []), { status, at: now, actorId: sessionReviewerId }],
     });
 
-    return NextResponse.json({ success: true, application: { id: applicationId, ...appDoc.data() } });
+    const response = NextResponse.json({ success: true, application: { id: applicationId, ...application, status } });
+    if (resolved.token !== sessionToken) response.cookies.set(DSH_SPMT_COOKIE, resolved.token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/', maxAge: 60 * 60 * 24 * 30 });
+    return response;
   } catch (error) {
     console.error('Error updating application decision:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
