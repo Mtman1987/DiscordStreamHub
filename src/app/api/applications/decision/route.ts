@@ -50,14 +50,36 @@ export async function POST(req: NextRequest) {
 
     const now = new Date().toISOString();
     const application = appDoc.data() || {};
+    const nextHistory = [
+      ...(Array.isArray(application.stateHistory) ? application.stateHistory : []),
+      { status, at: now, actorId: sessionReviewerId },
+      { status: 'archived', decisionStatus: status, at: now, actorId: sessionReviewerId, reason: 'final-decision' },
+    ];
+
     await appRef.update({
       status,
       reviewedAt: now,
       reviewedBy: sessionReviewerId,
-      stateHistory: [...(application.stateHistory || []), { status, at: now, actorId: sessionReviewerId }],
+      archivedAt: now,
+      archivedBy: sessionReviewerId,
+      archiveReason: 'final-decision',
+      stateHistory: nextHistory,
     });
 
-    const response = NextResponse.json({ success: true, application: { id: applicationId, ...application, status } });
+    const response = NextResponse.json({
+      success: true,
+      application: {
+        id: applicationId,
+        ...application,
+        status,
+        reviewedAt: now,
+        reviewedBy: sessionReviewerId,
+        archivedAt: now,
+        archivedBy: sessionReviewerId,
+        archiveReason: 'final-decision',
+        stateHistory: nextHistory,
+      },
+    });
     if (resolved.token !== sessionToken) response.cookies.set(DSH_SPMT_COOKIE, resolved.token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/', maxAge: 60 * 60 * 24 * 30 });
     return response;
   } catch (error) {
