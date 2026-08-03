@@ -736,7 +736,7 @@ export async function POST(request: NextRequest) {
     // bang commands once to StreamWeaver so its command dispatcher can reply
     // through the configured Discord bot/webhook path. HearMeOut and Chat Tag
     // commands return above and therefore are not duplicated here.
-    if (dispatch && message.trim().startsWith('!')) {
+    if (dispatch && isDirectMessage && message.trim().startsWith('!')) {
       try {
         logDiscordTrace(traceId, 'route-selected', {
           route: 'streamweaver-command',
@@ -775,7 +775,7 @@ export async function POST(request: NextRequest) {
     let streamweaverFanout: Awaited<ReturnType<typeof fanoutToStreamWeaver>> | null = null;
     const shouldFanoutToStreamWeaver =
       dispatch
-      && !isDirectMessage
+      && isDirectMessage
       && !isBotAuthor
       && !isSpmtCommand
       && Boolean(channelId)
@@ -788,8 +788,8 @@ export async function POST(request: NextRequest) {
         destination: 'streamweaver:/api/discord/chat',
         reason: !dispatch
           ? 'dispatch-disabled'
-          : isDirectMessage
-          ? 'dm-owned-by-streamweaver-sweep'
+          : !isDirectMessage
+          ? 'public-owned-by-kite'
           : isBotAuthor
           ? 'bot-author-loop-protection'
           : isSpmtCommand
