@@ -4,11 +4,22 @@ import { db } from '@/data/server-init';
 import { getValidBotAccessToken } from './twitch-oauth-service';
 import { getHardcodedAdminTwitchId, getStreamweaverUrl } from './runtime-config';
 
+const ATHENA_OWNER_WINDOW_MS = 10 * 60 * 1000;
+
+type AthenaChannelAccess = {
+  ownerWindowUntil: number;
+  broadcasterAuthorized: boolean;
+  deniedUserIds: Set<string>;
+};
+
 class TwitchChatService {
   private client: tmi.Client | null = null;
   private serverId: string | null = null;
   private allowedUserIds: Set<string> = new Set();
   private allowedLogins: Set<string> = new Set();
+  private channelBroadcasterIds: Map<string, string> = new Map();
+  private athenaHomeChannel: string | null = null;
+  private athenaChannelAccess: Map<string, AthenaChannelAccess> = new Map();
   private status: 'idle' | 'starting' | 'connected' | 'waiting-for-live-channels' | 'disabled' | 'error' = 'idle';
   private joinedChannels: Set<string> = new Set();
   private lastError: string | null = null;
@@ -72,7 +83,10 @@ class TwitchChatService {
     });
     this.client.on('part', (channel) => {
       const normalized = normalizeChannel(channel);
-      if (normalized) this.joinedChannels.delete(normalized);
+      if (normalized) {
+        this.joinedChannels.delete(normalized);
+        this.athenaChannelAccess.delete(normalized);
+      }
     });
     this.client.on('disconnected', (reason) => {
       this.status = 'error';
@@ -102,11 +116,20 @@ class TwitchChatService {
     const usersSnapshot = await db.collection('servers').doc(this.serverId!).collection('users').get();
     this.allowedUserIds.clear();
     this.allowedLogins.clear();
-    
+    this.channelBroadcasterIds.clear();
+    this.athenaHomeChannel = null;
+    const adminTwitchId = String(getHardcodedAdminTwitchId() || '').trim();
+
     usersSnapshot.docs.forEach((doc: { data: () => any }) => {
       const data = doc.data();
-      if (data.twitchId) this.allowedUserIds.add(data.twitchId);
-      if (data.twitchLogin) this.allowedLogins.add(data.twitchLogin.toLowerCase());
+      const twitchId = String(data.twitchId || '').trim();
+      const twitchLogin = normalizeChannel(data.twitchLogin);
+      if (twitchId) this.allowedUserIds.add(twitchId);
+      if (twitchLogin) this.allowedLogins.add(twitchLogin);
+      if (twitchId && twitchLogin) this.channelBroadcasterIds.set(twitchLogin, twitchId);
+      if (adminTwitchId && twitchId === adminTwitchId && twitchLogin) {
+        this.athenaHomeChannel = twitchLogin;
+      }
     });
   }
 
@@ -130,24 +153,29 @@ class TwitchChatService {
     const twitchUserId = String(tags['user-id'] || '');
     const login = String(tags.username || '').toLowerCase();
     const displayName = String(tags['display-name'] || tags.username || '');
+    const targetChannel = normalizeChannel(channel);
     this.lastMessageAt = new Date().toISOString();
 
-    if (self || !twitchUserId || !this.allowedUserIds.has(twitchUserId)) return;
+    if (self || !twitchUserId || !targetChannel) return;
 
-    await awardPoints({
-      serverId: this.serverId!,
-      userId: twitchUserId,
-      eventType: 'chat_activity',
-      quantity: 1,
-      source: 'twitch',
-      metadata: { username: displayName || login, channel }
-    });
+    const isSpmtMember = this.allowedUserIds.has(twitchUserId);
+    if (isSpmtMember) {
+      await awardPoints({
+        serverId: this.serverId!,
+        userId: twitchUserId,
+        eventType: 'chat_activity',
+        quantity: 1,
+        source: 'twitch',
+        metadata: { username: displayName || login, channel: targetChannel }
+      });
+    }
 
-    await this.maybeForwardAthenaMention(channel, {
+    await this.maybeHandleAthenaVisitorMessage(targetChannel, {
       twitchUserId,
       login,
       displayName,
       message,
+      isSpmtMember,
     });
   }
 
@@ -250,6 +278,7 @@ class TwitchChatService {
       if (!liveChannels.includes(channel)) {
         await this.client.part(channel);
         this.joinedChannels.delete(channel);
+        this.athenaChannelAccess.delete(channel);
         console.log(`[TwitchChat] Parted offline Space Mountain channel #${channel}`);
       }
     }
@@ -262,6 +291,7 @@ class TwitchChatService {
     }
     this.status = 'idle';
     this.joinedChannels.clear();
+    this.athenaChannelAccess.clear();
   }
 
   getStatus() {
@@ -278,25 +308,98 @@ class TwitchChatService {
       lastUpdatedAt: this.lastUpdatedAt,
       lastMessageAt: this.lastMessageAt,
       lastAthenaForwardAt: this.lastAthenaForwardAt,
+      athenaHomeChannel: this.athenaHomeChannel,
+      activeAthenaVisitorChannels: Array.from(this.athenaChannelAccess.entries())
+        .filter(([, access]) => access.broadcasterAuthorized || access.ownerWindowUntil > Date.now())
+        .map(([channel]) => channel)
+        .sort(),
     };
   }
 
-  private async maybeForwardAthenaMention(channel: string, input: {
+  private async maybeHandleAthenaVisitorMessage(channel: string, input: {
+    twitchUserId: string;
+    login: string;
+    displayName: string;
+    message: string;
+    isSpmtMember: boolean;
+  }): Promise<void> {
+    // Streamweaver already owns Athena in her normal tenant channel.
+    if (channel === this.athenaHomeChannel) return;
+
+    const broadcasterId = this.channelBroadcasterIds.get(channel);
+    const isBroadcaster = Boolean(broadcasterId && input.twitchUserId === broadcasterId);
+    const normalizedMessage = input.message.trim().toLowerCase();
+
+    if (normalizedMessage === '!spmt') {
+      if (!isBroadcaster) return;
+      const access = this.getAthenaAccess(channel);
+      access.broadcasterAuthorized = true;
+      access.deniedUserIds.clear();
+      await this.sayInChannel(
+        channel,
+        `Athena is available for the rest of this stream at ${input.displayName || input.login}'s request.`,
+      );
+      console.log(`[TwitchChat] Broadcaster authorized Athena for #${channel}`);
+      return;
+    }
+
+    if (!isExplicitAthenaInvocation(input.message)) return;
+
+    const adminTwitchId = String(getHardcodedAdminTwitchId() || '').trim();
+    const isOwner = Boolean(adminTwitchId && input.twitchUserId === adminTwitchId);
+    const access = this.getAthenaAccess(channel);
+    const now = Date.now();
+
+    if (isOwner) {
+      access.ownerWindowUntil = now + ATHENA_OWNER_WINDOW_MS;
+      access.deniedUserIds.clear();
+    }
+
+    const ownerWindowOpen = access.ownerWindowUntil > now;
+    const mayRespond = isOwner
+      || access.broadcasterAuthorized
+      || (ownerWindowOpen && input.isSpmtMember);
+    if (!mayRespond) {
+      if (ownerWindowOpen && !input.isSpmtMember && !access.deniedUserIds.has(input.twitchUserId)) {
+        access.deniedUserIds.add(input.twitchUserId);
+        await this.sayInChannel(
+          channel,
+          `Sorry—while visiting ${channel}'s chat, I can only answer Space Mountain members without the streamer's express permission.`,
+        );
+      }
+      return;
+    }
+
+    await this.forwardAthenaMessage(channel, input);
+  }
+
+  private getAthenaAccess(channel: string): AthenaChannelAccess {
+    const existing = this.athenaChannelAccess.get(channel);
+    if (existing) return existing;
+    const created: AthenaChannelAccess = {
+      ownerWindowUntil: 0,
+      broadcasterAuthorized: false,
+      deniedUserIds: new Set(),
+    };
+    this.athenaChannelAccess.set(channel, created);
+    return created;
+  }
+
+  private async sayInChannel(channel: string, message: string): Promise<void> {
+    if (!this.client || !this.joinedChannels.has(channel)) return;
+    await this.client.say(channel, message);
+  }
+
+  private async forwardAthenaMessage(channel: string, input: {
     twitchUserId: string;
     login: string;
     displayName: string;
     message: string;
   }): Promise<void> {
-    const adminTwitchId = String(getHardcodedAdminTwitchId() || '').trim();
-    const isOwner = Boolean(adminTwitchId && input.twitchUserId === adminTwitchId);
-    if (!isOwner) return;
-    if (!/\b(?:athena|annie|athenabot87)\b/i.test(input.message)) return;
-
     const streamweaverSecret = String(process.env.STREAMWEAVER_SECRET || '').trim();
     const streamweaverBase = getStreamweaverUrl().replace(/\/$/, '');
-    const tenantId = adminTwitchId;
-    const targetChannel = normalizeChannel(channel);
-    if (!tenantId || !targetChannel) return;
+    const tenantId = String(getHardcodedAdminTwitchId() || '').trim();
+    if (!tenantId) return;
 
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (streamweaverSecret) headers.Authorization = `Bearer ${streamweaverSecret}`;
@@ -311,7 +414,8 @@ class TwitchChatService {
           userId: input.twitchUserId,
           displayName: input.displayName || input.login,
           message: input.message,
-          channelName: targetChannel,
+          channelName: channel,
+          channelType: 'visitor-channel',
           context: 'twitch-cross-bot',
           responseName: 'Athena',
         }),
@@ -327,32 +431,21 @@ class TwitchChatService {
       const reply = String(data?.response || data?.message || '').trim();
       if (!reply) return;
 
-      const sendResponse = await fetch(`${streamweaverBase}/api/twitch/send-message`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          tenantId,
-          targetChannel,
-          as: 'bot',
-          bridgeToDiscord: false,
-          message: reply,
-        }),
-        cache: 'no-store',
-      });
-
-      if (!sendResponse.ok) {
-        const body = await sendResponse.text().catch(() => '');
-        throw new Error(`Twitch send failed: ${sendResponse.status} ${body.slice(0, 200)}`);
-      }
-
+      await this.sayInChannel(channel, reply);
       this.lastAthenaForwardAt = new Date().toISOString();
-      console.log(`[TwitchChat] Athena forwarded owner mention from ${input.login} in #${targetChannel}`);
+      console.log(`[TwitchChat] Athena visitor reply sent for ${input.login} in #${channel}`);
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       this.lastError = `Athena forward failed: ${msg}`;
       console.error('[TwitchChat] Athena forward failed:', error);
     }
   }
+
+}
+
+export function isExplicitAthenaInvocation(message: string): boolean {
+  const normalized = String(message || '').trim();
+  return /^(?:!athena\b|@athenabot87\b|(?:hey\s+)?athena\b)/i.test(normalized);
 }
 
 function normalizeChannel(channel: string): string {
