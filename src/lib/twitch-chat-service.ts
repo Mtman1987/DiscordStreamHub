@@ -3,6 +3,7 @@ import { awardPoints } from './points-service';
 import { db } from '@/data/server-init';
 import { getValidBotAccessToken } from './twitch-oauth-service';
 import { getHardcodedAdminTwitchId, getStreamweaverUrl } from './runtime-config';
+import { isExplicitAthenaInvocation } from './athena-visitor-gate';
 
 const ATHENA_OWNER_WINDOW_MS = 10 * 60 * 1000;
 
@@ -387,7 +388,7 @@ class TwitchChatService {
 
   private async sayInChannel(channel: string, message: string): Promise<void> {
     if (!this.client || !this.joinedChannels.has(channel)) return;
-    await this.client.say(channel, message);
+    await this.client.say(`#${channel}`, message);
   }
 
   private async forwardAthenaMessage(channel: string, input: {
@@ -441,11 +442,6 @@ class TwitchChatService {
     }
   }
 
-}
-
-export function isExplicitAthenaInvocation(message: string): boolean {
-  const normalized = String(message || '').trim();
-  return /^(?:!athena\b|@athenabot87\b|(?:hey\s+)?athena\b)/i.test(normalized);
 }
 
 function normalizeChannel(channel: string): string {
