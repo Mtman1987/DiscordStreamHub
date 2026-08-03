@@ -190,8 +190,9 @@ async function awardCanonicalDshXp(input: {
 }) {
   try {
     const isTwitchMessage = input.eventType === 'chat_activity' && input.source === 'twitch';
+    const isTwitchBits = input.eventType === 'bits' && input.source === 'twitch';
     const mappedEventType = DSH_XP_EVENT_MAP[input.eventType];
-    if ((!mappedEventType && !isTwitchMessage) || input.pointsAwarded <= 0 || input.source === 'manual') return;
+    if ((!mappedEventType && !isTwitchMessage && !isTwitchBits) || input.pointsAwarded <= 0 || input.source === 'manual') return;
 
     const identity = await resolveSpmtUserForPoints(input);
     const spmtUserId = identity?.user?.id;
@@ -204,14 +205,19 @@ async function awardCanonicalDshXp(input: {
       pointsEventType: input.eventType,
       ...(input.metadata || {}),
     };
-    const award = isTwitchMessage
+    const customTwitchEventType = isTwitchMessage
+      ? 'dsh-twitch-message'
+      : isTwitchBits
+      ? 'dsh-twitch-bits'
+      : null;
+    const award = customTwitchEventType
       ? {
           userId: spmtUserId,
           sourceApp: 'discord-stream-hub',
-          eventType: 'dsh-twitch-message',
+          eventType: customTwitchEventType,
           idempotencyKey: buildXpIdempotencyKey({
             sourceApp: 'discord-stream-hub',
-            eventType: 'dsh-twitch-message',
+            eventType: customTwitchEventType,
             upstreamEventId: input.eventLogId,
             userId: spmtUserId,
           }),
