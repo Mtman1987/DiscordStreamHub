@@ -7,7 +7,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
+  pull-requests: read
 
 jobs:
   deploy-web:
@@ -46,3 +47,56 @@ jobs:
       - name: Deploy clip worker
         working-directory: clip-worker
         run: flyctl deploy --remote-only --config fly.toml --access-token "$FLY_API_TOKEN"
+
+  cleanup-merged-branch:
+    name: Delete merged feature branch after deployment
+    runs-on: ubuntu-latest
+    needs: [deploy-web, deploy-clip-worker]
+    if: ${{ success() && github.event_name == 'push' }}
+    steps:
+      - name: Delete the merged pull-request branch
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const sha = context.sha;
+            const { data: pulls } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+              owner,
+              repo,
+              commit_sha: sha,
+            });
+
+            const mergedPull = pulls.find((pull) =>
+              pull.merged_at &&
+              pull.base.ref === context.payload.repository.default_branch &&
+              pull.head.repo?.full_name === `${owner}/${repo}`
+            );
+
+            if (!mergedPull) {
+              core.notice(`No same-repository merged PR found for ${sha}; no branch deleted.`);
+              return;
+            }
+
+            const branch = mergedPull.head.ref;
+            const protectedBranches = new Set([
+              context.payload.repository.default_branch,
+              'main',
+              'master',
+              'production',
+              'develop',
+            ]);
+            if (!branch || protectedBranches.has(branch)) {
+              core.notice(`Refusing to delete protected branch: ${branch || '(missing)'}`);
+              return;
+            }
+
+            try {
+              await github.rest.git.deleteRef({ owner, repo, ref: `heads/${branch}` });
+              core.notice(`Deleted merged branch ${branch} after successful deployment.`);
+            } catch (error) {
+              if (error.status === 422 || error.status === 404) {
+                core.notice(`Branch ${branch} was already deleted or unavailable.`);
+                return;
+              }
+              throw error;
+            }
