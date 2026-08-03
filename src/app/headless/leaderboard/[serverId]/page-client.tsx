@@ -1,19 +1,26 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import Image from 'next/image';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { DataComponentsProvider, useCollection, useDataStore } from '@/data';
-import { collection, query, orderBy, limit } from '@/lib/data-shim';
+import { collection, limit, orderBy, query } from '@/lib/data-shim';
 import type { LeaderboardEntry, UserProfile } from '@/lib/types';
 import type { ServerBranding } from '@/lib/tenant-utils';
-import * as React from 'react';
+
+const FALLBACK_AVATAR = 'https://spacemountain.live/assets/space-logo-main.png';
 
 interface FormattedLeaderboardEntry {
   username: string;
   points: number;
   rank: number;
-  avatarUrl?: string;
+  avatarUrl: string;
+}
+
+function rankLabel(rank: number): string {
+  if (rank === 1) return '1';
+  if (rank === 2) return '2';
+  if (rank === 3) return '3';
+  return `#${rank}`;
 }
 
 function LeaderboardComponent({ branding }: { branding: ServerBranding }) {
@@ -21,11 +28,8 @@ function LeaderboardComponent({ branding }: { branding: ServerBranding }) {
   const serverId = params.serverId as string;
   const store = useDataStore();
   const [leaderboard, setLeaderboard] = useState<FormattedLeaderboardEntry[]>([]);
-  const serverName = branding.serverName;
-  const memberName = branding.communityMemberName;
-  const memberNamePlural = branding.communityMemberNamePlural;
 
-  const leaderboardQuery = React.useMemo(() => {
+  const leaderboardQuery = useMemo(() => {
     if (!store || !serverId) return null;
     return query(collection(store, 'servers', serverId, 'leaderboard'), orderBy('points', 'desc'), limit(10));
   }, [store, serverId]);
@@ -34,160 +38,96 @@ function LeaderboardComponent({ branding }: { branding: ServerBranding }) {
   const { data: allUsers } = useCollection<UserProfile>(collection(store, 'servers', serverId, 'users'));
 
   useEffect(() => {
-    if (rawLeaderboard && allUsers) {
-      const userMap = new Map(allUsers.map(user => [user.id, user]));
-      const formattedData = rawLeaderboard.map((entry, index) => {
-        const user = userMap.get(entry.userProfileId);
-        return {
-          username: user?.username || entry.userProfileId,
-          points: entry.points || 0,
-          rank: index + 1,
-          avatarUrl: user?.avatarUrl,
-        };
-      });
-      setLeaderboard(formattedData);
+    if (!rawLeaderboard || !allUsers) return;
+
+    const usersById = new Map<string, UserProfile>();
+    for (const user of allUsers) {
+      usersById.set(String(user.id), user);
+      if (user.discordUserId) usersById.set(String(user.discordUserId), user);
     }
+
+    setLeaderboard(rawLeaderboard.map((entry, index) => {
+      const user = usersById.get(String(entry.userProfileId));
+      return {
+        username: user?.username || String(entry.userProfileId),
+        points: Number(entry.points || 0),
+        rank: index + 1,
+        avatarUrl: user?.avatarUrl || FALLBACK_AVATAR,
+      };
+    }));
   }, [rawLeaderboard, allUsers]);
 
   return (
-    <div className="leaderboard min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 relative overflow-hidden">
-      {/* Animated background elements */}
-      <div className="absolute inset-0">
-        <div className="stars absolute inset-0 opacity-60"></div>
-        <div className="rockets absolute inset-0"></div>
-      </div>
+    <main className="leaderboard relative w-[1200px] overflow-hidden bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 px-20 py-10 text-white">
+      <div className="stars pointer-events-none absolute inset-0 opacity-50" />
 
-      {/* Main content */}
-      <div className="relative z-10 p-8">
-        <div className="text-center mb-6">
-          <h1 className="text-5xl font-bold text-white mb-3 animate-pulse">
-            🚀 {serverName.toUpperCase()} LEADERBOARD 🚀
-          </h1>
-          <div className="text-xl text-yellow-300 animate-bounce">
-            ⭐ TOP {memberNamePlural.toUpperCase()} ⭐
-          </div>
-        </div>
+      <section className="relative z-10">
+        <header className="mb-7 text-center">
+          <h1 className="mb-2 text-5xl font-bold">SPACE MOUNTAIN LEADERBOARD</h1>
+          <p className="text-xl font-semibold text-yellow-300">TOP {branding.communityMemberNamePlural.toUpperCase()}</p>
+        </header>
 
-        <div className="max-w-5xl mx-auto">
-          {leaderboard.map((entry, index) => (
-            <div
-              key={entry.username}
-              className="leaderboard-entry mb-3 rounded-xl border border-blue-300/50 bg-slate-950/70 p-4 shadow-lg shadow-cyan-500/10 backdrop-blur-sm transition-all duration-1000 animate-slideIn"
-              style={{ animationDelay: `${index * 0.2}s` }}
+        <div className="mx-auto flex max-w-5xl flex-col gap-3">
+          {leaderboard.map((entry) => (
+            <article
+              key={`${entry.rank}:${entry.username}`}
+              className="leaderboard-entry flex min-h-[86px] items-center justify-between rounded-xl border border-blue-300/50 bg-slate-950/80 px-5 py-3 shadow-lg shadow-cyan-500/10"
             >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-4">
-                  <div className={`rank-badge text-3xl font-bold ${
-                    index === 0 ? 'text-yellow-300' :
-                    index === 1 ? 'text-gray-300' :
-                    index === 2 ? 'text-orange-300' :
-                    'text-blue-300'
-                  }`}>
-                    {index === 0 ? '👑' : index === 1 ? '🥈' : index === 2 ? '🥉' : `#${entry.rank}`}
-                  </div>
-                  
-                  <div className="avatar w-16 h-16 rounded-full bg-gradient-to-br from-blue-400 to-purple-600 flex items-center justify-center text-2xl font-bold text-white">
-                    {entry.avatarUrl ? (
-                      <Image
-                        src={entry.avatarUrl}
-                        alt={entry.username}
-                        width={64}
-                        height={64}
-                        unoptimized
-                        className="w-full h-full rounded-full object-cover"
-                      />
-                    ) : (
-                      entry.username.charAt(0).toUpperCase()
-                    )}
-                  </div>
-                  
-                  <div>
-                    <div className="text-2xl font-bold text-white">{entry.username}</div>
-                    <div className="text-lg text-blue-200">{memberName}</div>
-                  </div>
+              <div className="flex min-w-0 items-center gap-4">
+                <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-2 text-2xl font-extrabold ${
+                  entry.rank === 1 ? 'border-yellow-300 bg-yellow-400/20 text-yellow-200' :
+                  entry.rank === 2 ? 'border-slate-300 bg-slate-300/20 text-slate-100' :
+                  entry.rank === 3 ? 'border-orange-300 bg-orange-400/20 text-orange-200' :
+                  'border-blue-300/60 bg-blue-400/10 text-blue-200'
+                }`}>
+                  {rankLabel(entry.rank)}
                 </div>
-                
-                <div className="text-right">
-                  <div className="text-3xl font-bold text-yellow-300 animate-pulse">
-                    {entry.points.toLocaleString()}
-                  </div>
-                  <div className="text-lg text-blue-200">Points</div>
+
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={entry.avatarUrl}
+                  alt={`${entry.username} avatar`}
+                  width={64}
+                  height={64}
+                  className="h-16 w-16 shrink-0 rounded-full border-2 border-blue-200/40 bg-slate-900 object-cover"
+                  onError={(event) => {
+                    const image = event.currentTarget;
+                    if (image.src !== FALLBACK_AVATAR) image.src = FALLBACK_AVATAR;
+                  }}
+                />
+
+                <div className="min-w-0">
+                  <div className="truncate text-2xl font-bold">{entry.username}</div>
+                  <div className="text-lg text-blue-200">{branding.communityMemberName}</div>
                 </div>
               </div>
-            </div>
+
+              <div className="shrink-0 text-right">
+                <div className="text-3xl font-bold text-yellow-300">{entry.points.toLocaleString()}</div>
+                <div className="text-lg text-blue-200">Points</div>
+              </div>
+            </article>
           ))}
         </div>
 
-        <div className="text-center mt-8">
-          <div className="text-xl text-white animate-bounce">
-            🌟 Join {serverName} to climb the ranks! 🌟
-          </div>
-        </div>
-      </div>
+        <footer className="mt-7 text-center text-xl text-white">
+          Join {branding.serverName} to climb the ranks!
+        </footer>
+      </section>
 
       <style jsx>{`
         .stars {
           background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="20" cy="20" r="1" fill="white" opacity="0.8"/><circle cx="80" cy="30" r="0.5" fill="white" opacity="0.6"/><circle cx="60" cy="70" r="1" fill="white" opacity="0.7"/><circle cx="30" cy="80" r="0.5" fill="white" opacity="0.5"/><circle cx="10" cy="50" r="0.8" fill="white" opacity="0.9"/><circle cx="90" cy="60" r="0.6" fill="white" opacity="0.7"/></svg>') repeat;
-          animation: twinkle 3s ease-in-out infinite alternate;
-        }
-        
-        .rockets::before {
-          content: '🚀';
-          position: absolute;
-          font-size: 2rem;
-          animation: rocket-fly 15s linear infinite;
-          top: 20%;
-          left: -5%;
-        }
-        
-        .rockets::after {
-          content: '🛸';
-          position: absolute;
-          font-size: 1.5rem;
-          animation: ufo-fly 20s linear infinite reverse;
-          top: 60%;
-          right: -5%;
-        }
-        
-        @keyframes twinkle {
-          0% { opacity: 0.3; }
-          100% { opacity: 1; }
-        }
-        
-        @keyframes rocket-fly {
-          0% { transform: translateX(-100px) rotate(45deg); }
-          100% { transform: translateX(calc(100vw + 100px)) rotate(45deg); }
-        }
-        
-        @keyframes ufo-fly {
-          0% { transform: translateX(100px) rotate(-10deg); }
-          100% { transform: translateX(calc(-100vw - 100px)) rotate(10deg); }
-        }
-        
-        @keyframes slideIn {
-          0% { 
-            opacity: 0; 
-            transform: translateX(-100px) scale(0.8); 
-          }
-          100% { 
-            opacity: 1; 
-            transform: translateX(0) scale(1); 
-          }
-        }
-        
-        .animate-slideIn {
-          animation: slideIn 0.8s ease-out forwards;
         }
       `}</style>
-    </div>
+    </main>
   );
 }
 
-
 export default function HeadlessLeaderboardClientPage({ branding }: { branding: ServerBranding }) {
-    return (
-        <DataComponentsProvider>
-            <LeaderboardComponent branding={branding} />
-        </DataComponentsProvider>
-    )
+  return (
+    <DataComponentsProvider>
+      <LeaderboardComponent branding={branding} />
+    </DataComponentsProvider>
+  );
 }
