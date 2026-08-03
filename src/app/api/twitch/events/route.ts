@@ -3,11 +3,8 @@ import { db } from '@/lib/db';
 import { awardPoints } from '@/lib/points-service';
 import { getHardcodedGuildId } from '@/lib/runtime-config';
 
-const CHAT_COOLDOWN_MS = 5 * 60 * 1000;
-const chatCooldowns = new Map<string, number>();
-
 // POST /api/twitch/events
-// Chat-tag forwards Twitch events here for points tracking
+// Global SPMT Twitch event ingress. Tenant events belong to Streamweaver.
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -29,22 +26,15 @@ export async function POST(request: NextRequest) {
     const discordUserId = usersSnapshot.docs[0].id;
 
     switch (type) {
-      case 'chat': {
-        const now = Date.now();
-        const key = twitchId || twitchLogin;
-        const last = chatCooldowns.get(key);
-        if (last && now - last < CHAT_COOLDOWN_MS) {
-          return NextResponse.json({ success: true, skipped: true, reason: 'cooldown' });
-        }
-        chatCooldowns.set(key, now);
-
-        const result = await awardPoints({
-          serverId, userId: discordUserId, eventType: 'chat_activity',
-          quantity: 1, source: 'twitch',
-          metadata: { username: username || twitchLogin, twitchLogin, twitchId, channel }
+      case 'chat':
+        // Global Twitch chat XP is owned by the direct all-members TMI listener.
+        // Forwarded chat would award the same message twice.
+        return NextResponse.json({
+          success: true,
+          skipped: true,
+          scope: 'global',
+          reason: 'direct-listener-owned',
         });
-        return NextResponse.json({ success: true, pointsAwarded: result.pointsAwarded });
-      }
 
       case 'raid': {
         const result = await awardPoints({
@@ -53,7 +43,7 @@ export async function POST(request: NextRequest) {
           metadata: { username: username || twitchLogin, twitchLogin, twitchId, channel, viewers }
         });
         console.log(`[TwitchEvents] Raid: ${twitchLogin} → ${channel} (${viewers} viewers) +${result.pointsAwarded}pts`);
-        return NextResponse.json({ success: true, pointsAwarded: result.pointsAwarded });
+        return NextResponse.json({ success: true, scope: 'global', pointsAwarded: result.pointsAwarded });
       }
 
       case 'subscription':
@@ -64,7 +54,7 @@ export async function POST(request: NextRequest) {
           metadata: { username: username || twitchLogin, twitchLogin, twitchId, channel }
         });
         console.log(`[TwitchEvents] Sub: ${twitchLogin} +${result.pointsAwarded}pts`);
-        return NextResponse.json({ success: true, pointsAwarded: result.pointsAwarded });
+        return NextResponse.json({ success: true, scope: 'global', pointsAwarded: result.pointsAwarded });
       }
 
       case 'gift_sub':
@@ -76,7 +66,7 @@ export async function POST(request: NextRequest) {
           metadata: { username: username || twitchLogin, twitchLogin, twitchId, channel, recipient, giftCount }
         });
         console.log(`[TwitchEvents] Gift sub: ${twitchLogin} x${giftCount} +${result.pointsAwarded}pts`);
-        return NextResponse.json({ success: true, pointsAwarded: result.pointsAwarded });
+        return NextResponse.json({ success: true, scope: 'global', pointsAwarded: result.pointsAwarded });
       }
 
       case 'cheer': {
@@ -90,7 +80,7 @@ export async function POST(request: NextRequest) {
           metadata: { username: username || twitchLogin, twitchLogin, twitchId, channel, bits: bitCount }
         });
         console.log(`[TwitchEvents] Cheer: ${twitchLogin} ${bitCount} bits +${result.pointsAwarded}pts`);
-        return NextResponse.json({ success: true, pointsAwarded: result.pointsAwarded });
+        return NextResponse.json({ success: true, scope: 'global', pointsAwarded: result.pointsAwarded });
       }
 
       case 'follow': {
@@ -100,7 +90,7 @@ export async function POST(request: NextRequest) {
           metadata: { username: username || twitchLogin, twitchLogin, twitchId, channel }
         });
         console.log(`[TwitchEvents] Follow: ${twitchLogin} +${result.pointsAwarded}pts`);
-        return NextResponse.json({ success: true, pointsAwarded: result.pointsAwarded });
+        return NextResponse.json({ success: true, scope: 'global', pointsAwarded: result.pointsAwarded });
       }
 
       default:
