@@ -10,6 +10,7 @@
     "start": "next start",
     "lint": "eslint . --ignore-pattern '.next/**' --ignore-pattern 'node_modules/**'",
     "typecheck": "tsc --noEmit",
+    "test:athena-gate": "node --import tsx --test tests/athena-visitor-gate.test.ts",
     "test:spmt-identity": "node --import tsx --test tests/spmt-points-identity.test.ts",
     "test:contracts": "node --import tsx --test tests/tenant-contracts.test.ts",
     "test:applications": "node --experimental-strip-types --test tests/application-flow.test.ts"
