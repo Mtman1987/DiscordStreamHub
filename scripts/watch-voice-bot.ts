@@ -677,10 +677,59 @@ async function getOrJoinPlayback(message: Message, sessionId: string) {
   return playback;
 }
 
+async function forwardUnhandledDm(message: Message) {
+  const payload = {
+    userId: message.author.id,
+    userName: message.author.globalName || message.author.username,
+    displayName: message.author.globalName || message.author.username,
+    userAvatar: message.author.displayAvatarURL({ size: 256 }),
+    channelId: message.channelId,
+    messageId: message.id,
+    message: message.content,
+    content: message.content,
+    isDM: true,
+    isDirectMessage: true,
+    dispatch: true,
+    source: 'dsh-discord-gateway',
+    author: {
+      id: message.author.id,
+      username: message.author.username,
+      bot: message.author.bot,
+    },
+    attachments: [...message.attachments.values()].map((attachment) => ({
+      id: attachment.id,
+      name: attachment.name,
+      url: attachment.url,
+      proxyUrl: attachment.proxyURL,
+      contentType: attachment.contentType,
+      size: attachment.size,
+    })),
+    embeds: message.embeds.map((embed) => embed.toJSON()),
+  };
+
+  const response = await fetch(`${DSH_BASE_URL}/api/discord/chat`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-chat-origin': 'dsh-discord-gateway',
+      'x-discord-trace-id': message.id,
+    },
+    body: JSON.stringify(payload),
+  });
+  const result = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(`Discord DM forward failed: ${response.status} ${JSON.stringify(result)}`);
+  }
+  console.log(`[WatchVoice] Forwarded Discord DM from ${message.author.username} to DSH chat`);
+}
+
 async function handleMessage(message: Message) {
   if (message.author.bot) return;
   if (await handleApplicationDm(message)) return;
-  if (!message.guild) return;
+  if (!message.guild) {
+    await forwardUnhandledDm(message);
+    return;
+  }
 
   const djCommand = parseDjCommand(message.content);
   if (djCommand) {
