@@ -6,6 +6,7 @@ declare module 'tmi.js' {
     getChannels(): string[];
     join(channel: string): Promise<[string, number]>;
     part(channel: string): Promise<[string, number]>;
+    say(channel: string, message: string): Promise<[string, string]>;
     on(event: string, callback: (...args: any[]) => void): void;
   }
 
