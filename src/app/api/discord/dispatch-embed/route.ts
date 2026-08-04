@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { buildSpmtOnboardingButton } from '@/lib/spmt-onboarding-contract';
+import { buildSpmtWelcomeEmbed } from '@/lib/spmt-onboarding-embed';
 
 export async function POST(req: NextRequest) {
   try {
@@ -13,6 +15,9 @@ export async function POST(req: NextRequest) {
     if (!botToken) {
       return NextResponse.json({ error: 'Bot token not configured' }, { status: 500 });
     }
+
+    const existingLinkingDoc = await db.collection('servers').doc(serverId).collection('config').doc('linkingEmbed').get();
+    const existingLinkingEmbed = existingLinkingDoc.exists ? existingLinkingDoc.data() : null;
 
     // Get branding
     const brandingDoc = await db.collection('servers').doc(serverId).collection('config').doc('branding').get();
@@ -55,41 +60,14 @@ export async function POST(req: NextRequest) {
     const twitchLogin = spotlightUser?.twitchLogin || '';
     const avatarUrl = spotlightUser?.avatarUrl || null;
 
-    // Build embed matching the pinned spotlight format
-    const embed: any = {
-      author: avatarUrl ? {
-        name: `${username} gets shoutouts from ${serverName}!`,
-        icon_url: avatarUrl,
-        url: `https://twitch.tv/${twitchLogin}`,
-      } : undefined,
-      title: spotlightUser
-        ? `⭐ @${username} gets their shoutouts by ${serverName} — you can too!`
-        : `⭐ COMMUNITY SPOTLIGHT ⭐`,
-      description: spotlightUser
-        ? `Every time **[${username}](https://twitch.tv/${twitchLogin})** goes live, ${serverName} automatically posts a shoutout with their stream info, viewer count, and animated clips.\n\n✨ **Link your Twitch below and you'll get the same treatment!**`
-        : `Link your Twitch username to get automatic live shoutouts and be featured in the community spotlight rotation.`,
-      url: twitchLogin ? `https://twitch.tv/${twitchLogin}` : undefined,
-      color: 0xFFD700,
-      thumbnail: avatarUrl ? { url: avatarUrl } : undefined,
-      image: spotlightGif ? { url: spotlightGif } : undefined,
-      fields: [
-        { name: '🎮 Auto Shoutouts', value: 'Posted when you go live', inline: true },
-        { name: '🔄 Live Updates', value: 'Every 10 minutes', inline: true },
-        { name: '⭐ Spotlight', value: 'Rotating feature', inline: true },
-      ],
-      footer: {
-        text: spotlightUser
-          ? `⭐ Community Spotlight • ${username} • Rotates every 10 min`
-          : `Link your Twitch to join ${serverName}'s featured streamers`
-      },
-      timestamp: new Date().toISOString(),
-    };
-
-    // Clean undefined fields
-    if (!embed.author) delete embed.author;
-    if (!embed.url) delete embed.url;
-    if (!embed.thumbnail) delete embed.thumbnail;
-    if (!embed.image) delete embed.image;
+    // Dispatch and refresh share this builder so the welcome wording cannot regress.
+    const embed = buildSpmtWelcomeEmbed({
+      serverName,
+      username,
+      twitchLogin,
+      avatarUrl,
+      spotlightGif,
+    });
 
     const response = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
       method: 'POST',
@@ -103,18 +81,7 @@ export async function POST(req: NextRequest) {
           {
             type: 1,
             components: [
-              {
-                type: 2,
-                style: 3,
-                label: '🚀 Set Up SPMT + Shoutouts',
-                custom_id: 'spmt_onboard',
-              },
-              {
-                type: 2,
-                style: 1,
-                label: '🔗 Link Twitch Username',
-                custom_id: 'link_twitch_account',
-              }
+              buildSpmtOnboardingButton(),
             ]
           }
         ]
@@ -128,6 +95,14 @@ export async function POST(req: NextRequest) {
     }
 
     const msg = await response.json();
+
+    if (existingLinkingEmbed?.messageId && existingLinkingEmbed.messageId !== msg.id) {
+      const previousChannelId = existingLinkingEmbed.channelId || channelId;
+      await fetch(`https://discord.com/api/v10/channels/${previousChannelId}/messages/${existingLinkingEmbed.messageId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bot ${botToken}` },
+      }).catch(() => {});
+    }
 
     // Save as the linking embed so updateLinkingEmbed can refresh it
     await db.collection('servers').doc(serverId).collection('config').doc('linkingEmbed').set({

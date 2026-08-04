@@ -4,6 +4,7 @@ import { db } from '@/lib/db';
 import { getCurrentClipForUser } from './clip-rotation-service';
 import { getStreamByLogin } from './twitch-api-service';
 import { getServerBranding } from './server-branding';
+import { buildSpmtOnboardingButton } from './spmt-onboarding-contract';
 
 function isRepostableDiscordEditError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
@@ -199,12 +200,7 @@ async function updateSpotlightPinnedEmbed(serverId: string, member: any, stream:
         {
           type: 1,
           components: [
-              {
-                type: 2,
-                style: 1,
-                label: '🔗 Link Twitch Username',
-                custom_id: 'link_twitch_account'
-              }
+            buildSpmtOnboardingButton(),
           ]
         }
       ]

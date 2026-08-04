@@ -197,7 +197,7 @@ function isCleanupTarget(message: DiscordMessage): boolean {
   }
 
   return Boolean(message.components?.some((row) =>
-    row.components?.some((component) => component.custom_id === 'link_twitch_account')
+    row.components?.some((component) => component.custom_id === 'link_twitch_account' || component.custom_id === 'spmt_join_recover')
   ));
 }
 

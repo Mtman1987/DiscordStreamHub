@@ -15,6 +15,10 @@ import {
 import { grandfatherDiscordIdentity } from '@/lib/spmt-client';
 import { getChatTagServiceSecret, getDshClientSecret } from '@/lib/runtime-secrets';
 import {
+  createSpmtOnboardingAuthorization,
+} from '@/lib/spmt-onboarding-service';
+import { SPMT_ONBOARDING_CUSTOM_ID } from '@/lib/spmt-onboarding-contract';
+import {
   APPLICATION_DEFINITIONS,
   APPLICATION_FLOW_VERSION,
   ApplicationType,
@@ -88,33 +92,6 @@ async function sendApplicationInquiry(body: any, type: ApplicationType, serverId
   } catch (error) {
     await updateDeferredInteraction(applicationId, body.token, `⚠️ ${error instanceof Error ? error.message : 'Unable to send the inquiry DM.'}`);
   }
-}
-
-function twitchLinkModal(serverId: string, suggestedLogin = '') {
-  const normalizedSuggestion = suggestedLogin.trim().replace(/^@/, '').toLowerCase();
-  return NextResponse.json({
-    type: 9,
-    data: {
-      custom_id: `link_twitch_modal_${serverId}`,
-      title: 'Link or Change Twitch Account',
-      components: [
-        {
-          type: 1,
-          components: [{
-            type: 4,
-            custom_id: 'twitch_username',
-            label: 'Your Twitch Username',
-            style: 1,
-            required: true,
-            min_length: 3,
-            max_length: 25,
-            placeholder: 'Type the Twitch name, even if Discord differs',
-            ...(normalizedSuggestion ? { value: normalizedSuggestion } : {}),
-          }],
-        },
-      ],
-    },
-  });
 }
 
 const CHAT_TAG_SERVICE_SECRET = getChatTagServiceSecret();
@@ -312,7 +289,7 @@ async function runHearMeOutWatchControl(action: string, sessionId = HMO_WATCH_SE
     if (actor?.guildId) params.set('guildId', actor.guildId);
     if (actor?.channelId) params.set('channelId', actor.channelId);
     if (position !== undefined) params.set('position', String(position));
-    params.set('isAdmin', 'true');
+    params.set('isAdmin', actor?.isAdmin === true ? 'true' : 'false');
     const url = `${getHearMeOutUrl()}/api/watch/sessions/${encodeURIComponent(normalizeHearMeOutSessionId(sessionId))}/quick-control?${params.toString()}`;
     const response = await fetch(url, { signal: controller.signal, cache: 'no-store' });
     const payload = await response.json().catch(() => null);
@@ -458,40 +435,41 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ type: 6 });
       }
 
-      if (customId === 'spmt_onboard') {
-        return NextResponse.json({
-          type: 9,
-          data: {
-            custom_id: 'spmt_onboard_submit',
-            title: 'Join Space Mountain',
-            components: [
-              {
-                type: 1,
-                components: [{
-                  type: 4,
-                  custom_id: 'display_name',
-                  label: 'Preferred display name',
-                  style: 1,
-                  required: false,
-                  max_length: 40,
-                  placeholder: 'Defaults to your Discord display name',
-                }],
-              },
-              {
-                type: 1,
-                components: [{
-                  type: 4,
-                  custom_id: 'twitch_username',
-                  label: 'Twitch username for shoutouts (optional)',
-                  style: 1,
-                  required: false,
-                  min_length: 3,
-                  max_length: 25,
-                  placeholder: 'No password or OAuth token needed',
-                }],
-              },
-            ],
-          },
+      if (
+        customId === SPMT_ONBOARDING_CUSTOM_ID ||
+        customId === 'spmt_onboard' ||
+        customId === 'link_twitch_account' ||
+        customId.startsWith('link_twitch_')
+      ) {
+        const legacyServerId = customId.startsWith('link_twitch_') && customId !== 'link_twitch_account'
+          ? customId.replace('link_twitch_', '')
+          : '';
+        // The signed interaction's guild is authoritative. The legacy custom-ID
+        // suffix is retained only for old messages whose payload omitted guild_id.
+        const serverId = String(body.guild_id || legacyServerId).trim();
+        const actor = body.member?.user || body.user || {};
+        const userId = String(actor.id || '').trim();
+        if (!serverId || !userId) return ephemeral('⚠️ Discord could not identify you or this server. Please try again.');
+        const authorizeUrl = await createSpmtOnboardingAuthorization({
+          serverId,
+          discordUserId: userId,
+          discordUsername: String(actor.username || userId),
+          discordDisplayName: String(body.member?.nick || actor.global_name || actor.username || userId),
+          discordAvatarUrl: discordAvatarUrl(actor),
+          roles: Array.isArray(body.member?.roles) ? body.member.roles.map(String) : [],
+        });
+        return ephemeral('🚀 **One crew. One identity.**\n\nContinue with Twitch to create, claim, or recover your SPMT identity and join automatic shoutouts.', {
+          components: [{
+            type: 1,
+            components: [{
+              type: 2,
+              style: 5,
+              label: 'Continue with Twitch',
+              url: authorizeUrl,
+              emoji: { name: '🟣' },
+            }],
+          }],
+          allowed_mentions: { parse: [] },
         });
       }
 
@@ -738,32 +716,6 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      if (customId === 'link_twitch_account') {
-        const serverId = String(body.guild_id || '').trim();
-        if (!serverId) {
-          return ephemeral('⚠️ Could not determine server. Please try again.');
-        }
-        const userId = String(body.member?.user?.id || body.user?.id || '').trim();
-        const discordUsername = String(body.member?.user?.username || body.user?.username || '').trim();
-        const userDoc = userId
-          ? await db.collection('servers').doc(serverId).collection('users').doc(userId).get()
-          : null;
-        const suggestedLogin = String(userDoc?.data()?.twitchLogin || discordUsername);
-        return twitchLinkModal(serverId, suggestedLogin);
-      }
-
-      if (customId.startsWith('link_twitch_') && customId !== 'link_twitch_account') {
-        const serverId = String(customId.replace('link_twitch_', '') || body.guild_id || '').trim();
-        if (!serverId) return ephemeral('⚠️ Could not determine server. Please try again.');
-        const userId = String(body.member?.user?.id || body.user?.id || '').trim();
-        const discordUsername = String(body.member?.user?.username || body.user?.username || '').trim();
-        const userDoc = userId
-          ? await db.collection('servers').doc(serverId).collection('users').doc(userId).get()
-          : null;
-        const suggestedLogin = String(userDoc?.data()?.twitchLogin || discordUsername);
-        return twitchLinkModal(serverId, suggestedLogin);
-      }
-      
       if (customId.startsWith('partner_schedule_refresh_')) {
         const parts = customId.replace('partner_schedule_refresh_', '').split('_');
         const userId = parts[0];

@@ -3,6 +3,7 @@
 import { db } from '@/data/server-init';
 import { getUnmatchedUsers } from '@/lib/twitch-linking-service';
 import { getCrewBannerGifUrl, getTwitchClientId } from '@/lib/runtime-config';
+import { buildSpmtOnboardingButton } from '@/lib/spmt-onboarding-contract';
 
 interface ProcessedMemberData {
   totalMembers: number;
@@ -77,12 +78,12 @@ class MemberProcessingService {
 
       const embed = {
         title: "⭐ Community Spotlight",
-        description: "Create your Discord-linked SPMT identity for points, commands, and apps, then optionally add your Twitch username for automatic live shoutouts.",
+        description: "Verify through Twitch to create, claim, or recover one SPMT identity connected to Discord, Twitch, points, commands, apps, and automatic live shoutouts.",
         color: 0x9146FF, // Twitch purple
         fields: [
           {
             name: "📋 How to Link",
-            value: "Click **Set Up SPMT** and complete the private Discord form. No website redirect or password is required.",
+            value: "Click **Join or Recover SPMT with Twitch** and follow the private verification link.",
             inline: false
           },
           {
@@ -96,23 +97,11 @@ class MemberProcessingService {
         }
       };
 
-      const button = {
-        type: 2, // Button
-        style: 1,
-        label: "Set Up SPMT",
-        custom_id: 'spmt_onboard'
-      };
-
       return {
         embeds: [embed],
         components: [{
           type: 1, // Action row
-          components: [button, {
-            type: 2,
-            style: 2,
-            label: "Link Twitch Only",
-            custom_id: 'link_twitch_account'
-          }]
+          components: [buildSpmtOnboardingButton()]
         }]
       };
 

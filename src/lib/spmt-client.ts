@@ -88,6 +88,72 @@ export async function grandfatherTwitchIdentity(input: {
   }
 }
 
+export class SpmtIdentityOnboardingError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly code: string,
+  ) {
+    super(message);
+    this.name = 'SpmtIdentityOnboardingError';
+  }
+}
+
+export async function onboardVerifiedSpmtIdentity(input: {
+  discord: {
+    providerUserId: string;
+    username: string;
+    displayName?: string;
+    avatarUrl?: string;
+  };
+  twitch: {
+    providerUserId: string;
+    username: string;
+    displayName?: string;
+    avatarUrl?: string;
+  };
+}) {
+  if (!SPMT_API_KEY) {
+    throw new SpmtIdentityOnboardingError('SPMT onboarding is temporarily unavailable.', 503, 'spmt_not_configured');
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(`${SPMT_BASE_URL.replace(/\/$/, '')}/api/platform/identity/onboard`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SPMT_API_KEY}` },
+      body: JSON.stringify(input),
+      cache: 'no-store',
+      signal: typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(10_000) : undefined,
+    });
+  } catch {
+    throw new SpmtIdentityOnboardingError('SPMT onboarding is temporarily unavailable. Please try again.', 503, 'spmt_unavailable');
+  }
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new SpmtIdentityOnboardingError(
+      String(payload?.error || 'SPMT could not complete identity onboarding.'),
+      response.status,
+      String(payload?.code || 'spmt_onboarding_failed'),
+    );
+  }
+  if (!payload?.user?.id || !payload?.continueUrl) {
+    throw new SpmtIdentityOnboardingError('SPMT returned an incomplete onboarding response.', 502, 'invalid_spmt_response');
+  }
+  return payload as {
+    created: boolean;
+    purpose: 'claim' | 'recover';
+    expiresAt: string;
+    continueUrl: string;
+    user: {
+      id: string;
+      username: string;
+      credentialState?: 'provider-owned' | 'password-set';
+    };
+  };
+}
+
 export async function publishSpmtEvent(event: SpmtEventInput) {
   if (!SPMT_API_KEY) return { skipped: true, reason: 'SPMT_API_KEY not configured' };
 

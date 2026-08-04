@@ -6,6 +6,8 @@ import { sendShoutoutToDiscord, getUserGroup } from '@/lib/shoutout-service';
 import { getAppUrl, getStoragePath } from '@/lib/runtime-config';
 import { getStreamsByLogins } from '@/lib/twitch-api-service';
 import { maybeRequestLiveBanner } from '@/lib/live-banner-request-service';
+import { buildSpmtOnboardingButton } from '@/lib/spmt-onboarding-contract';
+import { buildSpmtWelcomeEmbed } from '@/lib/spmt-onboarding-embed';
 
 interface PollingState {
   isPolling: boolean;
@@ -1171,12 +1173,7 @@ class TwitchPollingService {
           {
             type: 1,
             components: [
-              {
-                type: 2,
-                style: 1,
-                label: '🔗 Link Twitch Username',
-                custom_id: 'link_twitch_account'
-              }
+              buildSpmtOnboardingButton(),
             ]
           }
         ]
@@ -1255,56 +1252,39 @@ class TwitchPollingService {
       const showcaseTwitchLogin = (showcaseUser as any)?.twitchLogin || '';
       const showcaseAvatar = (showcaseUser as any)?.avatarUrl || null;
 
-      const embed: any = {
-        author: showcaseAvatar ? {
-          name: `${showcaseUsername} gets shoutouts from ${serverName}!`,
-          icon_url: showcaseAvatar,
-          url: `https://twitch.tv/${showcaseTwitchLogin}`,
-        } : undefined,
-        title: showcaseUser
-          ? `@${showcaseUsername} gets their shoutouts by ${serverName} — you can too!`
-          : `Get automatic shoutouts from ${serverName}!`,
-        description: showcaseUser
-          ? `Every time **[${showcaseUsername}](https://twitch.tv/${showcaseTwitchLogin})** goes live, ${serverName} automatically posts a shoutout with their stream info, viewer count, and clips.\n\n✨ **Link your Twitch below and you'll get the same treatment!**`
-          : `Link your Twitch account and get automatic shoutouts every time you go live!\n\n⚡ Instant shoutouts • 🔄 Updates every 10 min • ⭐ Community spotlight rotation`,
-        url: showcaseTwitchLogin ? `https://twitch.tv/${showcaseTwitchLogin}` : undefined,
-        color: 0xFFD700,
-        thumbnail: showcaseAvatar ? { url: showcaseAvatar } : undefined,
-        image: showcaseGif ? { url: showcaseGif } : undefined,
-        footer: {
-          text: showcaseUser
-            ? `⭐ Community Spotlight • ${showcaseUsername} • Rotates every 10 min`
-            : `Link your Twitch to join ${serverName}'s featured streamers`
-        },
-        timestamp: new Date().toISOString()
-      };
-      if (!embed.author) delete embed.author;
-      if (!embed.url) delete embed.url;
-      if (!embed.thumbnail) delete embed.thumbnail;
-      if (!embed.image) delete embed.image;
+      const embed = buildSpmtWelcomeEmbed({
+        serverName,
+        username: showcaseUsername,
+        twitchLogin: showcaseTwitchLogin,
+        avatarUrl: showcaseAvatar,
+        spotlightGif: showcaseGif,
+      });
       
+      const payload = {
+        embeds: [embed],
+        components: [
+          {
+            type: 1,
+            components: [buildSpmtOnboardingButton()]
+          }
+        ]
+      };
       try {
         const { editDiscordMessage } = await import('./discord-sync-service');
-        await editDiscordMessage(serverId, channelId, messageId, {
-          embeds: [embed],
-          components: [
-            {
-              type: 1,
-              components: [
-                {
-                  type: 2,
-                  style: 1,
-                  label: 'Link Twitch Username',
-                  custom_id: 'link_twitch_account',
-                  emoji: { name: '🔗' }
-                }
-              ]
-            }
-          ]
-        });
+        await editDiscordMessage(serverId, channelId, messageId, payload);
       } catch (editError) {
-        console.warn('[TwitchPolling] Linking embed unavailable; clearing stale config');
-        await db.collection('servers').doc(serverId).collection('config').doc('linkingEmbed').delete().catch(() => {});
+        console.warn('[TwitchPolling] Linking embed is no longer editable; replacing it and tracking the new message ID');
+        const { deleteDiscordMessage, postDiscordMessage } = await import('./discord-sync-service');
+        await deleteDiscordMessage(serverId, channelId, messageId).catch(() => {});
+        const replacementMessageId = await postDiscordMessage(serverId, channelId, payload);
+        if (!replacementMessageId) throw editError;
+        await db.collection('servers').doc(serverId).collection('config').doc('linkingEmbed').set({
+          messageId: replacementMessageId,
+          channelId,
+          updatedAt: new Date().toISOString(),
+          replacedMessageId: messageId,
+          replacedAt: new Date().toISOString(),
+        });
       }
     } catch (error) {
       console.error('[TwitchPolling] Error updating linking embed:', error);

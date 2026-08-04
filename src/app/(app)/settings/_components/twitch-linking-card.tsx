@@ -52,7 +52,7 @@ export function TwitchLinkingCard({ serverId }: { serverId: string }) {
       if (response.ok) {
         toast({
           title: "Embed Dispatched",
-          description: "The linking embed has been sent to Discord.",
+          description: "The SPMT welcome and spotlight embed has been sent to Discord.",
         });
       } else {
         const error = await response.json();
@@ -78,10 +78,10 @@ export function TwitchLinkingCard({ serverId }: { serverId: string }) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Link className="w-5 h-5" />
-          Twitch Linking
+          SPMT Onboarding + Spotlight
         </CardTitle>
         <CardDescription>
-          Dispatch a linking embed to Discord for members to connect their Twitch accounts.
+          Choose where the branded welcome embed lives. It keeps featuring the current spotlight while members create, claim, or recover SPMT through Twitch.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -114,7 +114,7 @@ export function TwitchLinkingCard({ serverId }: { serverId: string }) {
           ) : (
             <>
               <Link className="mr-2 h-4 w-4" />
-              Dispatch Linking Embed
+              Dispatch Welcome Embed
             </>
           )}
         </Button>

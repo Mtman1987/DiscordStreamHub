@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { db, ensureDb } from '@/lib/db';
 import { getAppUrl, getChatTagApiBase, getHardcodedGuildId, getHearMeOutUrl, getTwitchClientId } from '@/lib/runtime-config';
+import { onboardVerifiedSpmtIdentity } from '@/lib/spmt-client';
+import { consumeSpmtOnboardingState } from '@/lib/spmt-onboarding-service';
 
 function getTwitchOAuthConfig() {
   const clientSecret = process.env.TWITCH_CLIENT_SECRET;
@@ -120,6 +122,16 @@ function popupCallbackResponse(publicUrl: string, payload: Record<string, string
   });
 }
 
+function spmtOnboardingErrorResponse(message: string) {
+  const safeMessage = message.replace(/[<>&"']/g, (character) => ({
+    '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#039;',
+  })[character] || character);
+  return new NextResponse(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SPMT onboarding</title></head><body style="font-family:system-ui;background:#050816;color:#fff;padding:40px"><h1>SPMT onboarding did not finish.</h1><p>${safeMessage}</p><p>Return to Discord and select <strong>Join or Recover SPMT with Twitch</strong> to try again.</p></body></html>`, {
+    status: 400,
+    headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+  });
+}
+
 function chatTagCallbackResponse(payload: Record<string, string>) {
   const chatTagUrl = getChatTagApiBase();
   const issuedAt = String(Date.now());
@@ -147,12 +159,17 @@ export async function GET(request: NextRequest) {
   const state = searchParams.get('state');
   const oauthError = searchParams.get('error');
   const oauthErrorDescription = searchParams.get('error_description');
+  const isSpmtOnboarding = Boolean(state?.startsWith('spmt-onboard|'));
+  const onboardingStateToken = isSpmtOnboarding ? String(state).slice('spmt-onboard|'.length) : '';
 
   const publicUrl =
     getAppUrl() ||
     request.nextUrl.origin;
 
   if (oauthError) {
+    if (isSpmtOnboarding) {
+      return spmtOnboardingErrorResponse(oauthErrorDescription || 'Twitch authorization was not completed.');
+    }
     const { isChatTag } = parseOAuthState(state);
     if (isChatTag) {
       return chatTagCallbackResponse({
@@ -168,6 +185,9 @@ export async function GET(request: NextRequest) {
   }
 
   if (!code) {
+    if (isSpmtOnboarding) {
+      return spmtOnboardingErrorResponse('Twitch did not return an authorization code.');
+    }
     const { isChatTag } = parseOAuthState(state);
     if (isChatTag) {
       return chatTagCallbackResponse({
@@ -183,8 +203,15 @@ export async function GET(request: NextRequest) {
   }
 
   const { serverId, isHearMeOut, isChatTag, isBotOAuth, discordUserId, twitchLogin } = parseOAuthState(state);
+  let onboardingState: Awaited<ReturnType<typeof consumeSpmtOnboardingState>> = null;
 
   try {
+    if (isSpmtOnboarding) {
+      onboardingState = await consumeSpmtOnboardingState(onboardingStateToken);
+      if (!onboardingState) {
+        throw new TwitchOAuthExchangeError('Invalid SPMT onboarding state', 'This SPMT onboarding link expired or was already used. Return to Discord and start again.');
+      }
+    }
     const redirectUri = `${publicUrl}/api/twitch/oauth/callback`;
     const { clientId, clientSecret } = getTwitchOAuthConfig();
 
@@ -236,6 +263,73 @@ export async function GET(request: NextRequest) {
       twitchUser = userData.data?.[0] || null;
     } else {
       console.error('[TwitchOAuth] Failed to fetch Twitch user:', userResponse.status, await userResponse.text());
+    }
+
+    if (onboardingState) {
+      if (!twitchUser?.id || !twitchUser?.login) {
+        throw new TwitchOAuthExchangeError('Twitch profile unavailable', 'Twitch authorization completed, but the account profile could not be verified.');
+      }
+
+      const duplicateMatches = await db.collection('servers').doc(onboardingState.serverId).collection('users')
+        .where('twitchId', '==', String(twitchUser.id)).get();
+      const conflictingMatch = duplicateMatches.docs.find((doc: any) => String(doc.id) !== onboardingState!.discordUserId);
+      if (conflictingMatch) {
+        throw new TwitchOAuthExchangeError('Twitch identity conflict', 'That Twitch account is already linked to another Discord member. Crew review is required.');
+      }
+
+      const spmt = await onboardVerifiedSpmtIdentity({
+        discord: {
+          providerUserId: onboardingState.discordUserId,
+          username: onboardingState.discordUsername,
+          displayName: onboardingState.discordDisplayName,
+          avatarUrl: onboardingState.discordAvatarUrl,
+        },
+        twitch: {
+          providerUserId: String(twitchUser.id),
+          username: String(twitchUser.login),
+          displayName: String(twitchUser.display_name || twitchUser.login),
+          avatarUrl: String(twitchUser.profile_image_url || ''),
+        },
+      });
+
+      const serverDoc = await db.collection('servers').doc(onboardingState.serverId).get();
+      const roleMappings = serverDoc.data()?.roleMappings || {};
+      let group = 'Community';
+      for (const [roleId, groupName] of Object.entries(roleMappings)) {
+        if (onboardingState.roles.includes(roleId)) {
+          group = String(groupName);
+          break;
+        }
+      }
+
+      await db.collection('servers').doc(onboardingState.serverId).collection('users').doc(onboardingState.discordUserId).set({
+        discordUserId: onboardingState.discordUserId,
+        username: onboardingState.discordUsername,
+        displayName: onboardingState.discordDisplayName,
+        avatarUrl: onboardingState.discordAvatarUrl,
+        roles: onboardingState.roles,
+        group,
+        twitchLogin: String(twitchUser.login).toLowerCase(),
+        twitchDisplayName: String(twitchUser.display_name || twitchUser.login),
+        twitchId: String(twitchUser.id),
+        twitchProfileImageUrl: String(twitchUser.profile_image_url || ''),
+        twitchLinkSource: 'verified-twitch-oauth',
+        linkedAt: new Date().toISOString(),
+        spmtUserId: String(spmt.user.id),
+        spmtUsername: String(spmt.user.username),
+        spmtCredentialState: spmt.user.credentialState || (spmt.purpose === 'claim' ? 'provider-owned' : 'password-set'),
+        spmtOnboardedAt: new Date().toISOString(),
+        isOnline: false,
+      }, { merge: true });
+      await db.collection('servers').doc(onboardingState.serverId).collection('recentActivity').add({
+        type: spmt.purpose === 'claim' ? 'spmt_identity_claim_started' : 'spmt_identity_recovery_started',
+        discordUserId: onboardingState.discordUserId,
+        spmtUserId: String(spmt.user.id),
+        twitchLogin: String(twitchUser.login).toLowerCase(),
+        twitchId: String(twitchUser.id),
+        timestamp: new Date().toISOString(),
+      });
+      return NextResponse.redirect(spmt.continueUrl);
     }
 
     if (isBotOAuth) {
@@ -373,6 +467,9 @@ export async function GET(request: NextRequest) {
         ? error.message.replace(/\bfailed\b/gi, 'unable')
         : 'Twitch OAuth did not complete.';
     console.warn('OAuth callback did not complete:', message);
+    if (isSpmtOnboarding) {
+      return spmtOnboardingErrorResponse(message);
+    }
     if (isChatTag) {
       return chatTagCallbackResponse({
         error: 'oauth_failed',
@@ -487,11 +584,8 @@ export async function POST(request: NextRequest) {
         displayName: user.display_name,
         profileImage: user.profile_image_url,
       },
-      tokens: {
-        accessToken: tokenData.access_token,
-        refreshToken: tokenData.refresh_token,
-        expiresAt: Date.now() + (tokenData.expires_in * 1000),
-      }
+      credentialsStored: true,
+      expiresAt: Date.now() + (tokenData.expires_in * 1000),
     });
 
   } catch (error) {
