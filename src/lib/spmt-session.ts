@@ -1,45 +1,42 @@
 import { getHardcodedGuildId } from '@/lib/runtime-config';
 
 export const DSH_SPMT_COOKIE = 'dsh_spmt_session';
-export const SPMT_BASE_URL = 'https://spmt.live';
+export const SPMT_BASE_URL = String(process.env.SPMT_BASE_URL || 'https://spmt.live').replace(/\/$/, '');
 
-function readDiscordId(user: any): string {
-  const linkedAccounts = Array.isArray(user?.linkedAccounts)
+export type DshSpmtSession = {
+  spmtUserId?: string;
+  spmtUsername?: string;
+  discordUserId?: string;
+  discordUsername?: string;
+  discordDisplayName?: string;
+  discordAvatar?: string;
+  twitchUsername?: string;
+  discordServerId: string;
+  dshAuthMode: 'spmt';
+  isLoggedIn: true;
+  isAdmin: boolean;
+  role: string;
+};
+
+function readLinkedAccount(user: any, provider: string) {
+  const accounts = Array.isArray(user?.linkedAccounts)
     ? user.linkedAccounts
     : Array.isArray(user?.linked_accounts)
       ? user.linked_accounts
       : [];
-  const discord = linkedAccounts.find((account: any) => account?.provider === 'discord') || user?.discord || {};
-  return String(user?.discordUserId || user?.discord_user_id || user?.discordId || user?.discord_id || discord.id || discord.userId || '').trim();
+  return accounts.find((account: any) => account?.provider === provider) || user?.[provider] || {};
 }
 
-function readTwitchUsername(user: any): string {
-  const linkedAccounts = Array.isArray(user?.linkedAccounts)
-    ? user.linkedAccounts
-    : Array.isArray(user?.linked_accounts)
-      ? user.linked_accounts
-      : [];
-  const twitch = linkedAccounts.find((account: any) => account?.provider === 'twitch') || user?.twitch || {};
-  return String(user?.twitchUsername || user?.twitchLogin || user?.twitch_login || twitch.username || twitch.login || '').trim();
+function text(...values: unknown[]): string {
+  return String(values.find((value) => value !== undefined && value !== null && String(value).trim()) || '').trim();
 }
 
-function readAvatarUrl(user: any): string {
-  const linkedAccounts = Array.isArray(user?.linkedAccounts)
-    ? user.linkedAccounts
-    : Array.isArray(user?.linked_accounts)
-      ? user.linked_accounts
-      : [];
-  const discord = linkedAccounts.find((account: any) => account?.provider === 'discord') || user?.discord || {};
-  const twitch = linkedAccounts.find((account: any) => account?.provider === 'twitch') || user?.twitch || {};
-  return String(
-    user?.avatarUrl ||
-    user?.avatar_url ||
-    discord?.avatarUrl ||
-    discord?.avatar_url ||
-    twitch?.avatarUrl ||
-    twitch?.avatar_url ||
-    ''
-  ).trim();
+export function spmtIdentityIsAdmin(user: any): boolean {
+  if (user?.isAdmin === true || user?.is_admin === true || user?.is_admin === 1) return true;
+  const role = text(user?.role).toLowerCase();
+  if (role === 'admin' || role === 'owner') return true;
+  const roles = Array.isArray(user?.roles) ? user.roles.map((value: unknown) => text(value).toLowerCase()) : [];
+  return roles.includes('admin') || roles.includes('owner');
 }
 
 const SPMT_REQUEST_TIMEOUT_MS = 5000;
@@ -49,52 +46,37 @@ function spmtAbortSignal(): AbortSignal | undefined {
   return AbortSignal.timeout(SPMT_REQUEST_TIMEOUT_MS);
 }
 
-export async function resolveSpmtSession(token: string) {
-  const refreshResponse = await fetch(`${SPMT_BASE_URL}/api/auth/refresh`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
+export async function resolveSpmtSession(token: string): Promise<{ token: string; session: DshSpmtSession; identity: any }> {
+  const profileResponse = await fetch(`${SPMT_BASE_URL}/api/oauth/userinfo`, {
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
     cache: 'no-store',
     signal: spmtAbortSignal(),
   });
-  const profileResponse = refreshResponse.ok
-    ? refreshResponse
-    : await fetch(`${SPMT_BASE_URL}/api/me`, {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: 'no-store',
-        signal: spmtAbortSignal(),
-      });
 
-  if (!profileResponse.ok) {
-    throw new Error(`SPMT profile lookup failed (${profileResponse.status})`);
-  }
+  if (!profileResponse.ok) throw new Error(`SPMT userinfo lookup failed (${profileResponse.status})`);
 
   const data = await profileResponse.json();
-  const user = data.user || data.profile || data;
-  const linkedAccounts = Array.isArray(user?.linkedAccounts)
-    ? user.linkedAccounts
-    : Array.isArray(user?.linked_accounts)
-      ? user.linked_accounts
-      : [];
-  const discord = linkedAccounts.find((account: any) => account?.provider === 'discord') || user?.discord || {};
-  const discordUserId = readDiscordId(user);
-  const twitchUsername = readTwitchUsername(user);
-  const avatarUrl = readAvatarUrl(user);
-  const discordUsername = String(user?.discordUsername || user?.discord_username || discord.username || user?.username || user?.displayName || '').trim();
-  const discordDisplayName = String(user?.discordDisplayName || user?.discord_display_name || discord.displayName || discord.global_name || user?.displayName || discordUsername).trim();
+  const user = data?.user || data?.profile || data;
+  if (!user?.id) throw new Error('SPMT userinfo did not return an identity');
 
-  return {
-    token: String(data.token || token),
-    session: {
-      ...(user?.id ? { spmtUserId: String(user.id) } : {}),
-      ...(user?.username ? { spmtUsername: String(user.username) } : {}),
-      ...(discordUserId ? { discordUserId } : {}),
-      ...(discordUsername ? { discordUsername } : {}),
-      ...(discordDisplayName ? { discordDisplayName } : {}),
-      ...(avatarUrl ? { discordAvatar: avatarUrl } : {}),
-      ...(twitchUsername ? { twitchUsername } : {}),
-      discordServerId: String(getHardcodedGuildId()),
-      dshAuthMode: 'spmt',
-      isLoggedIn: true,
-    },
+  const discord = readLinkedAccount(user, 'discord');
+  const twitch = readLinkedAccount(user, 'twitch');
+  const role = text(user?.role, spmtIdentityIsAdmin(user) ? 'admin' : 'member').toLowerCase();
+
+  const session: DshSpmtSession = {
+    spmtUserId: text(user.id),
+    spmtUsername: text(user.username),
+    discordUserId: text(user.discordUserId, user.discord_user_id, user.discordId, user.discord_id, discord.id, discord.userId),
+    discordUsername: text(user.discordUsername, user.discord_username, discord.username, user.username, user.displayName),
+    discordDisplayName: text(user.discordDisplayName, user.discord_display_name, discord.displayName, discord.global_name, user.displayName, user.username),
+    discordAvatar: text(user.avatarUrl, user.avatar_url, discord.avatarUrl, discord.avatar_url, twitch.avatarUrl, twitch.avatar_url),
+    twitchUsername: text(user.twitchUsername, user.twitch_login, twitch.username, twitch.login),
+    discordServerId: String(getHardcodedGuildId()),
+    dshAuthMode: 'spmt',
+    isLoggedIn: true,
+    isAdmin: spmtIdentityIsAdmin(user),
+    role,
   };
+
+  return { token, session, identity: user };
 }
