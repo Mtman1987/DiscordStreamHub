@@ -64,7 +64,21 @@ else
   echo "[Startup] Discord voice adapter disabled by volume runtime config"
 fi
 
-# 5. Make the Next server the container's PID 1. This ensures Fly observes the
+# 5. Focused Twitch repair-command watcher. It observes only !mtfixit and leaves
+# the existing points and conversational Athena listeners unchanged.
+if [ "$DISABLE_STARTUP_SERVICES" = "true" ]; then
+  echo "[Startup] Startup services disabled; skipping Twitch mtfixit watcher"
+elif [ -n "${SPMT_API_KEY:-${SPMT_PLATFORM_API_KEY:-}}" ]; then
+  (
+    echo "[Startup] Waiting to start Twitch mtfixit watcher..."
+    sleep 30
+    npm run watch-mtfixit-twitch
+  ) &
+else
+  echo "[Startup] Twitch mtfixit watcher disabled because SPMT_API_KEY is not set"
+fi
+
+# 6. Make the Next server the container's PID 1. This ensures Fly observes the
 # real web process, receives its exit status, and can reach 0.0.0.0:3000.
 export PORT=3000
 export HOSTNAME=0.0.0.0
