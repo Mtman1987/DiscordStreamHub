@@ -733,10 +733,10 @@ export async function POST(request: NextRequest) {
     }
 
     // DiscordStreamHub is the ingress owner for this bot. Forward remaining
-    // bang commands once to StreamWeaver so its command dispatcher can reply
-    // through the configured Discord bot/webhook path. HearMeOut and Chat Tag
-    // commands return above and therefore are not duplicated here.
-    if (dispatch && isDirectMessage && message.trim().startsWith('!')) {
+    // bang commands from public channels and DMs once to StreamWeaver so its
+    // command dispatcher can reply through the configured Discord bot/webhook
+    // path. HearMeOut and Chat Tag commands return above and are not duplicated.
+    if (dispatch && !isBotAuthor && channelId && message.trim().startsWith('!')) {
       try {
         logDiscordTrace(traceId, 'route-selected', {
           route: 'streamweaver-command',
