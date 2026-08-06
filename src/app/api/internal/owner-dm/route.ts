@@ -8,7 +8,7 @@ const MAX_MESSAGE_LENGTH = 1900;
 const MAX_FILE_BYTES = 500_000;
 
 function authorized(request: NextRequest) {
-  const expected = String(process.env.DSH_SERVICE_SECRET || '').trim();
+  const expected = String(process.env.SPMT_API_KEY || process.env.SPMT_PLATFORM_API_KEY || '').trim();
   const provided = String(request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim();
   return Boolean(expected && provided && provided === expected);
 }
