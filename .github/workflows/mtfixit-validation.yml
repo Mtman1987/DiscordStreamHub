@@ -1,0 +1,29 @@
+name: MtFixIt Validation
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DSH_BUILD_DB: "1"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps --no-audit --no-fund
+      - name: Test MtFixIt contract
+        run: npm run test:mtfixit
+      - name: Type check
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build
