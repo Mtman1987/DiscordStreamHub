@@ -50,15 +50,15 @@ test('converts other explicit private SPMT commands to the native command syntax
     isDM: true,
     message: 'spmt points',
   });
-  const checkin = normalizeDiscordDmSpmtCommand({
+  const pack = normalizeDiscordDmSpmtCommand({
     userId: 'user-1',
     channelId: 'dm-1',
     isDM: true,
-    message: 'spmt !checkin',
+    message: 'spmt !pack',
   });
 
   assert.equal(points.message, '!points');
-  assert.equal(checkin.message, '!checkin');
+  assert.equal(pack.message, '!pack');
 });
 
 test('does not rewrite ordinary private conversation', () => {
