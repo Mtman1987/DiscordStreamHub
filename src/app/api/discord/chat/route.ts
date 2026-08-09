@@ -25,6 +25,7 @@ import { recordDiscordMessageActivity } from '@/lib/discord-activity-service';
 import { parseDiscordChatPayload } from '@/lib/discord-chat-payload';
 import { publishSpmtEvent } from '@/lib/spmt-client';
 import { getChatTagServiceSecret } from '@/lib/runtime-secrets';
+import { getStreamweaverCommandTimeoutMs } from '@/lib/streamweaver-command-timeout';
 
 const COOLDOWN_MS = 5 * 60 * 1000; // 1 point per 5 min per user
 const discordChatCooldowns = new Map<string, number>();
@@ -350,6 +351,10 @@ async function postStreamWeaverDiscordChat(
   traceId: string,
   replyMode: 'direct' | 'collect',
 ) {
+  const sourceMessage = body?.message || body?.content || body?.root?.message || body?.root?.content;
+  const timeoutMs = replyMode === 'collect'
+    ? 45_000
+    : getStreamweaverCommandTimeoutMs(sourceMessage);
   const response = await fetch(`${getStreamweaverUrl().replace(/\/$/, '')}/api/discord/chat`, {
     method: 'POST',
     headers: {
@@ -359,7 +364,7 @@ async function postStreamWeaverDiscordChat(
       ...(replyMode === 'collect' ? { 'x-discord-reply-mode': 'collect' } : {}),
     },
     body: JSON.stringify(body),
-    signal: timeoutSignal(replyMode === 'collect' ? 45_000 : 30_000),
+    signal: timeoutSignal(timeoutMs),
   });
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
