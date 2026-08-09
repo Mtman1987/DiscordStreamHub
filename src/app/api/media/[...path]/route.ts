@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readFile } from 'fs/promises';
-import { join } from 'path';
+import { join, resolve, sep } from 'path';
 import { existsSync } from 'fs';
 import { getStoragePath } from '@/lib/runtime-config';
 
@@ -12,7 +12,11 @@ export async function GET(
 ) {
   try {
     const { path } = await params;
-    const filePath = join(STORAGE_PATH, ...path);
+    const storageRoot = resolve(STORAGE_PATH);
+    const filePath = resolve(join(storageRoot, ...path));
+    if (filePath !== storageRoot && !filePath.startsWith(`${storageRoot}${sep}`)) {
+      return new NextResponse('Not found', { status: 404 });
+    }
     
     if (!existsSync(filePath)) {
       return new NextResponse('Not found', { status: 404 });
