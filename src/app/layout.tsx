@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 import { Toaster } from '@/components/ui/toaster';
 import { ThemeProvider } from '@/components/theme-provider';
 import { DataComponentsProvider } from '@/data';
+import { SpmtWorkspaceHost } from '@/components/spmt-workspace-host';
 
 export const metadata: Metadata = {
   title: 'Discord Stream Hub',
@@ -20,8 +21,6 @@ export const viewport = {
   themeColor: '#667eea',
 };
 
-// Polling initialization moved to /api/startup route to prevent hot reload issues
-
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -29,24 +28,16 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body
-        className={cn(
-          'min-h-screen bg-background font-body antialiased'
-        )}
-      >
+      <body className={cn('min-h-screen bg-background font-body antialiased')}>
         <div className="star-field"></div>
         <div className="star-field-2"></div>
         <div className="star-field-3"></div>
-        <ThemeProvider
-            attribute="class"
-            defaultTheme="dark"
-            enableSystem
-            disableTransitionOnChange
-          >
-            <DataComponentsProvider>
-              {children}
-            </DataComponentsProvider>
-            <Toaster />
+        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
+          <DataComponentsProvider>
+            {children}
+            <SpmtWorkspaceHost />
+          </DataComponentsProvider>
+          <Toaster />
         </ThemeProvider>
       </body>
     </html>
