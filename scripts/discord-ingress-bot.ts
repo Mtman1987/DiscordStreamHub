@@ -71,6 +71,7 @@ function buildPayload(message: Message) {
 
 async function forwardMessage(message: Message) {
   if (!shouldForward(message)) return;
+  if (!DISCORD_BOT_TOKEN) throw new Error('DISCORD_BOT_TOKEN is required');
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 12_000);
@@ -83,6 +84,7 @@ async function forwardMessage(message: Message) {
         'content-type': 'application/json',
         'x-chat-origin': 'dsh-discord-gateway',
         'x-discord-trace-id': message.id,
+        'x-discord-bot-token': DISCORD_BOT_TOKEN,
       },
       body: JSON.stringify(buildPayload(message)),
       signal: controller.signal,
