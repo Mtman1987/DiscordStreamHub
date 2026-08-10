@@ -1,5 +1,5 @@
 import { getStreamweaverUrl } from '@/lib/runtime-config';
-import { getBotServiceSecret } from '@/lib/runtime-secrets';
+import { getDshClientSecret } from '@/lib/runtime-secrets';
 
 function timeoutSignal(milliseconds: number) {
   const controller = new AbortController();
@@ -17,7 +17,7 @@ export async function finalizePrivateDmDiscordMessage(
     return false;
   }
 
-  const secret = getBotServiceSecret();
+  const secret = getDshClientSecret();
   if (!secret) {
     console.warn('[Private DM Finalizer] Shared bot service secret is not configured.');
     return false;
