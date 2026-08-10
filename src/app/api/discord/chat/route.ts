@@ -26,6 +26,7 @@ import { parseDiscordChatPayload } from '@/lib/discord-chat-payload';
 import { publishSpmtEvent } from '@/lib/spmt-client';
 import { getChatTagServiceSecret } from '@/lib/runtime-secrets';
 import { getStreamweaverCommandTimeoutMs } from '@/lib/streamweaver-command-timeout';
+import { finalizePrivateDmDiscordMessage } from '@/lib/private-dm-finalizer';
 
 const COOLDOWN_MS = 5 * 60 * 1000; // 1 point per 5 min per user
 const discordChatCooldowns = new Map<string, number>();
@@ -94,7 +95,7 @@ function markDiscordMessageSeen(guildId: string, channelId: string, messageId: s
   return false;
 }
 
-async function sendDiscordChannelMessage(channelId: string, payload: any) {
+async function sendDiscordChannelMessage(channelId: string, payload: any, privateDm = false) {
   const botToken = process.env.DISCORD_BOT_TOKEN;
   if (!botToken) throw new Error('DISCORD_BOT_TOKEN is not configured');
 
@@ -111,7 +112,11 @@ async function sendDiscordChannelMessage(channelId: string, payload: any) {
     throw new Error(`Discord message failed: ${response.status} ${await response.text()}`);
   }
 
-  return response.json();
+  const sent = await response.json();
+  if (privateDm && Array.isArray(payload?.embeds) && payload.embeds.length && sent?.id) {
+    await finalizePrivateDmDiscordMessage(channelId, sent.id);
+  }
+  return sent;
 }
 
 async function getOrCreateChatTagWebhook(channelId: string) {
@@ -179,7 +184,7 @@ function buildChatTagControlsButtonPayload(serverId: string) {
   };
 }
 
-async function sendChatTagControlsButton(channelId: string, serverId: string) {
+async function sendChatTagControlsButton(channelId: string, serverId: string, privateDm = false) {
   const payload: any = {
     ...buildChatTagControlsButtonPayload(serverId),
     username: CHAT_TAG_WEBHOOK_NAME,
@@ -203,7 +208,7 @@ async function sendChatTagControlsButton(channelId: string, serverId: string) {
     return response.json();
   } catch (error) {
     console.error('[DiscordChat] Chat Tag webhook controls post failed, falling back to bot message:', error);
-    return sendDiscordChannelMessage(channelId, buildChatTagControlsButtonPayload(serverId));
+    return sendDiscordChannelMessage(channelId, buildChatTagControlsButtonPayload(serverId), privateDm);
   }
 }
 
@@ -401,7 +406,7 @@ function summarizeStreamWeaverFanout(result: Awaited<ReturnType<typeof fanoutToS
   };
 }
 
-async function fanoutToStreamWeaver(body: any, channelId: string, traceId: string) {
+async function fanoutToStreamWeaver(body: any, channelId: string, traceId: string, privateDm = false) {
   const startedAt = Date.now();
   logDiscordTrace(traceId, 'fanout-start', {
     destination: 'streamweaver:/api/discord/chat',
@@ -412,7 +417,7 @@ async function fanoutToStreamWeaver(body: any, channelId: string, traceId: strin
     const replies = Array.isArray(payload?.replies) ? payload.replies : [];
     const sends = [];
     for (const reply of replies) {
-      sends.push(await sendDiscordChannelMessage(channelId, normalizeCollectedReply(reply)));
+      sends.push(await sendDiscordChannelMessage(channelId, normalizeCollectedReply(reply), privateDm));
     }
     const replyMessageIds = sends
       .map((sent: any) => String(sent?.id || '').trim())
@@ -491,9 +496,9 @@ function buildHearMeOutControlsPayload(options: { activityInviteUrl?: string; in
   };
 }
 
-async function sendHearMeOutControls(channelId: string, origin?: string) {
+async function sendHearMeOutControls(channelId: string, origin?: string, privateDm = false) {
   const payload = buildHearMeOutControlsPayload({ origin });
-  return sendDiscordChannelMessage(channelId, payload);
+  return sendDiscordChannelMessage(channelId, payload, privateDm);
 }
 
 async function forwardHearMeOutDiscordChat(payload: any) {
@@ -607,7 +612,7 @@ export async function POST(request: NextRequest) {
     if (/^!(controls?|watch-controls)$/i.test(message.trim()) && channelId) {
       const deletedCommand = await deleteDiscordMessage(channelId, messageId);
       try {
-        const sent = await sendHearMeOutControls(channelId, request.nextUrl.origin);
+        const sent = await sendHearMeOutControls(channelId, request.nextUrl.origin, isDirectMessage);
         publishDiscordBridgeEvent('discord.hearmeout.controls_sent', {
           userId,
           userName,
@@ -650,7 +655,7 @@ export async function POST(request: NextRequest) {
         payload.embeds[0].description = 'Open the Discord Activity without queueing another video.';
         payload.embeds[0].author.name = 'Activity Invite';
         payload.components = [];
-        const sent = await sendDiscordChannelMessage(channelId, payload);
+        const sent = await sendDiscordChannelMessage(channelId, payload, isDirectMessage);
         return NextResponse.json({ success: true, commandHandled: 'hearmeout-invite', sent, deletedCommand });
       } catch (error: any) {
         const sent = await sendDiscordChannelMessage(channelId, {
@@ -721,7 +726,7 @@ export async function POST(request: NextRequest) {
       }
       const normalizedLower = normalizedMsg.toLowerCase().trim();
       if (normalizedLower === '@spmt controls' || normalizedLower === '@spmt control') {
-        const sent = await sendChatTagControlsButton(channelId, guildId);
+        const sent = await sendChatTagControlsButton(channelId, guildId, isDirectMessage);
         const deletedCommand = await deleteDiscordMessage(channelId, messageId);
         console.log(`[DiscordChat] Sent Chat Tag controls button: ${sent?.id || 'unknown-message-id'}`);
         publishDiscordBridgeEvent('discord.chattag.controls_sent', {
@@ -787,7 +792,7 @@ export async function POST(request: NextRequest) {
       && !message.trim().startsWith('!');
 
     if (shouldFanoutToStreamWeaver) {
-      streamweaverFanout = await fanoutToStreamWeaver(body, channelId, traceId);
+      streamweaverFanout = await fanoutToStreamWeaver(body, channelId, traceId, isDirectMessage);
     } else {
       logDiscordTrace(traceId, 'fanout-skipped', {
         destination: 'streamweaver:/api/discord/chat',
