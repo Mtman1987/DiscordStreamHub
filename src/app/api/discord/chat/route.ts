@@ -79,7 +79,9 @@ function timeoutSignal(milliseconds: number) {
   return controller.signal;
 }
 
-function markDiscordMessageSeen(guildId: string, channelId: string, messageId: string) {
+let processedDiscordMessageWriteQueue: Promise<void> = Promise.resolve();
+
+async function markDiscordMessageSeen(guildId: string, channelId: string, messageId: string): Promise<boolean> {
   if (!messageId || !channelId) return false;
 
   const now = Date.now();
@@ -91,8 +93,38 @@ function markDiscordMessageSeen(guildId: string, channelId: string, messageId: s
 
   const key = `${guildId}:${channelId}:${messageId}`;
   if (processedDiscordMessages.has(key)) return true;
+
+  let alreadyHandled = false;
+  processedDiscordMessageWriteQueue = processedDiscordMessageWriteQueue
+    .catch(() => {})
+    .then(async () => {
+      const stateRef = db.collection('runtime').doc('discord-message-dedupe');
+      const snapshot = await stateRef.get();
+      const saved = snapshot.exists && Array.isArray(snapshot.data()?.entries)
+        ? snapshot.data().entries as Array<{ key?: unknown; seenAt?: unknown }>
+        : [];
+      const active = saved
+        .map((entry) => ({
+          key: String(entry?.key || '').trim(),
+          seenAt: Number(entry?.seenAt) || 0,
+        }))
+        .filter((entry) => entry.key && now - entry.seenAt <= PROCESSED_MESSAGE_TTL_MS);
+
+      if (active.some((entry) => entry.key === key)) {
+        alreadyHandled = true;
+        return;
+      }
+
+      active.push({ key, seenAt: now });
+      await stateRef.set({
+        entries: active.slice(-2000),
+        updatedAt: new Date(now).toISOString(),
+      });
+    });
+
+  await processedDiscordMessageWriteQueue;
   processedDiscordMessages.set(key, now);
-  return false;
+  return alreadyHandled;
 }
 
 async function sendDiscordChannelMessage(channelId: string, payload: any, privateDm = false) {
@@ -577,7 +609,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, skipped: 'empty message' });
     }
 
-    if (markDiscordMessageSeen(guildId, channelId, messageId)) {
+    if (await markDiscordMessageSeen(guildId, channelId, messageId)) {
       console.log(`[DiscordChat] Duplicate message ignored: ${guildId}/${channelId}/${messageId}`);
       logDiscordTrace(traceId, 'skipped', { reason: 'duplicate-message' });
       return NextResponse.json({ success: true, skipped: 'duplicate-message', messageId });
