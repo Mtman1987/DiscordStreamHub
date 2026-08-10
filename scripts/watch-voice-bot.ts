@@ -707,7 +707,7 @@ async function forwardUnhandledDm(message: Message) {
     embeds: message.embeds.map((embed) => embed.toJSON()),
   };
 
-  const response = await fetch(`${DSH_BASE_URL}/api/discord/chat`, {
+  const response = await fetch(`${FORWARDING_API_BASE_URL}/api/discord/chat`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
