@@ -42,6 +42,18 @@ async function postJson(url: string, body: any, headers: Record<string, string> 
 
 export async function POST(request: NextRequest) {
   const traceId = request.headers.get('x-discord-trace-id') || crypto.randomUUID();
+  const configuredBotToken = process.env.DISCORD_BOT_TOKEN;
+  const suppliedBotToken = request.headers.get('x-discord-bot-token');
+
+  if (!configuredBotToken) {
+    trace(traceId, 'rejected', { reason: 'bot-token-not-configured' });
+    return NextResponse.json({ error: 'Discord gateway ingress is not configured' }, { status: 503 });
+  }
+  if (!suppliedBotToken || suppliedBotToken !== configuredBotToken) {
+    trace(traceId, 'rejected', { reason: 'invalid-bot-token' });
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const body = await request.json().catch(() => null);
   if (!body) return NextResponse.json({ success: true, skipped: 'invalid-json' });
 
