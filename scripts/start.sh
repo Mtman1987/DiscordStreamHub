@@ -42,7 +42,23 @@ else
   ) &
 fi
 
-# 4. Optional Discord voice adapter. Its public enable flag and endpoints live
+# 4. Discord public text ingress. This is the replacement for Kite's Gateway
+# listener/fanout and also owns the bot presence shown in Discord.
+if [ "$DISABLE_STARTUP_SERVICES" = "true" ]; then
+  echo "[Startup] Startup services disabled; skipping Discord ingress bot"
+elif [ -n "$DISCORD_BOT_TOKEN" ]; then
+  (
+    echo "[Startup] Waiting to start Discord ingress bot..."
+    sleep 20
+    DSH_DISCORD_INGRESS_URL="http://127.0.0.1:3000" \
+      DSH_DISCORD_PRESENCE="${DSH_DISCORD_PRESENCE:-Powered by Space Mountain}" \
+      npm run discord-ingress-bot
+  ) &
+else
+  echo "[Startup] Discord ingress bot disabled because DISCORD_BOT_TOKEN is not set"
+fi
+
+# 5. Optional Discord voice adapter. Its public enable flag and endpoints live
 # in the volume-backed runtime config; the bot token remains a Fly secret.
 RUNTIME_CONFIG_FILE="${RUNTIME_CONFIG_FILE:-/data/runtime-config.json}"
 WATCH_VOICE_ENABLED="$(node -e "try{const c=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));process.stdout.write(c.publicFlags?.discordWatchVoiceBot===false?'false':'true')}catch{process.stdout.write('true')}" "$RUNTIME_CONFIG_FILE")"
@@ -64,7 +80,7 @@ else
   echo "[Startup] Discord voice adapter disabled by volume runtime config"
 fi
 
-# 5. Focused Twitch repair-command watcher. It observes only !mtfixit and leaves
+# 6. Focused Twitch repair-command watcher. It observes only !mtfixit and leaves
 # the existing points and conversational Athena listeners unchanged.
 if [ "$DISABLE_STARTUP_SERVICES" = "true" ]; then
   echo "[Startup] Startup services disabled; skipping Twitch mtfixit watcher"
@@ -78,7 +94,7 @@ else
   echo "[Startup] Twitch mtfixit watcher disabled because SPMT_API_KEY is not set"
 fi
 
-# 6. Make the Next server the container's PID 1. This ensures Fly observes the
+# 7. Make the Next server the container's PID 1. This ensures Fly observes the
 # real web process, receives its exit status, and can reach 0.0.0.0:3000.
 export PORT=3000
 export HOSTNAME=0.0.0.0
