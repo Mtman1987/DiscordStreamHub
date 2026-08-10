@@ -85,21 +85,18 @@ export async function POST(request: NextRequest) {
   ];
 
   // DSH already routes active bang commands to StreamWeaver/HearMeOut. Avoid
-  // sending those twice. Regular public chat goes directly to StreamWeaver so
-  // Athena and semantic listeners keep receiving the same messages Kite carried.
+  // sending those twice. Regular public chat goes to both passive consumers so
+  // Athena/context features keep receiving the same messages Kite carried.
   if (!isBangCommand && !isSpmtCommand) {
     jobs.push(
       postJson(streamweaverUrl, body, commonHeaders, 12_000)
         .then((result) => ({ destination: 'streamweaver', ...result })),
     );
+    jobs.push(
+      postJson(hearMeOutUrl, { ...body, dispatch: false }, commonHeaders, 8_000)
+        .then((result) => ({ destination: 'hearmeout-passive', ...result })),
+    );
   }
-
-  // HearMeOut receives passive public chat for context, but dispatch is disabled
-  // so only DSH's explicit command routing can trigger actions/replies.
-  jobs.push(
-    postJson(hearMeOutUrl, { ...body, dispatch: false }, commonHeaders, 8_000)
-      .then((result) => ({ destination: 'hearmeout-passive', ...result })),
-  );
 
   const deliveries = await Promise.all(jobs);
   for (const delivery of deliveries) {
