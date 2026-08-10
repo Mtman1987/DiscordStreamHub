@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "discord-ingress-bot": "tsx scripts/discord-ingress-bot.ts",
     "watch-voice-bot": "tsx scripts/watch-voice-bot.ts",
     "watch-mtfixit-twitch": "tsx scripts/watch-mtfixit-twitch.ts",
     "register-activity-command": "tsx scripts/register-activity-command.ts",
