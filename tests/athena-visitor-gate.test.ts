@@ -27,5 +27,8 @@ test('persists Discord ingress watermarks before routing public or private messa
   assert.match(route, /runtime'\)\.doc\('discord-message-dedupe'/);
   assert.match(route, /watermarks\[lane\] = messageId/);
   assert.match(route, /compareDiscordMessageIds\(messageId, watermark\) <= 0/);
-  assert.match(route, /if \(await markDiscordMessageSeen\(guildId, channelId, messageId\)\)/);
+  assert.match(route, /if \(await markDiscordMessageSeen\(/);
+  assert.match(route, /data\.createdAt \|\| data\.created_at \|\| data\.timestamp/);
+  assert.match(route, /createdAtMs < PROCESS_STARTED_AT - INITIAL_EVENT_GRACE_MS/);
+  assert.match(route, /if \(staleEvent\)/);
 });
