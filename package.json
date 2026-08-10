@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "discord-ingress-bot": "tsx scripts/discord-ingress-bot.ts",
     "watch-voice-bot": "tsx scripts/watch-voice-bot.ts",
     "watch-mtfixit-twitch": "tsx scripts/watch-mtfixit-twitch.ts",
     "register-activity-command": "tsx scripts/register-activity-command.ts",
@@ -72,7 +73,7 @@
     "patch-package": "^8.0.0",
     "prism-media": "^1.3.5",
     "puppeteer": "^24.36.1",
-    "puppeteer-screen-recorder": "^3.0.6",
+    "puppeteer-screen-recorder": "^24.0.0",
     "react": "^18.3.1",
     "react-day-picker": "^8.10.1",
     "react-dom": "^18.3.1",
