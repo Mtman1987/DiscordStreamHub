@@ -32,6 +32,8 @@ const COOLDOWN_MS = 5 * 60 * 1000; // 1 point per 5 min per user
 const discordChatCooldowns = new Map<string, number>();
 const processedDiscordMessages = new Map<string, number>();
 const PROCESSED_MESSAGE_TTL_MS = 10 * 60 * 1000;
+const PROCESS_STARTED_AT = Date.now();
+const INITIAL_EVENT_GRACE_MS = 2 * 60 * 1000;
 const CHAT_TAG_WEBHOOK_NAME = getChatTagWebhookName();
 const CHAT_TAG_AVATAR_URL = getChatTagAvatarUrl();
 const DISCORD_ACTIVITY_APPLICATION_ID = getDiscordActivityApplicationId();
@@ -93,7 +95,12 @@ function compareDiscordMessageIds(left: string, right: string): number {
   }
 }
 
-async function markDiscordMessageSeen(guildId: string, channelId: string, messageId: string): Promise<boolean> {
+async function markDiscordMessageSeen(
+  guildId: string,
+  channelId: string,
+  messageId: string,
+  createdAt?: unknown,
+): Promise<boolean> {
   if (!messageId || !channelId) return false;
 
   const now = Date.now();
@@ -124,6 +131,22 @@ async function markDiscordMessageSeen(guildId: string, channelId: string, messag
       );
       const lane = `${guildId}:${channelId}`;
       const watermark = watermarks[lane];
+      const createdAtMs = Date.parse(String(createdAt || ''));
+      const staleEvent = Number.isFinite(createdAtMs)
+        && createdAtMs < PROCESS_STARTED_AT - INITIAL_EVENT_GRACE_MS;
+
+      if (staleEvent) {
+        if (!watermark || compareDiscordMessageIds(messageId, watermark) > 0) {
+          watermarks[lane] = messageId;
+          await stateRef.set({
+            version: 2,
+            watermarks,
+            updatedAt: new Date(now).toISOString(),
+          });
+        }
+        alreadyHandled = true;
+        return;
+      }
 
       if (watermark && compareDiscordMessageIds(messageId, watermark) <= 0) {
         alreadyHandled = true;
@@ -625,7 +648,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, skipped: 'empty message' });
     }
 
-    if (await markDiscordMessageSeen(guildId, channelId, messageId)) {
+    if (await markDiscordMessageSeen(
+      guildId,
+      channelId,
+      messageId,
+      data.createdAt || data.created_at || data.timestamp,
+    )) {
       console.log(`[DiscordChat] Duplicate message ignored: ${guildId}/${channelId}/${messageId}`);
       logDiscordTrace(traceId, 'skipped', { reason: 'duplicate-message' });
       return NextResponse.json({ success: true, skipped: 'duplicate-message', messageId });
