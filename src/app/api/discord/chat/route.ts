@@ -81,6 +81,18 @@ function timeoutSignal(milliseconds: number) {
 
 let processedDiscordMessageWriteQueue: Promise<void> = Promise.resolve();
 
+function compareDiscordMessageIds(left: string, right: string): number {
+  try {
+    const leftId = BigInt(left);
+    const rightId = BigInt(right);
+    if (leftId === rightId) return 0;
+    return leftId > rightId ? 1 : -1;
+  } catch {
+    if (left === right) return 0;
+    return left > right ? 1 : -1;
+  }
+}
+
 async function markDiscordMessageSeen(guildId: string, channelId: string, messageId: string): Promise<boolean> {
   if (!messageId || !channelId) return false;
 
@@ -100,24 +112,28 @@ async function markDiscordMessageSeen(guildId: string, channelId: string, messag
     .then(async () => {
       const stateRef = db.collection('runtime').doc('discord-message-dedupe');
       const snapshot = await stateRef.get();
-      const saved = snapshot.exists && Array.isArray(snapshot.data()?.entries)
-        ? snapshot.data().entries as Array<{ key?: unknown; seenAt?: unknown }>
-        : [];
-      const active = saved
-        .map((entry) => ({
-          key: String(entry?.key || '').trim(),
-          seenAt: Number(entry?.seenAt) || 0,
-        }))
-        .filter((entry) => entry.key && now - entry.seenAt <= PROCESSED_MESSAGE_TTL_MS);
+      const savedWatermarks = snapshot.exists && snapshot.data()?.watermarks
+        && typeof snapshot.data().watermarks === 'object'
+        ? snapshot.data().watermarks as Record<string, unknown>
+        : {};
+      const watermarks = Object.fromEntries(
+        Object.entries(savedWatermarks)
+          .map(([lane, value]) => [String(lane || '').trim(), String(value || '').trim()])
+          .filter(([lane, value]) => lane && value)
+          .slice(-2000),
+      );
+      const lane = `${guildId}:${channelId}`;
+      const watermark = watermarks[lane];
 
-      if (active.some((entry) => entry.key === key)) {
+      if (watermark && compareDiscordMessageIds(messageId, watermark) <= 0) {
         alreadyHandled = true;
         return;
       }
 
-      active.push({ key, seenAt: now });
+      watermarks[lane] = messageId;
       await stateRef.set({
-        entries: active.slice(-2000),
+        version: 2,
+        watermarks,
         updatedAt: new Date(now).toISOString(),
       });
     });
