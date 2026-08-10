@@ -79,7 +79,21 @@ function timeoutSignal(milliseconds: number) {
   return controller.signal;
 }
 
-function markDiscordMessageSeen(guildId: string, channelId: string, messageId: string) {
+let processedDiscordMessageWriteQueue: Promise<void> = Promise.resolve();
+
+function compareDiscordMessageIds(left: string, right: string): number {
+  try {
+    const leftId = BigInt(left);
+    const rightId = BigInt(right);
+    if (leftId === rightId) return 0;
+    return leftId > rightId ? 1 : -1;
+  } catch {
+    if (left === right) return 0;
+    return left > right ? 1 : -1;
+  }
+}
+
+async function markDiscordMessageSeen(guildId: string, channelId: string, messageId: string): Promise<boolean> {
   if (!messageId || !channelId) return false;
 
   const now = Date.now();
@@ -91,8 +105,42 @@ function markDiscordMessageSeen(guildId: string, channelId: string, messageId: s
 
   const key = `${guildId}:${channelId}:${messageId}`;
   if (processedDiscordMessages.has(key)) return true;
+
+  let alreadyHandled = false;
+  processedDiscordMessageWriteQueue = processedDiscordMessageWriteQueue
+    .catch(() => {})
+    .then(async () => {
+      const stateRef = db.collection('runtime').doc('discord-message-dedupe');
+      const snapshot = await stateRef.get();
+      const savedWatermarks = snapshot.exists && snapshot.data()?.watermarks
+        && typeof snapshot.data().watermarks === 'object'
+        ? snapshot.data().watermarks as Record<string, unknown>
+        : {};
+      const watermarks = Object.fromEntries(
+        Object.entries(savedWatermarks)
+          .map(([lane, value]) => [String(lane || '').trim(), String(value || '').trim()])
+          .filter(([lane, value]) => lane && value)
+          .slice(-2000),
+      );
+      const lane = `${guildId}:${channelId}`;
+      const watermark = watermarks[lane];
+
+      if (watermark && compareDiscordMessageIds(messageId, watermark) <= 0) {
+        alreadyHandled = true;
+        return;
+      }
+
+      watermarks[lane] = messageId;
+      await stateRef.set({
+        version: 2,
+        watermarks,
+        updatedAt: new Date(now).toISOString(),
+      });
+    });
+
+  await processedDiscordMessageWriteQueue;
   processedDiscordMessages.set(key, now);
-  return false;
+  return alreadyHandled;
 }
 
 async function sendDiscordChannelMessage(channelId: string, payload: any, privateDm = false) {
@@ -577,7 +625,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, skipped: 'empty message' });
     }
 
-    if (markDiscordMessageSeen(guildId, channelId, messageId)) {
+    if (await markDiscordMessageSeen(guildId, channelId, messageId)) {
       console.log(`[DiscordChat] Duplicate message ignored: ${guildId}/${channelId}/${messageId}`);
       logDiscordTrace(traceId, 'skipped', { reason: 'duplicate-message' });
       return NextResponse.json({ success: true, skipped: 'duplicate-message', messageId });
