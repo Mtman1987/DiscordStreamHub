@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import { isExplicitAthenaInvocation } from '../src/lib/athena-visitor-gate';
 
 test('accepts unmistakable Athena invocations', () => {
@@ -15,4 +16,16 @@ test('ignores conversation about Athena and similarly named viewers', () => {
   assert.equal(isExplicitAthenaInvocation('hello athena1234'), false);
   assert.equal(isExplicitAthenaInvocation('Athena1234 said hello'), false);
   assert.equal(isExplicitAthenaInvocation('the Athena bot is neat'), false);
+});
+
+test('persists Discord ingress watermarks before routing public or private messages', () => {
+  const route = readFileSync(
+    new URL('../src/app/api/discord/chat/route.ts', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(route, /runtime'\)\.doc\('discord-message-dedupe'/);
+  assert.match(route, /watermarks\[lane\] = messageId/);
+  assert.match(route, /compareDiscordMessageIds\(messageId, watermark\) <= 0/);
+  assert.match(route, /if \(await markDiscordMessageSeen\(guildId, channelId, messageId\)\)/);
 });
