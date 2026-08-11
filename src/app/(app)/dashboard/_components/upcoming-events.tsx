@@ -48,10 +48,11 @@ export function UpcomingEvents() {
   const events = React.useMemo(() => {
     const now = Date.now();
     return (allEvents || [])
-      .map((event) => ({ event, eventDate: timestampToDate(event.eventDateTime) }))
-      .filter((item): item is { event: CalendarEvent; eventDate: Date } =>
-        item.event.type !== 'captains-log' && Boolean(item.eventDate) && item.eventDate.getTime() >= now
-      )
+      .flatMap((event) => {
+        const eventDate = timestampToDate(event.eventDateTime);
+        if (event.type === 'captains-log' || !eventDate || eventDate.getTime() < now) return [];
+        return [{ event, eventDate }];
+      })
       .sort((a, b) => a.eventDate.getTime() - b.eventDate.getTime())
       .slice(0, 4);
   }, [allEvents]);
