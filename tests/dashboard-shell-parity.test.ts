@@ -46,11 +46,23 @@ test('shared DSH workspace tray remains visible and offers reconnection', () => 
   assert.doesNotMatch(text, /if \(hiddenRoute \|\| embedded \|\| !connected\) return null/);
 });
 
-test('dashboard exposes the primary community operations instead of a weak app-links card', () => {
+test('dashboard exposes compact primary community operations instead of a weak app-links card', () => {
   const text = source('src/app/(app)/dashboard/page.tsx');
   assert.match(text, /Community Command Center/);
+  assert.match(text, /repeat\(auto-fit,minmax\(190px,1fr\)\)/);
+  assert.match(text, /line-clamp-2/);
   for (const route of ['/shoutouts', '/calendar', '/leaderboard', '/messages', '/applications']) {
     assert.match(text, new RegExp(route.replace('/', '\\/')));
   }
   assert.doesNotMatch(text, /DiscordStreamHub Apps/);
+});
+
+test('DSH sidebar keeps one account control and clears the shared Worktray', () => {
+  const text = source('src/app/(app)/layout.tsx');
+  assert.match(text, /<UserNav \/>/);
+  assert.match(text, /SidebarFooter className="px-4 pb-20 pt-4"/);
+  assert.match(text, /\[scrollbar-width:none\]/);
+  assert.doesNotMatch(text, /For the Space Mountain Admin/);
+  assert.doesNotMatch(text, /powered by Mtman1987/);
+  assert.doesNotMatch(text, /<SidebarSeparator/);
 });

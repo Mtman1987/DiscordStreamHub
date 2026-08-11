@@ -46,18 +46,18 @@ export default function DashboardPage() {
         description="Live shoutout activity, the next real events, community ranks, and the tools you actually use."
       />
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5" aria-label="Discord Stream Hub quick actions">
+      <section className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-3" aria-label="Discord Stream Hub quick actions">
         {quickActions.map(({ href, label, description, Icon }) => (
           <Link
             key={href}
             href={href}
-            className="group rounded-xl border border-white/10 bg-card/70 p-4 shadow-sm backdrop-blur transition hover:-translate-y-0.5 hover:border-primary/35 hover:bg-card"
+            className="group min-h-32 rounded-xl border border-white/10 bg-card/70 p-3.5 shadow-sm backdrop-blur transition hover:-translate-y-0.5 hover:border-primary/35 hover:bg-card"
           >
-            <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 text-primary">
+            <div className="mb-2.5 flex h-8 w-8 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 text-primary">
               <Icon className="h-4 w-4" />
             </div>
             <h2 className="font-headline text-sm font-semibold group-hover:text-primary">{label}</h2>
-            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{description}</p>
+            <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{description}</p>
           </Link>
         ))}
       </section>
