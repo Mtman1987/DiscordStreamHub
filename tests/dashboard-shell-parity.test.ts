@@ -19,7 +19,7 @@ test('dashboard events keep a second future-only guard after query filtering', (
   const text = source('src/app/(app)/dashboard/_components/upcoming-events.tsx');
   assert.match(text, /where\('eventDateTime', '>=', new Date\(\)\)/);
   assert.match(text, /timestampToDate\(event\.eventDateTime\)/);
-  assert.match(text, /eventDate\.getTime\(\) >= now/);
+  assert.match(text, /eventDate\.getTime\(\) < now/);
 });
 
 test('dashboard shoutout activity reads the live polling ledger', () => {
