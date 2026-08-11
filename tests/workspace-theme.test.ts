@@ -83,7 +83,8 @@ test('applies every shared workspace token to the DSH CSS contract', () => {
   assert.equal(values.has('--card'), true);
   assert.equal(values.has('--foreground'), true);
   assert.equal(values.has('--accent'), true);
-  assert.equal(values.get('--radius'), '0.5rem');
+  assert.equal(values.get('--radius'), '18px');
+  assert.equal(values.get('--workspace-background-image'), 'url("https://spacemountain.live/assets/theme-oceanic-blue-background.webp")');
   assert.equal(root.dataset.workspaceTheme, 'oceanic-blue');
   assert.equal(root.dataset.workspaceDensity, 'comfortable');
   assert.equal(root.dataset.workspaceMotion, 'on');
