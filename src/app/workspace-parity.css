@@ -52,6 +52,6 @@
 }
 
 [data-state="collapsed"] [data-sidebar="header"] h2,
-[data-state="collapsed"] [data-sidebar="footer"] [data-sidebar-copy] {
+[data-state="collapsed"] [data-sidebar="footer"] .text-center {
   display: none !important;
 }
