@@ -20,6 +20,12 @@ export type DocumentReference<T = DocumentData> = StubDocRef & { __type?: T };
 export type CollectionReference<T = DocumentData> = StubCollRef & { __type?: T; type?: 'collection' };
 export type Query<T = DocumentData> = StubCollRef & { __type?: T; type?: 'query' | 'collection' };
 
+type WhereConstraint = {
+  field: string;
+  op: string;
+  value: any;
+};
+
 export class StubDocRef {
   _path: string;
 
@@ -40,11 +46,13 @@ export class StubCollRef {
   _path: string;
   _orderBy?: { field: string; direction: 'asc' | 'desc' };
   _limit?: number;
+  _where: WhereConstraint[];
 
-  constructor(path: string, options?: { orderBy?: { field: string; direction: 'asc' | 'desc' }; limit?: number }) {
+  constructor(path: string, options?: { orderBy?: { field: string; direction: 'asc' | 'desc' }; limit?: number; where?: WhereConstraint[] }) {
     this._path = path;
     this._orderBy = options?.orderBy;
     this._limit = options?.limit;
+    this._where = options?.where ? [...options.where] : [];
   }
 
   get type() {
@@ -72,30 +80,33 @@ export function collection(storeOrRef: any, ...pathSegments: string[]): StubColl
   return new StubCollRef(pathSegments.join('/'));
 }
 
-export function query(ref: any, ..._constraints: any[]): any {
+export function query(ref: any, ...constraints: any[]): any {
   if (!(ref instanceof StubCollRef)) return ref;
-  const next = new StubCollRef(ref._path, { orderBy: ref._orderBy, limit: ref._limit });
-  for (const constraint of _constraints) {
+  const next = new StubCollRef(ref._path, { orderBy: ref._orderBy, limit: ref._limit, where: ref._where });
+  for (const constraint of constraints) {
     if (constraint?.type === 'orderBy') {
       next._orderBy = { field: constraint.field, direction: constraint.direction };
     }
     if (constraint?.type === 'limit') {
       next._limit = constraint.value;
     }
+    if (constraint?.type === 'where') {
+      next._where.push({ field: constraint.field, op: constraint.op, value: constraint.value });
+    }
   }
   return next;
 }
 
-export function orderBy(_field: string, _direction?: string): any {
-  return { type: 'orderBy', field: _field, direction: _direction === 'asc' ? 'asc' : 'desc' };
+export function orderBy(field: string, direction?: string): any {
+  return { type: 'orderBy', field, direction: direction === 'asc' ? 'asc' : 'desc' };
 }
 
-export function limit(_n: number): any {
-  return { type: 'limit', value: Math.max(0, Math.trunc(Number(_n || 0))) };
+export function limit(n: number): any {
+  return { type: 'limit', value: Math.max(0, Math.trunc(Number(n || 0))) };
 }
 
-export function where(_field: string, _op: string, _value: any): any {
-  return null;
+export function where(field: string, op: string, value: any): any {
+  return { type: 'where', field, op, value };
 }
 
 function reviveTimestamps(obj: any): any {
@@ -127,6 +138,90 @@ function reviveTimestamps(obj: any): any {
   return result;
 }
 
+function readField(item: any, field: string): any {
+  return String(field || '')
+    .split('.')
+    .filter(Boolean)
+    .reduce((value, key) => value?.[key], item);
+}
+
+function comparable(value: any): any {
+  if (value instanceof Date) return value.getTime();
+  if (value && typeof value.toMillis === 'function') return value.toMillis();
+  if (value && typeof value.toDate === 'function') {
+    const date = value.toDate();
+    return date instanceof Date ? date.getTime() : value;
+  }
+  if (value && typeof value.seconds === 'number') return value.seconds * 1000;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (/^\d{4}-\d{2}-\d{2}(?:T|$)/.test(trimmed)) {
+      const parsedDate = Date.parse(trimmed);
+      if (Number.isFinite(parsedDate)) return parsedDate;
+    }
+    if (trimmed !== '' && /^-?\d+(?:\.\d+)?$/.test(trimmed)) {
+      const parsedNumber = Number(trimmed);
+      if (Number.isFinite(parsedNumber)) return parsedNumber;
+    }
+    return trimmed;
+  }
+  return value;
+}
+
+function matchesWhere(item: any, constraint: WhereConstraint): boolean {
+  const rawLeft = readField(item, constraint.field);
+  const rawRight = constraint.value;
+  const left = comparable(rawLeft);
+  const right = comparable(rawRight);
+
+  switch (constraint.op) {
+    case '==': return left === right;
+    case '!=': return left !== right;
+    case '<': return left < right;
+    case '<=': return left <= right;
+    case '>': return left > right;
+    case '>=': return left >= right;
+    case 'array-contains': return Array.isArray(rawLeft) && rawLeft.some((value) => comparable(value) === right);
+    case 'array-contains-any': {
+      if (!Array.isArray(rawLeft) || !Array.isArray(rawRight)) return false;
+      const candidates = rawRight.map(comparable);
+      return rawLeft.some((value) => candidates.includes(comparable(value)));
+    }
+    case 'in': return Array.isArray(rawRight) && rawRight.map(comparable).includes(left);
+    case 'not-in': return Array.isArray(rawRight) && !rawRight.map(comparable).includes(left);
+    default: return true;
+  }
+}
+
+function applyQueryConstraints(results: any[], ref: StubCollRef): any[] {
+  let filtered = [...results];
+
+  if (ref._where.length > 0) {
+    filtered = filtered.filter((item) => ref._where.every((constraint) => matchesWhere(item, constraint)));
+  }
+
+  if (ref._orderBy?.field) {
+    const { field, direction } = ref._orderBy;
+    filtered.sort((a, b) => {
+      const left = comparable(readField(a, field));
+      const right = comparable(readField(b, field));
+      let result = 0;
+      if (typeof left === 'number' && typeof right === 'number') {
+        result = left - right;
+      } else {
+        result = String(left ?? '').localeCompare(String(right ?? ''));
+      }
+      return direction === 'asc' ? result : -result;
+    });
+  }
+
+  if (typeof ref._limit === 'number' && ref._limit > 0) {
+    filtered = filtered.slice(0, ref._limit);
+  }
+
+  return filtered;
+}
+
 export async function getDoc(ref: StubDocRef): Promise<{ exists: () => boolean; data: () => any; id: string }> {
   const result = await dbGet(ref._path);
 
@@ -138,7 +233,7 @@ export async function getDoc(ref: StubDocRef): Promise<{ exists: () => boolean; 
 }
 
 export async function getDocs(ref: StubCollRef): Promise<{ docs: Array<{ id: string; data: () => any; ref: StubDocRef }> }> {
-  const results = await dbList(ref._path);
+  const results = applyQueryConstraints(await dbList(ref._path), ref);
 
   return {
     docs: results.map(item => ({
@@ -171,49 +266,42 @@ export async function addDoc(ref: StubCollRef, data: any): Promise<StubDocRef> {
   return new StubDocRef(`${ref._path}/${json.id || 'unknown'}`);
 }
 
-export function onSnapshot(ref: any, callback: (snap: any) => void, onError?: (error: DataError) => void): () => void { let cancelled = false; const POLL_MS = 10 * 60 * 1000;
-  const doFetch = () => { if (cancelled) return; if (ref instanceof StubDocRef) {
-    dbGet(ref._path)
-      .then(data => {
-        callback({
-          exists: () => !!data,
-          data: () => reviveTimestamps(data),
-          id: ref.id,
-        });
-      })
-      .catch(error => onError?.(error));
-  } else if (ref instanceof StubCollRef) {
-    dbList(ref._path)
-      .then(results => {
-        let orderedResults = [...results];
-        if (ref._orderBy?.field) {
-          const { field, direction } = ref._orderBy;
-          orderedResults.sort((a, b) => {
-            const left = a?.[field];
-            const right = b?.[field];
-            const leftValue = typeof left === 'number' ? left : Number(left ?? 0);
-            const rightValue = typeof right === 'number' ? right : Number(right ?? 0);
-            const result = Number.isFinite(leftValue) && Number.isFinite(rightValue)
-              ? leftValue - rightValue
-              : String(left ?? '').localeCompare(String(right ?? ''));
-            return direction === 'asc' ? result : -result;
+export function onSnapshot(ref: any, callback: (snap: any) => void, onError?: (error: DataError) => void): () => void {
+  let cancelled = false;
+  const POLL_MS = 10 * 60 * 1000;
+  const doFetch = () => {
+    if (cancelled) return;
+    if (ref instanceof StubDocRef) {
+      dbGet(ref._path)
+        .then(data => {
+          callback({
+            exists: () => !!data,
+            data: () => reviveTimestamps(data),
+            id: ref.id,
           });
-        }
-        if (typeof ref._limit === 'number' && ref._limit > 0) {
-          orderedResults = orderedResults.slice(0, ref._limit);
-        }
-        callback({
-          docs: orderedResults.map(item => ({
-            id: item.id,
-            data: () => reviveTimestamps(item),
-            ref: new StubDocRef(`${ref._path}/${item.id}`),
-          })),
-        });
-      })
-      .catch(error => onError?.(error));
-  }
-
-  }; doFetch(); const iv = setInterval(doFetch, POLL_MS); return () => { cancelled = true; clearInterval(iv); };
+        })
+        .catch(error => onError?.(error));
+    } else if (ref instanceof StubCollRef) {
+      dbList(ref._path)
+        .then(results => {
+          const constrainedResults = applyQueryConstraints(results, ref);
+          callback({
+            docs: constrainedResults.map(item => ({
+              id: item.id,
+              data: () => reviveTimestamps(item),
+              ref: new StubDocRef(`${ref._path}/${item.id}`),
+            })),
+          });
+        })
+        .catch(error => onError?.(error));
+    }
+  };
+  doFetch();
+  const iv = setInterval(doFetch, POLL_MS);
+  return () => {
+    cancelled = true;
+    clearInterval(iv);
+  };
 }
 
 export class Timestamp {
@@ -245,4 +333,3 @@ export class Timestamp {
     return { seconds: this.seconds, nanoseconds: this.nanoseconds };
   }
 }
-

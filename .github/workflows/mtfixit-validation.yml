@@ -23,6 +23,8 @@ jobs:
         run: npm ci --legacy-peer-deps --no-audit --no-fund
       - name: Test MtFixIt contract
         run: npm run test:mtfixit
+      - name: Test dashboard and shared shell parity
+        run: node --import tsx --test tests/dashboard-shell-parity.test.ts
       - name: Type check
         run: npm run typecheck
       - name: Production build
