@@ -10,10 +10,9 @@ import {
   SidebarContent,
   SidebarFooter,
   SidebarTrigger,
-  SidebarSeparator,
 } from '@/components/ui/sidebar';
 import Link from 'next/link';
-import { Rocket, Sparkles } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 import { MainNav } from './_components/main-nav';
 import { UserNav } from './_components/user-nav';
 import { DataClientProvider } from '@/data';
@@ -214,16 +213,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </Link>
               <SidebarTrigger className="hidden md:flex" />
             </SidebarHeader>
-            <SidebarContent className="p-4">
+            <SidebarContent className="p-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               <MainNav />
             </SidebarContent>
-            <SidebarFooter className="p-4 space-y-4">
+            <SidebarFooter className="px-4 pb-20 pt-4">
               <UserNav />
-              <SidebarSeparator />
-              <div className="text-center text-xs text-muted-foreground group-data-[collapsed=true]:hidden">
-                <div>For the Space Mountain Admin</div>
-                <div>powered by Mtman1987 <Rocket className="inline h-3 w-3" /></div>
-              </div>
             </SidebarFooter>
           </Sidebar>
           <div className="flex min-h-0 flex-1 flex-col">
