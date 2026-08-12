@@ -1,0 +1,41 @@
+name: Apply Fly log runtime fix
+
+on:
+  push:
+    branches:
+      - fix/fly-log-batch-20260812
+    paths:
+      - ".github/workflows/apply-fly-log-runtime-fix.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: fix/fly-log-batch-20260812
+          fetch-depth: 0
+      - name: Remove Next-only marker from shared server runtime config
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/lib/runtime-config.ts')
+          text = path.read_text()
+          old = "import 'server-only';\n"
+          if old not in text:
+              raise SystemExit('expected server-only marker not found')
+          text = text.replace(old, "// Shared by Next.js server code and standalone Node/tsx workers.\n", 1)
+          path.write_text(text)
+          PY
+      - name: Remove one-shot workflow and commit
+        run: |
+          rm .github/workflows/apply-fly-log-runtime-fix.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Allow runtime config in standalone workers"
+          git push origin HEAD:fix/fly-log-batch-20260812
