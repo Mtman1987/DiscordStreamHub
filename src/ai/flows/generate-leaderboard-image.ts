@@ -25,7 +25,10 @@ export async function generateLeaderboardImage(
 
     const page = await browser.newPage();
     await page.setViewport({ width: 1200, height: 1400, deviceScaleFactor: 1 });
-    await page.goto(url.toString(), { waitUntil: 'networkidle0', timeout: 30000 });
+    // The headless page keeps background requests alive, so networkidle0 can
+    // time out even after the leaderboard is ready. Load the document and use
+    // the rendered entry as the actual readiness signal instead.
+    await page.goto(url.toString(), { waitUntil: 'domcontentloaded', timeout: 20000 });
     await page.waitForSelector('.leaderboard-entry', { timeout: 20000 });
 
     await page.addStyleTag({
