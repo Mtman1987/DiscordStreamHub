@@ -1,4 +1,4 @@
-import 'server-only';
+// Shared by Next.js server code and standalone Node/tsx workers.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 
