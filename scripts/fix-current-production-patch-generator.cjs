@@ -5,4 +5,6 @@ const before = "  assert.match(gateway, /authorization: `Bearer/);";
 const after = "  assert.ok(gateway.includes('authorization:'));\\n  assert.ok(gateway.includes('Bearer '));";
 if (!source.includes(before)) throw new Error('problematic embedded backtick marker not found');
 source = source.replace(before, after);
+if (!source.includes('BigInt(messageId) >> 22n')) throw new Error('discord snowflake BigInt marker not found');
+source = source.replace('BigInt(messageId) >> 22n', 'BigInt(messageId) >> BigInt(22)');
 fs.writeFileSync(path, source);
