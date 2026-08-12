@@ -6,6 +6,7 @@ import { Toaster } from '@/components/ui/toaster';
 import { ThemeProvider } from '@/components/theme-provider';
 import { DataComponentsProvider } from '@/data';
 import { SpmtWorkspaceHost } from '@/components/spmt-workspace-host';
+import { PersonalOverlayHost } from '@/components/personal-overlay-host';
 
 export const metadata: Metadata = {
   title: 'Discord Stream Hub',
@@ -36,6 +37,7 @@ export default function RootLayout({
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
           <DataComponentsProvider>
             {children}
+            <PersonalOverlayHost />
             <SpmtWorkspaceHost />
           </DataComponentsProvider>
           <Toaster />
