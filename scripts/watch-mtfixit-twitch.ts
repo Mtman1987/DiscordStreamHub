@@ -171,6 +171,7 @@ async function runWatcher() {
   const joined = new Set(initialChannels.map(normalizeChannel).filter(Boolean));
   const client = new tmi.Client({
     options: { debug: false },
+    connection: { reconnect: false },
     identity: { username: credentials.username, password: `oauth:${credentials.accessToken}` },
     channels: [...joined],
   });
@@ -209,7 +210,11 @@ async function runWatcher() {
   client.on('join', (channel) => joined.add(normalizeChannel(channel)));
   client.on('part', (channel) => joined.delete(normalizeChannel(channel)));
   client.on('disconnected', (reason) => {
-    if (activeClient === client) activeClient = null;
+    if (activeClient !== client) {
+      console.warn(`[MtFixIt:Twitch] Ignoring stale disconnect: ${reason}`);
+      return;
+    }
+    activeClient = null;
     clearRefreshTimer();
     console.warn(`[MtFixIt:Twitch] Disconnected: ${reason}`);
     scheduleReconnect(String(reason || 'disconnected'));

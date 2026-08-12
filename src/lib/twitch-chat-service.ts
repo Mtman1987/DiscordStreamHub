@@ -24,6 +24,7 @@ class TwitchChatService {
   private status: 'idle' | 'starting' | 'connected' | 'waiting-for-live-channels' | 'disabled' | 'error' = 'idle';
   private joinedChannels: Set<string> = new Set();
   private channelJoinRetryAfter: Map<string, number> = new Map();
+  private channelJoinNotice: Map<string, { messageId: string; message: string; at: number }> = new Map();
   private lastError: string | null = null;
   private lastStartedAt: string | null = null;
   private lastUpdatedAt: string | null = null;
@@ -89,6 +90,15 @@ class TwitchChatService {
         this.joinedChannels.delete(normalized);
         this.athenaChannelAccess.delete(normalized);
       }
+    });
+    this.client.on('notice', (channel, messageId, message) => {
+      const normalized = normalizeChannel(channel);
+      if (!normalized) return;
+      this.channelJoinNotice.set(normalized, {
+        messageId: String(messageId || ''),
+        message: String(message || ''),
+        at: Date.now(),
+      });
     });
     this.client.on('disconnected', (reason) => {
       this.status = 'error';
@@ -276,14 +286,19 @@ class TwitchChatService {
       try {
         await this.client.join(channel);
         this.channelJoinRetryAfter.delete(normalized);
+        this.channelJoinNotice.delete(normalized);
         this.joinedChannels.add(normalized);
         console.log(`[TwitchChat] Joined live Space Mountain channel #${normalized}`);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        const retryMs = /msg_banned|banned/i.test(message) ? 6 * 60 * 60 * 1000 : 10 * 60 * 1000;
+        const notice = this.channelJoinNotice.get(normalized);
+        const recentNotice = notice && now - notice.at <= 30_000 ? notice : null;
+        const noticeText = recentNotice ? `${recentNotice.messageId} ${recentNotice.message}` : '';
+        const banned = /msg_banned|banned/i.test(`${message} ${noticeText}`);
+        const retryMs = banned ? 6 * 60 * 60 * 1000 : 10 * 60 * 1000;
         this.channelJoinRetryAfter.set(normalized, now + retryMs);
-        this.lastError = `Join #${normalized}: ${message}`;
-        console.warn(`[TwitchChat] Could not join #${normalized}; retrying later: ${message}`);
+        this.lastError = `Join #${normalized}: ${recentNotice?.messageId || message}`;
+        console.warn(`[TwitchChat] Could not join #${normalized}; retrying in ${Math.round(retryMs / 60_000)}m: ${recentNotice?.messageId || message}`);
       }
     }
     
@@ -295,13 +310,17 @@ class TwitchChatService {
           console.warn(`[TwitchChat] Could not part #${channel}:`, error);
         }
         this.channelJoinRetryAfter.delete(channel);
+        this.channelJoinNotice.delete(channel);
         this.joinedChannels.delete(channel);
         this.athenaChannelAccess.delete(channel);
         console.log(`[TwitchChat] Parted offline Space Mountain channel #${channel}`);
       }
     }
     for (const channel of [...this.channelJoinRetryAfter.keys()]) {
-      if (!liveChannels.includes(channel)) this.channelJoinRetryAfter.delete(channel);
+      if (!liveChannels.includes(channel)) {
+        this.channelJoinRetryAfter.delete(channel);
+        this.channelJoinNotice.delete(channel);
+      }
     }
   }
 
@@ -313,6 +332,7 @@ class TwitchChatService {
     this.status = 'idle';
     this.joinedChannels.clear();
     this.channelJoinRetryAfter.clear();
+    this.channelJoinNotice.clear();
     this.athenaChannelAccess.clear();
   }
 

@@ -18,6 +18,7 @@ const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
     chatTagBotUrl: 'https://chat-tag-bot-new.fly.dev',
     hearmeoutUrl: 'https://hearmeout-main.fly.dev',
     streamweaverUrl: 'https://streamweaver-new.fly.dev',
+    spmtUrl: 'https://spmt.live',
     discordInviteUrl: 'https://discord.gg/spacemountain',
     clipWorkerUrl: 'https://dsh-clip-worker.fly.dev',
     crewBannerGifUrl: 'https://via.placeholder.com/1920x120/00D9FF/FFFFFF?text=SPACE+MOUNTAIN+CREW',
@@ -162,6 +163,7 @@ export function getRuntimePublicUrl(key: keyof RuntimeConfig['publicUrls']): str
       chatTagBotUrl: ['CHAT_TAG_BOT_URL'],
       hearmeoutUrl: ['HEARMEOUT_URL'],
       streamweaverUrl: ['STREAMWEAVER_URL', 'STREAMWEAVE_URL'],
+      spmtUrl: ['SPMT_BASE_URL'],
       discordInviteUrl: ['DISCORD_INVITE_URL', 'NEXT_PUBLIC_DISCORD_INVITE_URL'],
       clipWorkerUrl: ['CLIP_WORKER_URL'],
       crewBannerGifUrl: ['CREW_BANNER_GIF_URL'],
@@ -272,6 +274,10 @@ export function getHearMeOutUrl(): string {
 
 export function getStreamweaverUrl(): string {
   return getRuntimePublicUrl('streamweaverUrl');
+}
+
+export function getSpmtUrl(): string {
+  return getRuntimePublicUrl('spmtUrl');
 }
 
 export function getDiscordInviteUrl(): string {

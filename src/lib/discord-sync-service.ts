@@ -27,18 +27,6 @@ interface DiscordRole {
 class DiscordSyncService {
   private baseUrl = 'https://discord.com/api/v10';
   private readonly editRetryDelaysMs = [300, 900];
-  private readonly discordEpochMs = 1420070400000;
-  private readonly oldMessageEditWindowMs = 60 * 60 * 1000;
-
-  private isOlderThanDiscordEditWindow(messageId: string): boolean {
-    try {
-      const createdAt = Number((BigInt(messageId) >> BigInt(22)) + BigInt(this.discordEpochMs));
-      return Number.isFinite(createdAt) && Date.now() - createdAt >= this.oldMessageEditWindowMs;
-    } catch {
-      return false;
-    }
-  }
-
   private isExpectedEditLifecycleError(errorText: string): boolean {
     return /Maximum number of edits to messages older than 1 hour reached|code["']?\s*:\s*30046|30046|Unknown Message/i.test(errorText);
   }
@@ -222,9 +210,6 @@ class DiscordSyncService {
   async editMessage(serverId: string, channelId: string, messageId: string, messageData: any): Promise<void> {
     try {
       const botToken = await this.getBotToken(serverId);
-      if (this.isOlderThanDiscordEditWindow(messageId)) {
-        throw new Error(`Discord edit needs repost for ${messageId} in ${channelId}: 30046 preemptive-old-message`);
-      }
       for (let attempt = 0; attempt < 3; attempt += 1) {
         const response = await fetch(`${this.baseUrl}/channels/${channelId}/messages/${messageId}`, {
           method: 'PATCH',
@@ -241,7 +226,7 @@ class DiscordSyncService {
 
         const errorText = await response.text().catch(() => response.statusText);
         if (this.isExpectedEditLifecycleError(errorText)) {
-          console.warn(`Discord edit needs repost for ${messageId} in ${channelId}: ${response.status} ${errorText}`);
+          console.log(`[DiscordSync] Discord edit cap reached for ${messageId}; caller will repost.`);
           throw new Error(`Failed to edit message ${messageId} in ${channelId}: ${response.status} ${errorText}`);
         }
 

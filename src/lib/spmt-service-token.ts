@@ -1,4 +1,4 @@
-const SPMT_BASE_URL = String(process.env.SPMT_BASE_URL || 'https://spmt.live').replace(/\/$/, '');
+import { getSpmtUrl } from './runtime-config';
 
 type CachedToken = { token: string; expiresAt: number };
 const cache = new Map<string, CachedToken>();
@@ -12,7 +12,8 @@ export async function getSpmtServiceToken(scopes: string[]): Promise<string> {
 
   const clientSecret = String(process.env.DSH_CLIENT_SECRET || '').trim();
   if (!clientSecret) throw new Error('DSH SPMT OAuth client is not configured.');
-  const response = await fetch(`${SPMT_BASE_URL}/api/oauth/token`, {
+  const spmtBaseUrl = getSpmtUrl().replace(/\/$/, '');
+  const response = await fetch(`${spmtBaseUrl}/api/oauth/token`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'application/json' },
     body: JSON.stringify({
