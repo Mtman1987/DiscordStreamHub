@@ -8,6 +8,12 @@ import { submitMtFixIt } from '../src/lib/mtfixit-service';
 
 const CHANNEL_REFRESH_MS = 60_000;
 const TOKEN_RETRY_MS = 5 * 60_000;
+const CHANNEL_JOIN_RETRY_MS = 30 * 60_000;
+
+const channelRetryAfter = new Map<string, number>();
+let activeClient: tmi.Client | null = null;
+let refreshTimer: NodeJS.Timeout | null = null;
+let reconnectTimer: NodeJS.Timeout | null = null;
 
 function readRuntimeConfig(): any {
   const candidates = [
@@ -101,27 +107,63 @@ async function getValidBotCredentials(): Promise<{ username: string; accessToken
 }
 
 async function syncChannels(client: tmi.Client, joined: Set<string>) {
+  if (activeClient !== client) return;
   const live = new Set((await getLiveChannels()).map(normalizeChannel).filter(Boolean));
+  const now = Date.now();
   for (const channel of live) {
     if (joined.has(channel)) continue;
-    await client.join(channel);
-    joined.add(channel);
-    console.log(`[MtFixIt:Twitch] Joined #${channel}`);
+    const retryAt = channelRetryAfter.get(channel) || 0;
+    if (retryAt > now) continue;
+    try {
+      await client.join(channel);
+      joined.add(channel);
+      channelRetryAfter.delete(channel);
+      console.log(`[MtFixIt:Twitch] Joined #${channel}`);
+    } catch (error) {
+      channelRetryAfter.set(channel, now + CHANNEL_JOIN_RETRY_MS);
+      console.warn(`[MtFixIt:Twitch] Could not join #${channel}; retrying later:`, error);
+    }
   }
   for (const channel of [...joined]) {
     if (live.has(channel)) continue;
-    await client.part(channel);
-    joined.delete(channel);
+    channelRetryAfter.delete(channel);
+    try {
+      await client.part(channel);
+    } catch (error) {
+      console.warn(`[MtFixIt:Twitch] Could not part #${channel}:`, error);
+    } finally {
+      joined.delete(channel);
+    }
     console.log(`[MtFixIt:Twitch] Parted #${channel}`);
   }
+  for (const channel of [...channelRetryAfter.keys()]) if (!live.has(channel)) channelRetryAfter.delete(channel);
+}
+
+function clearRefreshTimer() {
+  if (refreshTimer) clearInterval(refreshTimer);
+  refreshTimer = null;
+}
+
+function scheduleReconnect(reason: string) {
+  if (reconnectTimer) return;
+  console.warn(`[MtFixIt:Twitch] Reconnect scheduled: ${reason}`);
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    void runWatcher().catch((error) => {
+      console.error('[MtFixIt:Twitch] Reconnect failed:', error);
+      scheduleReconnect('retry after reconnect failure');
+    });
+  }, TOKEN_RETRY_MS);
+  reconnectTimer.unref?.();
 }
 
 async function runWatcher() {
+  if (activeClient) return;
   if (!serverId) throw new Error('DSH guild/server ID is not configured.');
   const credentials = await getValidBotCredentials();
   if (!credentials) {
     console.warn('[MtFixIt:Twitch] Bot OAuth is unavailable; retrying later.');
-    setTimeout(() => runWatcher().catch(console.error), TOKEN_RETRY_MS).unref?.();
+    scheduleReconnect('bot OAuth unavailable');
     return;
   }
 
@@ -167,19 +209,28 @@ async function runWatcher() {
   client.on('join', (channel) => joined.add(normalizeChannel(channel)));
   client.on('part', (channel) => joined.delete(normalizeChannel(channel)));
   client.on('disconnected', (reason) => {
+    if (activeClient === client) activeClient = null;
+    clearRefreshTimer();
     console.warn(`[MtFixIt:Twitch] Disconnected: ${reason}`);
-    setTimeout(() => runWatcher().catch(console.error), TOKEN_RETRY_MS).unref?.();
+    scheduleReconnect(String(reason || 'disconnected'));
   });
 
   await client.connect();
+  activeClient = client;
   console.log(`[MtFixIt:Twitch] Connected as ${credentials.username}; watching ${joined.size} live channel(s).`);
-  const timer = setInterval(() => syncChannels(client, joined).catch((error) => {
-    console.error('[MtFixIt:Twitch] Channel refresh failed:', error);
-  }), CHANNEL_REFRESH_MS);
-  timer.unref?.();
+  clearRefreshTimer();
+  refreshTimer = setInterval(() => {
+    if (activeClient !== client) return;
+    void syncChannels(client, joined).catch((error) => {
+      console.warn('[MtFixIt:Twitch] Channel refresh query failed; will retry:', error);
+    });
+  }, CHANNEL_REFRESH_MS);
+  refreshTimer.unref?.();
 }
 
 runWatcher().catch((error) => {
   console.error('[MtFixIt:Twitch] Fatal startup error:', error);
-  setTimeout(() => runWatcher().catch(console.error), TOKEN_RETRY_MS).unref?.();
+  activeClient = null;
+  clearRefreshTimer();
+  scheduleReconnect('fatal startup error');
 });

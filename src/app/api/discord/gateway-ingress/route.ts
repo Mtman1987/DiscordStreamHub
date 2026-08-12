@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getChatTagApiBase, getHearMeOutUrl, getStreamweaverUrl } from '@/lib/runtime-config';
+import { getSpmtServiceToken } from '@/lib/spmt-service-token';
 
 export const dynamic = 'force-dynamic';
 
@@ -93,7 +94,10 @@ export async function POST(request: NextRequest) {
 
   const jobs: Array<Promise<any>> = [
     postJson(dshUrl, body, commonHeaders, 12_000).then((result) => ({ destination: 'dsh', ...result })),
-    postJson(chatTagUrl, body, commonHeaders, 8_000).then((result) => ({ destination: 'chat-tag', ...result })),
+    getSpmtServiceToken(['discord:control'])
+      .then((token) => postJson(chatTagUrl, body, { ...commonHeaders, authorization: `Bearer ${token}` }, 8_000))
+      .then((result) => ({ destination: 'chat-tag', ...result }))
+      .catch((error) => ({ destination: 'chat-tag', ok: false, status: 503, durationMs: 0, error: error instanceof Error ? error.message : String(error) })),
   ];
 
   // DSH already routes active bang commands to StreamWeaver/HearMeOut. Avoid

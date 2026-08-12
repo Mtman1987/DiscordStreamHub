@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildMtFixItJobRequest, type MtFixItSubmissionInput } from './mtfixit-contract';
+import { getSpmtServiceToken } from './spmt-service-token';
 
 const DEFAULT_ROTATOR_URL = 'https://mtman-machine-rotator.fly.dev';
 const REPORTER_COOLDOWN_MS = 60_000;
@@ -36,10 +37,6 @@ export type MtFixItSubmissionResult = {
   jobId: string;
   dashboardUrl: string;
 };
-
-function sharedKey(): string {
-  return String(process.env.SPMT_API_KEY || process.env.SPMT_PLATFORM_API_KEY || '').trim();
-}
 
 function rotatorBaseUrl(): string {
   return String(process.env.ROTATOR_BASE_URL || process.env.CODEX_WORKER_URL || DEFAULT_ROTATOR_URL)
@@ -153,9 +150,9 @@ function jobReport(job: RotatorJob, input: MtFixItSubmissionInput): string {
 }
 
 async function readJob(jobId: string): Promise<RotatorJob> {
-  const key = sharedKey();
+  const token = await getSpmtServiceToken(['athena:write']);
   const response = await fetch(`${rotatorBaseUrl()}/api/dsh/mtfixit/jobs/${encodeURIComponent(jobId)}`, {
-    headers: { accept: 'application/json', 'x-dsh-mtfixit-key': key },
+    headers: { accept: 'application/json', authorization: `Bearer ${token}` },
     cache: 'no-store',
     signal: AbortSignal.timeout(15_000),
   });
@@ -208,8 +205,7 @@ export async function submitMtFixIt(input: MtFixItSubmissionInput): Promise<MtFi
     throw new Error('Please wait a minute before submitting another repair report.');
   }
 
-  const key = sharedKey();
-  if (!key) throw new Error('SPMT_API_KEY is not configured for the DSH-to-rotator bridge.');
+  const token = await getSpmtServiceToken(['athena:write']);
   reporterCooldowns.set(cooldownKey, Date.now());
 
   const response = await fetch(`${rotatorBaseUrl()}/api/dsh/mtfixit/jobs`, {
@@ -217,7 +213,7 @@ export async function submitMtFixIt(input: MtFixItSubmissionInput): Promise<MtFi
     headers: {
       accept: 'application/json',
       'content-type': 'application/json',
-      'x-dsh-mtfixit-key': key,
+      authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(buildMtFixItJobRequest({ ...input, description })),
     signal: AbortSignal.timeout(20_000),

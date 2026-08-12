@@ -23,6 +23,7 @@ class TwitchChatService {
   private athenaChannelAccess: Map<string, AthenaChannelAccess> = new Map();
   private status: 'idle' | 'starting' | 'connected' | 'waiting-for-live-channels' | 'disabled' | 'error' = 'idle';
   private joinedChannels: Set<string> = new Set();
+  private channelJoinRetryAfter: Map<string, number> = new Map();
   private lastError: string | null = null;
   private lastStartedAt: string | null = null;
   private lastUpdatedAt: string | null = null;
@@ -266,22 +267,41 @@ class TwitchChatService {
     await this.loadAllowedUsers();
     const currentChannels = this.client.getChannels().map(c => normalizeChannel(c)).filter(Boolean);
     
+    const now = Date.now();
     for (const channel of liveChannels) {
       const normalized = normalizeChannel(channel);
-      if (normalized && !currentChannels.includes(normalized)) {
+      if (!normalized || currentChannels.includes(normalized)) continue;
+      const retryAt = this.channelJoinRetryAfter.get(normalized) || 0;
+      if (retryAt > now) continue;
+      try {
         await this.client.join(channel);
+        this.channelJoinRetryAfter.delete(normalized);
         this.joinedChannels.add(normalized);
         console.log(`[TwitchChat] Joined live Space Mountain channel #${normalized}`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const retryMs = /msg_banned|banned/i.test(message) ? 6 * 60 * 60 * 1000 : 10 * 60 * 1000;
+        this.channelJoinRetryAfter.set(normalized, now + retryMs);
+        this.lastError = `Join #${normalized}: ${message}`;
+        console.warn(`[TwitchChat] Could not join #${normalized}; retrying later: ${message}`);
       }
     }
     
     for (const channel of currentChannels) {
       if (!liveChannels.includes(channel)) {
-        await this.client.part(channel);
+        try {
+          await this.client.part(channel);
+        } catch (error) {
+          console.warn(`[TwitchChat] Could not part #${channel}:`, error);
+        }
+        this.channelJoinRetryAfter.delete(channel);
         this.joinedChannels.delete(channel);
         this.athenaChannelAccess.delete(channel);
         console.log(`[TwitchChat] Parted offline Space Mountain channel #${channel}`);
       }
+    }
+    for (const channel of [...this.channelJoinRetryAfter.keys()]) {
+      if (!liveChannels.includes(channel)) this.channelJoinRetryAfter.delete(channel);
     }
   }
 
@@ -292,6 +312,7 @@ class TwitchChatService {
     }
     this.status = 'idle';
     this.joinedChannels.clear();
+    this.channelJoinRetryAfter.clear();
     this.athenaChannelAccess.clear();
   }
 
