@@ -86,7 +86,8 @@ export function PersonalOverlayHost() {
     aria-hidden="true"
     data-canonical-personal-overlay="true"
     data-renderer-ready={ready ? 'true' : 'false'}
-    className={`pointer-events-none fixed inset-0 z-[90] h-screen w-screen border-0 bg-transparent ${ready ? 'opacity-100' : 'opacity-0'}`}
+    className={`pointer-events-none fixed inset-0 z-[90] h-screen w-screen border-0 bg-transparent ${ready ? 'visible' : 'invisible'}`}
+    style={{ backgroundColor: 'transparent' }}
     allow="autoplay"
   />;
 }
