@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 const SPMT_ORIGIN = 'https://spmt.live';
 const PERSONAL_VISIBILITY_KEY = 'discord-stream-hub:personal-overlay-visible';
 const PERSONAL_VISIBILITY_EVENT = 'spmt:personal-overlay-visibility';
+const PERSONAL_READY_EVENT = 'spmt.personal.renderer-ready';
 
 export function PersonalOverlayHost() {
   const pathname = usePathname();
@@ -15,15 +16,30 @@ export function PersonalOverlayHost() {
   const [embedded, setEmbedded] = React.useState(true);
   const [visible, setVisible] = React.useState(true);
   const [url, setUrl] = React.useState('');
+  const [ready, setReady] = React.useState(false);
+  const frameRef = React.useRef<HTMLIFrameElement | null>(null);
 
   const refresh = React.useCallback(async () => {
     if (hiddenRoute) return;
     try {
       const response = await fetch('/api/spmt/workspace-theme', { cache: 'no-store', credentials: 'include' });
-      if (!response.ok) return setUrl('');
+      if (!response.ok) {
+        setReady(false);
+        setUrl('');
+        return;
+      }
       const body = await response.json().catch(() => ({}));
-      setUrl(typeof body?.personalOverlayUrl === 'string' ? body.personalOverlayUrl : '');
+      const nextUrl = typeof body?.personalOverlayUrl === 'string'
+        && body.personalOverlayUrl.startsWith(`${SPMT_ORIGIN}/tenant/`)
+        && body.personalOverlayUrl.includes('/personal#render=')
+        ? body.personalOverlayUrl
+        : '';
+      setUrl((current) => {
+        if (current !== nextUrl) setReady(false);
+        return nextUrl;
+      });
     } catch {
+      setReady(false);
       setUrl('');
     }
   }, [hiddenRoute]);
@@ -49,7 +65,9 @@ export function PersonalOverlayHost() {
     const timer = window.setInterval(() => void refresh(), 30_000);
     const onFocus = () => void refresh();
     const onMessage = (event: MessageEvent) => {
-      if (event.origin === SPMT_ORIGIN && event.data?.type === 'spmt.surface.updated') void refresh();
+      if (event.origin !== SPMT_ORIGIN) return;
+      if (event.data?.type === 'spmt.surface.updated') void refresh();
+      if (event.data?.type === PERSONAL_READY_EVENT && event.source === frameRef.current?.contentWindow) setReady(true);
     };
     window.addEventListener('focus', onFocus);
     window.addEventListener('message', onMessage);
@@ -62,11 +80,13 @@ export function PersonalOverlayHost() {
 
   if (embedded || hiddenRoute || !visible || !url) return null;
   return <iframe
+    ref={frameRef}
     src={url}
     title="SPMT Personal overlay"
     aria-hidden="true"
     data-canonical-personal-overlay="true"
-    className="pointer-events-none fixed inset-0 z-[90] h-screen w-screen border-0 bg-transparent"
+    data-renderer-ready={ready ? 'true' : 'false'}
+    className={`pointer-events-none fixed inset-0 z-[90] h-screen w-screen border-0 bg-transparent ${ready ? 'opacity-100' : 'opacity-0'}`}
     allow="autoplay"
   />;
 }

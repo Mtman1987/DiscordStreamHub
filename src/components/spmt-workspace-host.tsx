@@ -27,7 +27,7 @@ function fallbackSlots(): WorkspaceDockSlotV1[] {
 export function SpmtWorkspaceHost() {
   const pathname = usePathname();
   const hiddenRoute = /^\/(api|auth|login|embed|headless|activity)(\/|$)/.test(pathname) || pathname.startsWith('/overlay/');
-  const [embedded, setEmbedded] = React.useState(true);
+  const [embedded, setEmbedded] = React.useState(false);
   const [loaded, setLoaded] = React.useState(false);
   const [connected, setConnected] = React.useState(false);
   const [open, setOpen] = React.useState(false);
@@ -63,18 +63,18 @@ export function SpmtWorkspaceHost() {
     const isEmbedded = window.self !== window.top;
     setEmbedded(isEmbedded);
     setPersonalOverlayVisible(window.localStorage.getItem(PERSONAL_VISIBILITY_KEY) !== '0');
-    if (!isEmbedded) void refresh();
+    void refresh();
   }, [refresh]);
 
   React.useEffect(() => {
-    if (hiddenRoute || embedded) return;
+    if (hiddenRoute) return;
     const onFocus = () => void refresh();
     const onVisibility = () => { if (!document.hidden) void refresh(); };
     const timer = window.setInterval(() => void refresh(), 30_000);
     window.addEventListener('focus', onFocus);
     document.addEventListener('visibilitychange', onVisibility);
     return () => { window.clearInterval(timer); window.removeEventListener('focus', onFocus); document.removeEventListener('visibilitychange', onVisibility); };
-  }, [embedded, hiddenRoute, refresh]);
+  }, [hiddenRoute, refresh]);
 
   React.useEffect(() => {
     const onMessage = (event: MessageEvent) => {
@@ -85,7 +85,7 @@ export function SpmtWorkspaceHost() {
     return () => window.removeEventListener('message', onMessage);
   }, [refresh]);
 
-  if (hiddenRoute || embedded) return null;
+  if (hiddenRoute) return null;
 
   const traySlots = tokens?.dockSlots?.length ? tokens.dockSlots : fallbackSlots();
   const activeSlot = target.kind === 'slot' ? traySlots.find((slot) => slot.id === target.id) || null : null;
