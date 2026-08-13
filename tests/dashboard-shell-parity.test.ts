@@ -37,13 +37,31 @@ test('dashboard leaderboard resolves a deeper pool and shows five rows without d
   assert.doesNotMatch(text, /filter\([^\n]*item\.user/);
 });
 
-test('shared DSH workspace tray remains visible and offers reconnection', () => {
+test('shared DSH workspace tray consumes canonical surfaces and never rebuilds overlay widgets', () => {
   const text = source('src/components/spmt-workspace-host.tsx');
+  const personal = source('src/components/personal-overlay-host.tsx');
+  const bridge = source('src/app/api/spmt/workspace-theme/route.ts');
+
   assert.match(text, /aria-label="SPMT workspace tray"/);
   assert.match(text, /\/login\?next=/);
   assert.match(text, /Reconnect SPMT workspace/);
-  assert.match(text, /left: `\$\{Number\(widget\.x \|\| 0\)\}%`/);
+  assert.match(text, /surfaceUrls/);
+  assert.match(text, /Personal overlay \{personalOverlayVisible \? 'On' : 'Off'\}/);
+  assert.match(text, /spmt:personal-overlay-visibility/);
+  assert.doesNotMatch(text, /tokens\?\.overlayWorkspace/);
+  assert.doesNotMatch(text, /widget\.x/);
+  assert.doesNotMatch(text, /widget\.url/);
+  assert.doesNotMatch(text, /spacemountain\.live/);
   assert.doesNotMatch(text, /if \(hiddenRoute \|\| embedded \|\| !connected\) return null/);
+
+  assert.match(personal, /data-canonical-personal-overlay="true"/);
+  assert.match(personal, /discord-stream-hub:personal-overlay-visible/);
+  assert.match(personal, /spmt:personal-overlay-visibility/);
+
+  assert.match(bridge, /\/api\/platform\/surfaces/);
+  assert.match(bridge, /\/api\/personal-overlay-launch/);
+  assert.match(bridge, /\/api\/tenant-scene\?output=public/);
+  assert.match(bridge, /surfaceUrls:/);
 });
 
 test('dashboard exposes compact primary community operations instead of a weak app-links card', () => {
