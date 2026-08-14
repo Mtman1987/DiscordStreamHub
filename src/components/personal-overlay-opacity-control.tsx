@@ -29,6 +29,9 @@ export function PersonalOverlayOpacityControl({ storageKey }: Props) {
       const factor = opacity / 100;
       for (const frame of frames) {
         frame.dataset.localPersonalOpacity = String(opacity);
+        frame.style.opacity = String(factor);
+        frame.style.background = 'transparent';
+        frame.style.backgroundColor = 'transparent';
         frame.contentWindow?.postMessage({ type: 'spmt.personal.local-opacity', opacity: factor }, SPMT_ORIGIN);
       }
     };
