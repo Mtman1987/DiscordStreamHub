@@ -29,9 +29,14 @@ export function PersonalOverlayOpacityControl({ storageKey }: Props) {
       const factor = opacity / 100;
       for (const frame of frames) {
         frame.dataset.localPersonalOpacity = String(opacity);
-        frame.style.opacity = String(factor);
-        frame.style.background = 'transparent';
-        frame.style.backgroundColor = 'transparent';
+
+        // The Personal host is only a transparent viewport. Never fade the iframe
+        // itself: doing so blends the browser surface over the app. Opacity belongs
+        // exclusively to the renderer scene/assets inside the iframe.
+        frame.style.removeProperty('opacity');
+        frame.style.setProperty('background', 'transparent', 'important');
+        frame.style.setProperty('background-color', 'transparent', 'important');
+
         frame.contentWindow?.postMessage({ type: 'spmt.personal.local-opacity', opacity: factor }, SPMT_ORIGIN);
       }
     };
