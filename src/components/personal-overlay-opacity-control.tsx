@@ -6,8 +6,7 @@ type Props = {
   storageKey: string;
 };
 
-const SPMT_ORIGIN = 'https://spmt.live';
-const PERSONAL_SELECTOR = 'iframe[data-canonical-personal-overlay="true"]';
+const PERSONAL_SCENE_SELECTOR = '[data-personal-overlay-scene="true"]';
 
 function clampOpacity(value: unknown) {
   const number = Number(value);
@@ -24,31 +23,21 @@ export function PersonalOverlayOpacityControl({ storageKey }: Props) {
 
   React.useEffect(() => {
     const apply = () => {
-      const frames = Array.from(document.querySelectorAll<HTMLIFrameElement>(PERSONAL_SELECTOR));
-      setAvailable(frames.length > 0);
+      const scenes = Array.from(document.querySelectorAll<HTMLElement>(PERSONAL_SCENE_SELECTOR));
+      setAvailable(scenes.length > 0);
       const factor = opacity / 100;
-      for (const frame of frames) {
-        frame.dataset.localPersonalOpacity = String(opacity);
-
-        // The Personal host is only a transparent viewport. Never fade the iframe
-        // itself: doing so blends the browser surface over the app. Opacity belongs
-        // exclusively to the renderer scene/assets inside the iframe.
-        frame.style.removeProperty('opacity');
-        frame.style.setProperty('background', 'transparent', 'important');
-        frame.style.setProperty('background-color', 'transparent', 'important');
-
-        frame.contentWindow?.postMessage({ type: 'spmt.personal.local-opacity', opacity: factor }, SPMT_ORIGIN);
+      for (const scene of scenes) {
+        scene.dataset.localPersonalOpacity = String(opacity);
+        scene.style.opacity = String(factor);
+        scene.style.setProperty('background', 'transparent', 'important');
+        scene.style.setProperty('background-color', 'transparent', 'important');
       }
     };
 
     apply();
     const observer = new MutationObserver(apply);
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-renderer-ready'] });
-    window.addEventListener('message', apply);
-    return () => {
-      observer.disconnect();
-      window.removeEventListener('message', apply);
-    };
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
   }, [opacity]);
 
   const changeOpacity = (event: React.ChangeEvent<HTMLInputElement>) => {
