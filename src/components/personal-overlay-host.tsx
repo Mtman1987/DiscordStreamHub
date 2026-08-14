@@ -32,21 +32,15 @@ type PersonalLayout = {
   widgets?: PersonalWidget[];
 };
 
-type LockedViewport = {
-  width: number;
-  height: number;
+type SceneFrame = {
+  left: number;
+  top: number;
+  scale: number;
 };
 
 function number(value: unknown, fallback: number) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function currentViewport(): LockedViewport {
-  return {
-    width: Math.max(1, window.innerWidth || SCENE_WIDTH),
-    height: Math.max(1, window.innerHeight || SCENE_HEIGHT),
-  };
 }
 
 function widgetStyle(widget: PersonalWidget): React.CSSProperties {
@@ -93,8 +87,8 @@ export function PersonalOverlayHost() {
   const [embedded, setEmbedded] = React.useState(true);
   const [visible, setVisible] = React.useState(true);
   const [layout, setLayout] = React.useState<PersonalLayout | null>(null);
-  const [viewport, setViewport] = React.useState<LockedViewport>({ width: SCENE_WIDTH, height: SCENE_HEIGHT });
-  const viewportRef = React.useRef<LockedViewport>({ width: SCENE_WIDTH, height: SCENE_HEIGHT });
+  const [frame, setFrame] = React.useState<SceneFrame>({ left: 0, top: 0, scale: 1 });
+  const stageRef = React.useRef<HTMLDivElement | null>(null);
 
   const refresh = React.useCallback(async () => {
     if (hiddenRoute) return;
@@ -113,32 +107,31 @@ export function PersonalOverlayHost() {
 
   React.useEffect(() => {
     const isEmbedded = window.self !== window.top;
-    const initialViewport = currentViewport();
-    viewportRef.current = initialViewport;
-    setViewport(initialViewport);
     setEmbedded(isEmbedded);
     setVisible(window.localStorage.getItem(PERSONAL_VISIBILITY_KEY) !== '0');
+    if (!isEmbedded) void refresh();
+  }, [refresh]);
 
-    const coarsePointer = window.matchMedia?.('(pointer: coarse)').matches ?? false;
-    const onResize = () => {
-      const next = currentViewport();
-      const previous = viewportRef.current;
-      const widthChanged = Math.abs(next.width - previous.width) > 1;
+  React.useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
 
-      // Mobile Chrome changes only innerHeight while its address bar expands and
-      // collapses during scrolling. Treat that as browser chrome, not a scene
-      // resize, so Personal assets stay locked to the viewport instead of
-      // drifting with the scroll and snapping back afterward.
-      if (coarsePointer && !widthChanged) return;
-
-      viewportRef.current = next;
-      setViewport(next);
+    const resizeScene = () => {
+      const width = stage.clientWidth || SCENE_WIDTH;
+      const height = stage.clientHeight || SCENE_HEIGHT;
+      const scale = Math.min(width / SCENE_WIDTH, height / SCENE_HEIGHT);
+      setFrame({
+        left: (width - SCENE_WIDTH * scale) / 2,
+        top: (height - SCENE_HEIGHT * scale) / 2,
+        scale,
+      });
     };
 
-    window.addEventListener('resize', onResize, { passive: true });
-    if (!isEmbedded) void refresh();
-    return () => window.removeEventListener('resize', onResize);
-  }, [refresh]);
+    resizeScene();
+    const observer = new ResizeObserver(resizeScene);
+    observer.observe(stage);
+    return () => observer.disconnect();
+  }, [layout]);
 
   React.useEffect(() => {
     const onVisibility = (event: Event) => {
@@ -165,34 +158,26 @@ export function PersonalOverlayHost() {
 
   if (embedded || hiddenRoute || !visible || !layout || layout.enabled === false) return null;
 
-  const scale = Math.min(viewport.width / SCENE_WIDTH, viewport.height / SCENE_HEIGHT);
   const widgets = Array.isArray(layout.widgets) ? layout.widgets.filter((widget) => widget?.visible !== false) : [];
 
   return <div
+    ref={stageRef}
     aria-label="Canonical SPMT Personal overlay"
     aria-hidden="true"
     data-canonical-personal-overlay="true"
-    className="pointer-events-none fixed left-0 top-0 z-[90] grid place-items-center overflow-hidden bg-transparent"
-    style={{
-      width: `${viewport.width}px`,
-      height: `${viewport.height}px`,
-      background: 'transparent',
-      transform: 'translate3d(0,0,0)',
-      willChange: 'transform',
-      contain: 'layout paint size',
-      isolation: 'isolate',
-    }}
+    data-personal-overlay-stage="true"
+    className="pointer-events-none fixed inset-0 z-[90] overflow-hidden bg-transparent"
+    style={{ background: 'transparent' }}
   >
     <div
       data-personal-overlay-scene="true"
-      className="pointer-events-none relative shrink-0 bg-transparent"
+      className="pointer-events-none absolute left-0 top-0 bg-transparent"
       style={{
         width: `${SCENE_WIDTH}px`,
         height: `${SCENE_HEIGHT}px`,
-        transform: `translate3d(0,0,0) scale(${scale})`,
-        transformOrigin: 'center center',
+        transform: `translate3d(${frame.left}px, ${frame.top}px, 0) scale(${frame.scale})`,
+        transformOrigin: '0 0',
         background: 'transparent',
-        willChange: 'transform',
       }}
     >
       {widgets.map((widget, index) => <section key={widget.id || `${widget.kind || 'widget'}-${index}`} style={widgetStyle(widget)}>
