@@ -43,7 +43,9 @@ export async function GET(request: NextRequest) {
       refreshed = await refreshSession(request);
       if (refreshed) {
         token = String(refreshed.access_token);
-        resolved = await resolveSpmtSession(token);
+        // Refresh exchanges already contain the canonical user too, so avoid a
+        // second SPMT request when we have that identity available.
+        resolved = await resolveSpmtSession(token, refreshed.user);
       }
     }
     if (!resolved) return NextResponse.json({ success: false }, { status: 401 });
@@ -63,6 +65,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
   let token = typeof body?.token === 'string' ? body.token.trim() : '';
+  let exchangedIdentity: any = null;
   let exchangedRefreshToken = '';
   let exchangedExpiresIn = 604800;
   let exchangedRefreshExpiresIn = 2592000;
@@ -70,15 +73,18 @@ export async function POST(request: NextRequest) {
   if (!token && code) {
     const clientSecret = process.env.DSH_CLIENT_SECRET || '';
     if (!clientSecret) return NextResponse.json({ success: false, error: 'DSH OAuth is not configured' }, { status: 503 });
-    const exchange = await fetch('https://spmt.live/api/oauth/token', {
+    const exchange = await fetch(`${SPMT_BASE_URL}/api/oauth/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({ code, client_id: 'discord-stream-hub', client_secret: clientSecret, redirect_uri: 'https://discord-stream-hub-new.fly.dev/auth/callback' }),
       cache: 'no-store',
     });
     const exchangeData = await exchange.json().catch(() => null);
-    if (!exchange.ok || !exchangeData?.access_token) return NextResponse.json({ success: false, error: 'SPMT code exchange failed' }, { status: 401 });
-    token = exchangeData.access_token;
+    if (!exchange.ok || !exchangeData?.access_token || !exchangeData?.user?.id) {
+      return NextResponse.json({ success: false, error: 'SPMT code exchange failed' }, { status: 401 });
+    }
+    token = String(exchangeData.access_token);
+    exchangedIdentity = exchangeData.user;
     exchangedRefreshToken = String(exchangeData.refresh_token || '');
     exchangedExpiresIn = Number(exchangeData.expires_in || 604800);
     exchangedRefreshExpiresIn = Number(exchangeData.refresh_expires_in || 2592000);
@@ -86,7 +92,10 @@ export async function POST(request: NextRequest) {
   if (!token) return NextResponse.json({ success: false, error: 'Missing SPMT authorization code' }, { status: 400 });
 
   try {
-    const resolved = await resolveSpmtSession(token);
+    // A code exchange is authoritative and already includes the canonical SPMT
+    // user, so login no longer pays for an immediate second userinfo round trip.
+    // Direct legacy token posts still validate through userinfo as before.
+    const resolved = await resolveSpmtSession(token, exchangedIdentity);
     return withSessionCookies(
       NextResponse.json({ success: true, session: resolved.session }),
       resolved.token,
