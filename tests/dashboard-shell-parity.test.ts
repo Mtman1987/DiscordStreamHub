@@ -55,8 +55,12 @@ test('shared DSH workspace tray consumes canonical surfaces and never rebuilds o
   assert.doesNotMatch(text, /if \(hiddenRoute \|\| embedded \|\| !connected\) return null/);
 
   assert.match(personal, /data-canonical-personal-overlay="true"/);
+  assert.match(personal, /data-personal-overlay-scene="true"/);
   assert.match(personal, /discord-stream-hub:personal-overlay-visible/);
   assert.match(personal, /spmt:personal-overlay-visibility/);
+  assert.match(personal, /\/api\/spmt\/personal-overlay/);
+  assert.doesNotMatch(personal, /personalOverlayUrl/);
+  assert.doesNotMatch(personal, /<iframe[^>]+data-canonical-personal-overlay/);
 
   assert.match(bridge, /\/api\/platform\/surfaces/);
   assert.match(bridge, /\/api\/personal-overlay-launch/);
@@ -64,12 +68,13 @@ test('shared DSH workspace tray consumes canonical surfaces and never rebuilds o
   assert.match(bridge, /surfaceUrls:/);
 });
 
-test('Personal overlay opacity only affects renderer assets and never fades the iframe surface', () => {
+test('Personal overlay opacity only affects transparent local scene assets', () => {
   const control = source('src/components/personal-overlay-opacity-control.tsx');
-  assert.match(control, /spmt\.personal\.local-opacity/);
-  assert.match(control, /removeProperty\('opacity'\)/);
+  assert.match(control, /data-personal-overlay-scene/);
+  assert.match(control, /scene\.style\.opacity\s*=/);
   assert.match(control, /setProperty\('background', 'transparent', 'important'\)/);
-  assert.doesNotMatch(control, /frame\.style\.opacity\s*=/);
+  assert.doesNotMatch(control, /iframe\[data-canonical-personal-overlay/);
+  assert.doesNotMatch(control, /spmt\.personal\.local-opacity/);
 });
 
 test('dashboard exposes compact primary community operations instead of a weak app-links card', () => {
