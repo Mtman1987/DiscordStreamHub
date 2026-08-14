@@ -39,31 +39,13 @@ export function spmtIdentityIsAdmin(user: any): boolean {
   return roles.includes('admin') || roles.includes('owner');
 }
 
-const SPMT_REQUEST_TIMEOUT_MS = 5000;
-
-function spmtAbortSignal(): AbortSignal | undefined {
-  if (typeof AbortSignal === 'undefined' || typeof AbortSignal.timeout !== 'function') return undefined;
-  return AbortSignal.timeout(SPMT_REQUEST_TIMEOUT_MS);
-}
-
-export async function resolveSpmtSession(token: string): Promise<{ token: string; session: DshSpmtSession; identity: any }> {
-  const profileResponse = await fetch(`${SPMT_BASE_URL}/api/oauth/userinfo`, {
-    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-    cache: 'no-store',
-    signal: spmtAbortSignal(),
-  });
-
-  if (!profileResponse.ok) throw new Error(`SPMT userinfo lookup failed (${profileResponse.status})`);
-
-  const data = await profileResponse.json();
-  const user = data?.user || data?.profile || data;
-  if (!user?.id) throw new Error('SPMT userinfo did not return an identity');
-
+export function buildDshSpmtSession(user: any): DshSpmtSession {
+  if (!user?.id) throw new Error('SPMT identity did not include a user id');
   const discord = readLinkedAccount(user, 'discord');
   const twitch = readLinkedAccount(user, 'twitch');
   const role = text(user?.role, spmtIdentityIsAdmin(user) ? 'admin' : 'member').toLowerCase();
 
-  const session: DshSpmtSession = {
+  return {
     spmtUserId: text(user.id),
     spmtUsername: text(user.username),
     discordUserId: text(user.discordUserId, user.discord_user_id, user.discordId, user.discord_id, discord.id, discord.userId),
@@ -77,6 +59,31 @@ export async function resolveSpmtSession(token: string): Promise<{ token: string
     isAdmin: spmtIdentityIsAdmin(user),
     role,
   };
+}
 
-  return { token, session, identity: user };
+const SPMT_REQUEST_TIMEOUT_MS = 5000;
+
+function spmtAbortSignal(): AbortSignal | undefined {
+  if (typeof AbortSignal === 'undefined' || typeof AbortSignal.timeout !== 'function') return undefined;
+  return AbortSignal.timeout(SPMT_REQUEST_TIMEOUT_MS);
+}
+
+export async function resolveSpmtSession(token: string, knownIdentity?: any): Promise<{ token: string; session: DshSpmtSession; identity: any }> {
+  let user = knownIdentity;
+
+  if (!user?.id) {
+    const profileResponse = await fetch(`${SPMT_BASE_URL}/api/oauth/userinfo`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+      signal: spmtAbortSignal(),
+    });
+
+    if (!profileResponse.ok) throw new Error(`SPMT userinfo lookup failed (${profileResponse.status})`);
+
+    const data = await profileResponse.json();
+    user = data?.user || data?.profile || data;
+    if (!user?.id) throw new Error('SPMT userinfo did not return an identity');
+  }
+
+  return { token, session: buildDshSpmtSession(user), identity: user };
 }
