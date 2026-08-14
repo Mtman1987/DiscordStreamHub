@@ -6,9 +6,9 @@ import { usePathname } from 'next/navigation';
 import type { WorkspaceDockSlotV1, WorkspaceThemeTokensV1 } from '@spmt/sdk';
 
 const SPMT_ORIGIN = 'https://spmt.live';
-const PERSONAL_VISIBILITY_KEY = 'discord-stream-hub:personal-overlay-visible';
+const PERSONAL_VISIBILITY_PREFIX = 'discord-stream-hub:personal-overlay-visible';
 const PERSONAL_VISIBILITY_EVENT = 'spmt:personal-overlay-visibility';
-const PERSONAL_OPACITY_KEY = 'discord-stream-hub:personal-overlay-opacity';
+const PERSONAL_OPACITY_PREFIX = 'discord-stream-hub:personal-overlay-opacity';
 const PERSONAL_SCENE_SELECTOR = '[data-personal-overlay-scene="true"]';
 
 type TenantOutputs = { public?: string; personal?: string };
@@ -31,6 +31,10 @@ function clampOpacity(value: unknown) {
   return Number.isFinite(parsed) ? Math.max(0, Math.min(100, Math.round(parsed))) : 100;
 }
 
+function tenantLocalKey(prefix: string, tenant: string) {
+  return `${prefix}:${tenant.trim().toLowerCase()}`;
+}
+
 export function SpmtWorkspaceHost() {
   const pathname = usePathname();
   const hiddenRoute = /^\/(api|auth|login|embed|headless|activity)(\/|$)/.test(pathname) || pathname.startsWith('/overlay/');
@@ -40,6 +44,7 @@ export function SpmtWorkspaceHost() {
   const [open, setOpen] = React.useState(false);
   const [tokens, setTokens] = React.useState<WorkspaceThemeTokensV1 | null>(null);
   const [target, setTarget] = React.useState<PanelTarget>({ kind: 'surface', id: 'worktray' });
+  const [tenant, setTenant] = React.useState('');
   const [tenantOutputs, setTenantOutputs] = React.useState<TenantOutputs | null>(null);
   const [surfaceUrls, setSurfaceUrls] = React.useState<SurfaceUrls>({});
   const [personalOverlayVisible, setPersonalOverlayVisible] = React.useState(true);
@@ -52,28 +57,35 @@ export function SpmtWorkspaceHost() {
     try {
       const response = await fetch('/api/spmt/workspace-theme', { cache: 'no-store', credentials: 'include' });
       if (!response.ok) {
-        setConnected(false); setTokens(null); setTenantOutputs(null); setSurfaceUrls({}); setLoaded(true); return;
+        setConnected(false); setTokens(null); setTenant(''); setTenantOutputs(null); setSurfaceUrls({}); setLoaded(true); return;
       }
       const body = await response.json().catch(() => ({}));
       if (!body?.tokens) {
-        setConnected(false); setTokens(null); setTenantOutputs(null); setSurfaceUrls({}); setLoaded(true); return;
+        setConnected(false); setTokens(null); setTenant(''); setTenantOutputs(null); setSurfaceUrls({}); setLoaded(true); return;
       }
       setTokens(body.tokens as WorkspaceThemeTokensV1);
+      setTenant(typeof body?.tenant === 'string' ? body.tenant.trim().toLowerCase() : '');
       setTenantOutputs(body?.tenantOutputs && typeof body.tenantOutputs === 'object' ? body.tenantOutputs as TenantOutputs : null);
       setSurfaceUrls(body?.surfaceUrls && typeof body.surfaceUrls === 'object' ? body.surfaceUrls as SurfaceUrls : {});
       setConnected(true); setLoaded(true);
     } catch {
-      setConnected(false); setTokens(null); setTenantOutputs(null); setSurfaceUrls({}); setLoaded(true);
+      setConnected(false); setTokens(null); setTenant(''); setTenantOutputs(null); setSurfaceUrls({}); setLoaded(true);
     }
   }, [hiddenRoute]);
 
   React.useEffect(() => {
-    const isEmbedded = window.self !== window.top;
-    setEmbedded(isEmbedded);
-    setPersonalOverlayVisible(window.localStorage.getItem(PERSONAL_VISIBILITY_KEY) !== '0');
-    setPersonalOpacity(clampOpacity(window.localStorage.getItem(PERSONAL_OPACITY_KEY) ?? 100));
+    setEmbedded(window.self !== window.top);
     void refresh();
   }, [refresh]);
+
+  React.useEffect(() => {
+    if (!tenant) return;
+    const visible = window.localStorage.getItem(tenantLocalKey(PERSONAL_VISIBILITY_PREFIX, tenant)) !== '0';
+    const opacity = clampOpacity(window.localStorage.getItem(tenantLocalKey(PERSONAL_OPACITY_PREFIX, tenant)) ?? 100);
+    setPersonalOverlayVisible(visible);
+    setPersonalOpacity(opacity);
+    window.dispatchEvent(new CustomEvent(PERSONAL_VISIBILITY_EVENT, { detail: { visible, tenant } }));
+  }, [tenant]);
 
   React.useEffect(() => {
     const applyOpacity = () => {
@@ -126,15 +138,17 @@ export function SpmtWorkspaceHost() {
     setTarget({ kind: 'surface', id }); setOpen(true);
   };
   const togglePersonalOverlay = () => {
+    if (!tenant) return;
     const next = !personalOverlayVisible;
-    window.localStorage.setItem(PERSONAL_VISIBILITY_KEY, next ? '1' : '0');
+    window.localStorage.setItem(tenantLocalKey(PERSONAL_VISIBILITY_PREFIX, tenant), next ? '1' : '0');
     setPersonalOverlayVisible(next);
-    window.dispatchEvent(new CustomEvent(PERSONAL_VISIBILITY_EVENT, { detail: { visible: next } }));
+    window.dispatchEvent(new CustomEvent(PERSONAL_VISIBILITY_EVENT, { detail: { visible: next, tenant } }));
   };
   const changePersonalOpacity = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!tenant) return;
     const next = clampOpacity(event.target.value);
     setPersonalOpacity(next);
-    window.localStorage.setItem(PERSONAL_OPACITY_KEY, String(next));
+    window.localStorage.setItem(tenantLocalKey(PERSONAL_OPACITY_PREFIX, tenant), String(next));
   };
   const copyOutput = (url?: string) => {
     if (!url) return;
@@ -152,9 +166,9 @@ export function SpmtWorkspaceHost() {
           </> : <span className="px-2 text-xs font-semibold text-amber-200">SPMT workspace disconnected</span>}
         </div>
         <div className="flex flex-wrap items-center gap-1 border-l border-white/10 pl-2">
-          {connected ? <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1.5" data-local-personal-controls="true">
+          {connected && tenant ? <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1.5" data-local-personal-controls="true" data-tenant={tenant}>
             <button type="button" onClick={togglePersonalOverlay} className={`rounded-md px-2 py-1 text-xs font-bold ${personalOverlayVisible ? 'bg-emerald-400/15 text-emerald-200' : 'bg-white/5 text-white/55'}`} aria-pressed={personalOverlayVisible}>Personal {personalOverlayVisible ? 'On' : 'Off'}</button>
-            <label className="flex items-center gap-1.5 text-[10px] font-bold text-white/70" title="Local only. Does not change Overlay Bay or other apps.">
+            <label className="flex items-center gap-1.5 text-[10px] font-bold text-white/70" title="Local to this SPMT tenant and this app only.">
               <span>{personalOpacity}%</span>
               <input type="range" min="0" max="100" step="5" value={personalOpacity} onChange={changePersonalOpacity} aria-label="Local Personal overlay opacity" className="w-20 accent-cyan-300" />
             </label>
