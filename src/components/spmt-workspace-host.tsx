@@ -8,6 +8,8 @@ import type { WorkspaceDockSlotV1, WorkspaceThemeTokensV1 } from '@spmt/sdk';
 const SPMT_ORIGIN = 'https://spmt.live';
 const PERSONAL_VISIBILITY_KEY = 'discord-stream-hub:personal-overlay-visible';
 const PERSONAL_VISIBILITY_EVENT = 'spmt:personal-overlay-visibility';
+const PERSONAL_OPACITY_KEY = 'discord-stream-hub:personal-overlay-opacity';
+const PERSONAL_SCENE_SELECTOR = '[data-personal-overlay-scene="true"]';
 
 type TenantOutputs = { public?: string; personal?: string };
 type SurfaceUrls = { worktray?: string; overlays?: string; settings?: string };
@@ -24,6 +26,11 @@ function fallbackSlots(): WorkspaceDockSlotV1[] {
   return ([1, 2, 3] as const).map((id) => ({ id, title: `Slot ${id}`, url: '', collapsed: true, volume: 1, muted: false }));
 }
 
+function clampOpacity(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(0, Math.min(100, Math.round(parsed))) : 100;
+}
+
 export function SpmtWorkspaceHost() {
   const pathname = usePathname();
   const hiddenRoute = /^\/(api|auth|login|embed|headless|activity)(\/|$)/.test(pathname) || pathname.startsWith('/overlay/');
@@ -36,6 +43,7 @@ export function SpmtWorkspaceHost() {
   const [tenantOutputs, setTenantOutputs] = React.useState<TenantOutputs | null>(null);
   const [surfaceUrls, setSurfaceUrls] = React.useState<SurfaceUrls>({});
   const [personalOverlayVisible, setPersonalOverlayVisible] = React.useState(true);
+  const [personalOpacity, setPersonalOpacity] = React.useState(100);
 
   const reconnectHref = `/login?next=${encodeURIComponent(pathname || '/dashboard')}`;
 
@@ -63,8 +71,25 @@ export function SpmtWorkspaceHost() {
     const isEmbedded = window.self !== window.top;
     setEmbedded(isEmbedded);
     setPersonalOverlayVisible(window.localStorage.getItem(PERSONAL_VISIBILITY_KEY) !== '0');
+    setPersonalOpacity(clampOpacity(window.localStorage.getItem(PERSONAL_OPACITY_KEY) ?? 100));
     void refresh();
   }, [refresh]);
+
+  React.useEffect(() => {
+    const applyOpacity = () => {
+      const factor = personalOpacity / 100;
+      document.querySelectorAll<HTMLElement>(PERSONAL_SCENE_SELECTOR).forEach((scene) => {
+        scene.dataset.localPersonalOpacity = String(personalOpacity);
+        scene.style.opacity = String(factor);
+        scene.style.setProperty('background', 'transparent', 'important');
+        scene.style.setProperty('background-color', 'transparent', 'important');
+      });
+    };
+    applyOpacity();
+    const observer = new MutationObserver(applyOpacity);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [personalOpacity]);
 
   React.useEffect(() => {
     if (hiddenRoute) return;
@@ -106,6 +131,11 @@ export function SpmtWorkspaceHost() {
     setPersonalOverlayVisible(next);
     window.dispatchEvent(new CustomEvent(PERSONAL_VISIBILITY_EVENT, { detail: { visible: next } }));
   };
+  const changePersonalOpacity = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const next = clampOpacity(event.target.value);
+    setPersonalOpacity(next);
+    window.localStorage.setItem(PERSONAL_OPACITY_KEY, String(next));
+  };
   const copyOutput = (url?: string) => {
     if (!url) return;
     const pending = navigator.clipboard?.writeText(url);
@@ -122,7 +152,13 @@ export function SpmtWorkspaceHost() {
           </> : <span className="px-2 text-xs font-semibold text-amber-200">SPMT workspace disconnected</span>}
         </div>
         <div className="flex flex-wrap items-center gap-1 border-l border-white/10 pl-2">
-          {connected ? <button type="button" onClick={togglePersonalOverlay} className={`rounded-lg px-2.5 py-2 text-xs font-bold ${personalOverlayVisible ? 'bg-emerald-400/15 text-emerald-200' : 'bg-white/5 text-white/55'}`} aria-pressed={personalOverlayVisible}>Personal overlay {personalOverlayVisible ? 'On' : 'Off'}</button> : null}
+          {connected ? <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1.5" data-local-personal-controls="true">
+            <button type="button" onClick={togglePersonalOverlay} className={`rounded-md px-2 py-1 text-xs font-bold ${personalOverlayVisible ? 'bg-emerald-400/15 text-emerald-200' : 'bg-white/5 text-white/55'}`} aria-pressed={personalOverlayVisible}>Personal {personalOverlayVisible ? 'On' : 'Off'}</button>
+            <label className="flex items-center gap-1.5 text-[10px] font-bold text-white/70" title="Local only. Does not change Overlay Bay or other apps.">
+              <span>{personalOpacity}%</span>
+              <input type="range" min="0" max="100" step="5" value={personalOpacity} onChange={changePersonalOpacity} aria-label="Local Personal overlay opacity" className="w-20 accent-cyan-300" />
+            </label>
+          </div> : null}
           {tenantOutputs?.public ? <button type="button" onClick={() => copyOutput(tenantOutputs.public)} className="rounded-lg px-2.5 py-2 text-xs font-medium text-white/65 hover:bg-white/10 hover:text-white">Copy Public URL</button> : null}
           {tenantOutputs?.personal ? <button type="button" onClick={() => copyOutput(tenantOutputs.personal)} className="rounded-lg px-2.5 py-2 text-xs font-medium text-white/65 hover:bg-white/10 hover:text-white">Copy Personal URL</button> : null}
           {SURFACE_CONTROLS.slice(1).map(({ id, label, Icon }) => <button key={id} type="button" onClick={() => openSurface(id)} disabled={!surfaceUrls[id]} className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-medium text-white/65 hover:bg-white/10 hover:text-white disabled:opacity-30" title={`Open canonical ${label}`}><Icon className="h-4 w-4" aria-hidden /><span className="hidden md:inline">{label}</span></button>)}
