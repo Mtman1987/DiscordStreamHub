@@ -64,6 +64,14 @@ test('shared DSH workspace tray consumes canonical surfaces and never rebuilds o
   assert.match(bridge, /surfaceUrls:/);
 });
 
+test('Personal overlay opacity only affects renderer assets and never fades the iframe surface', () => {
+  const control = source('src/components/personal-overlay-opacity-control.tsx');
+  assert.match(control, /spmt\.personal\.local-opacity/);
+  assert.match(control, /removeProperty\('opacity'\)/);
+  assert.match(control, /setProperty\('background', 'transparent', 'important'\)/);
+  assert.doesNotMatch(control, /frame\.style\.opacity\s*=/);
+});
+
 test('dashboard exposes compact primary community operations instead of a weak app-links card', () => {
   const text = source('src/app/(app)/dashboard/page.tsx');
   assert.match(text, /Community Command Center/);
