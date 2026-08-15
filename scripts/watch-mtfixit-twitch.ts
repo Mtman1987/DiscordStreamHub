@@ -8,6 +8,10 @@ import { submitMtFixIt } from '../src/lib/mtfixit-service';
 
 const CHANNEL_REFRESH_MS = 60_000;
 const TOKEN_RETRY_MS = 5 * 60_000;
+const CHANNEL_RETRY_BASE_MS = 60_000;
+const CHANNEL_RETRY_MAX_MS = 30 * 60_000;
+
+type RetryState = { attempts: number; nextAt: number };
 
 function readRuntimeConfig(): any {
   const candidates = [
@@ -42,6 +46,18 @@ const twitchClientId = String(
 
 function normalizeChannel(value: string): string {
   return String(value || '').trim().toLowerCase().replace(/^#/, '');
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error || 'unknown error');
+}
+
+function scheduleRetry(retries: Map<string, RetryState>, channel: string) {
+  const previous = retries.get(channel);
+  const attempts = Math.min((previous?.attempts || 0) + 1, 10);
+  const delay = Math.min(CHANNEL_RETRY_BASE_MS * (2 ** (attempts - 1)), CHANNEL_RETRY_MAX_MS);
+  retries.set(channel, { attempts, nextAt: Date.now() + delay });
+  return delay;
 }
 
 async function getLiveChannels(): Promise<string[]> {
@@ -100,18 +116,42 @@ async function getValidBotCredentials(): Promise<{ username: string; accessToken
   return { username, accessToken: updated.accessToken };
 }
 
-async function syncChannels(client: tmi.Client, joined: Set<string>) {
+async function syncChannels(client: tmi.Client, joined: Set<string>, retries: Map<string, RetryState>) {
   const live = new Set((await getLiveChannels()).map(normalizeChannel).filter(Boolean));
-  for (const channel of live) {
-    if (joined.has(channel)) continue;
-    await client.join(channel);
-    joined.add(channel);
-    console.log(`[MtFixIt:Twitch] Joined #${channel}`);
+
+  for (const channel of [...retries.keys()]) {
+    if (!live.has(channel)) retries.delete(channel);
   }
+
+  for (const channel of live) {
+    if (joined.has(channel)) {
+      retries.delete(channel);
+      continue;
+    }
+    const retry = retries.get(channel);
+    if (retry && retry.nextAt > Date.now()) continue;
+
+    try {
+      await client.join(channel);
+      joined.add(channel);
+      retries.delete(channel);
+      console.log(`[MtFixIt:Twitch] Joined #${channel}`);
+    } catch (error) {
+      const delay = scheduleRetry(retries, channel);
+      console.warn(`[MtFixIt:Twitch] Join #${channel} deferred for ${Math.round(delay / 1000)}s: ${errorText(error)}`);
+    }
+  }
+
   for (const channel of [...joined]) {
     if (live.has(channel)) continue;
-    await client.part(channel);
-    joined.delete(channel);
+    try {
+      await client.part(channel);
+    } catch (error) {
+      console.warn(`[MtFixIt:Twitch] Part #${channel} did not confirm: ${errorText(error)}`);
+    } finally {
+      joined.delete(channel);
+      retries.delete(channel);
+    }
     console.log(`[MtFixIt:Twitch] Parted #${channel}`);
   }
 }
@@ -126,11 +166,12 @@ async function runWatcher() {
   }
 
   const initialChannels = await getLiveChannels();
-  const joined = new Set(initialChannels.map(normalizeChannel).filter(Boolean));
+  const joined = new Set<string>();
+  const retries = new Map<string, RetryState>();
   const client = new tmi.Client({
     options: { debug: false },
     identity: { username: credentials.username, password: `oauth:${credentials.accessToken}` },
-    channels: [...joined],
+    channels: initialChannels.map(normalizeChannel).filter(Boolean),
   });
 
   client.on('message', async (channel, tags, message, self) => {
@@ -164,7 +205,11 @@ async function runWatcher() {
     }
   });
 
-  client.on('join', (channel) => joined.add(normalizeChannel(channel)));
+  client.on('join', (channel) => {
+    const normalized = normalizeChannel(channel);
+    joined.add(normalized);
+    retries.delete(normalized);
+  });
   client.on('part', (channel) => joined.delete(normalizeChannel(channel)));
   client.on('disconnected', (reason) => {
     console.warn(`[MtFixIt:Twitch] Disconnected: ${reason}`);
@@ -172,9 +217,10 @@ async function runWatcher() {
   });
 
   await client.connect();
+  for (const channel of client.getChannels()) joined.add(normalizeChannel(channel));
   console.log(`[MtFixIt:Twitch] Connected as ${credentials.username}; watching ${joined.size} live channel(s).`);
-  const timer = setInterval(() => syncChannels(client, joined).catch((error) => {
-    console.error('[MtFixIt:Twitch] Channel refresh failed:', error);
+  const timer = setInterval(() => syncChannels(client, joined, retries).catch((error) => {
+    console.warn('[MtFixIt:Twitch] Channel list refresh deferred:', errorText(error));
   }), CHANNEL_REFRESH_MS);
   timer.unref?.();
 }
