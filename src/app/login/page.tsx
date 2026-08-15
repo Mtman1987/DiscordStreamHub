@@ -38,7 +38,6 @@ function applyServerIdFromNext(nextPath: string) {
 export default function LoginPage() {
   const router = useRouter();
   const [nextPath, setNextPath] = React.useState('/dashboard');
-  const spmtAuthorizeUrl = 'https://spmt.live/api/oauth/authorize?client_id=discord-stream-hub&redirect_uri=https%3A%2F%2Fdiscord-stream-hub-new.fly.dev%2Fauth%2Fcallback';
 
   React.useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -46,17 +45,18 @@ export default function LoginPage() {
   }, []);
 
   React.useEffect(() => {
-    function finishLogin(session?: Record<string, unknown>) {
+    function finishLogin(session?: Record<string, unknown>, returnPath = nextPath) {
+      const safeReturnPath = getSafeNextPath(returnPath);
       applySessionPayload(session);
-      applyServerIdFromNext(nextPath);
+      applyServerIdFromNext(safeReturnPath);
       window.dispatchEvent(new Event('dsh-session-restored'));
-      router.replace(nextPath);
+      router.replace(safeReturnPath);
     }
 
     function handleAuthMessage(event: MessageEvent) {
       if (event.origin !== window.location.origin) return;
       if (event.data?.type !== 'DSH_SPMT_AUTH_COMPLETE') return;
-      finishLogin(event.data?.session || {});
+      finishLogin(event.data?.session || {}, event.data?.next || nextPath);
     }
 
     function handleStorage(event: StorageEvent) {
@@ -75,8 +75,9 @@ export default function LoginPage() {
   }, [nextPath, router]);
 
   const handleSpmtLogin = () => {
-    const popup = window.open(spmtAuthorizeUrl, 'dsh-spmt-auth', 'popup=yes,width=520,height=760');
-    if (!popup) window.location.href = spmtAuthorizeUrl;
+    const startUrl = `/api/auth/spmt-login?next=${encodeURIComponent(nextPath)}`;
+    const popup = window.open(startUrl, 'dsh-spmt-auth', 'popup=yes,width=520,height=760');
+    if (!popup) window.location.href = startUrl;
   };
   
   const handleReset = () => {

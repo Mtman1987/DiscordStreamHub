@@ -1,9 +1,14 @@
+import { timingSafeEqual } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { DSH_SPMT_COOKIE, SPMT_BASE_URL, resolveSpmtSession } from '@/lib/spmt-session';
 
 export const dynamic = 'force-dynamic';
 
 const DSH_SPMT_REFRESH_COOKIE = 'dsh_spmt_refresh';
+const DSH_SPMT_STATE_COOKIE = 'dsh_spmt_oauth_state';
+const DSH_SPMT_NEXT_COOKIE = 'dsh_spmt_oauth_next';
+const REDIRECT_URI = 'https://discord-stream-hub-new.fly.dev/auth/callback';
+const SPMT_REQUEST_TIMEOUT_MS = 5000;
 
 const cookieOptions = {
   httpOnly: true,
@@ -12,6 +17,28 @@ const cookieOptions = {
   path: '/',
   maxAge: 60 * 60 * 24 * 30,
 };
+
+function requestSignal(): AbortSignal | undefined {
+  if (typeof AbortSignal === 'undefined' || typeof AbortSignal.timeout !== 'function') return undefined;
+  return AbortSignal.timeout(SPMT_REQUEST_TIMEOUT_MS);
+}
+
+function safeNextPath(value: string | undefined): string {
+  return value && value.startsWith('/') && !value.startsWith('//') ? value : '/dashboard';
+}
+
+function statesMatch(received: string, expected: string): boolean {
+  if (!received || !expected) return false;
+  const receivedBytes = Buffer.from(received);
+  const expectedBytes = Buffer.from(expected);
+  return receivedBytes.length === expectedBytes.length && timingSafeEqual(receivedBytes, expectedBytes);
+}
+
+function clearOauthCookies(response: NextResponse) {
+  response.cookies.set(DSH_SPMT_STATE_COOKIE, '', { ...cookieOptions, maxAge: 0 });
+  response.cookies.set(DSH_SPMT_NEXT_COOKIE, '', { ...cookieOptions, maxAge: 0 });
+  return response;
+}
 
 function withSessionCookies(response: NextResponse, token: string, refreshToken?: string, expiresIn = 604800, refreshExpiresIn = 2592000) {
   response.cookies.set(DSH_SPMT_COOKIE, token, { ...cookieOptions, maxAge: expiresIn });
@@ -28,6 +55,7 @@ async function refreshSession(request: NextRequest) {
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({ grant_type: 'refresh_token', refresh_token: refreshToken, client_id: 'discord-stream-hub', client_secret: clientSecret }),
     cache: 'no-store',
+    signal: requestSignal(),
   }).catch(() => null);
   if (!response?.ok) return null;
   const payload = await response.json().catch(() => null);
@@ -43,8 +71,6 @@ export async function GET(request: NextRequest) {
       refreshed = await refreshSession(request);
       if (refreshed) {
         token = String(refreshed.access_token);
-        // Refresh exchanges already contain the canonical user too, so avoid a
-        // second SPMT request when we have that identity available.
         resolved = await resolveSpmtSession(token, refreshed.user);
       }
     }
@@ -70,18 +96,30 @@ export async function POST(request: NextRequest) {
   let exchangedExpiresIn = 604800;
   let exchangedRefreshExpiresIn = 2592000;
   const code = typeof body?.code === 'string' ? body.code.trim() : '';
+  const receivedState = typeof body?.state === 'string' ? body.state.trim() : '';
+  const expectedState = request.cookies.get(DSH_SPMT_STATE_COOKIE)?.value || '';
+  const nextPath = safeNextPath(request.cookies.get(DSH_SPMT_NEXT_COOKIE)?.value);
+
   if (!token && code) {
+    if (!statesMatch(receivedState, expectedState)) {
+      return clearOauthCookies(NextResponse.json({ success: false, error: 'Invalid or expired SPMT OAuth state' }, { status: 400 }));
+    }
+
     const clientSecret = process.env.DSH_CLIENT_SECRET || '';
-    if (!clientSecret) return NextResponse.json({ success: false, error: 'DSH OAuth is not configured' }, { status: 503 });
+    if (!clientSecret) {
+      return clearOauthCookies(NextResponse.json({ success: false, error: 'DSH OAuth is not configured' }, { status: 503 }));
+    }
+
     const exchange = await fetch(`${SPMT_BASE_URL}/api/oauth/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ code, client_id: 'discord-stream-hub', client_secret: clientSecret, redirect_uri: 'https://discord-stream-hub-new.fly.dev/auth/callback' }),
+      body: JSON.stringify({ code, client_id: 'discord-stream-hub', client_secret: clientSecret, redirect_uri: REDIRECT_URI }),
       cache: 'no-store',
-    });
-    const exchangeData = await exchange.json().catch(() => null);
-    if (!exchange.ok || !exchangeData?.access_token || !exchangeData?.user?.id) {
-      return NextResponse.json({ success: false, error: 'SPMT code exchange failed' }, { status: 401 });
+      signal: requestSignal(),
+    }).catch(() => null);
+    const exchangeData = await exchange?.json().catch(() => null);
+    if (!exchange?.ok || !exchangeData?.access_token || !exchangeData?.user?.id) {
+      return clearOauthCookies(NextResponse.json({ success: false, error: 'SPMT code exchange failed' }, { status: 401 }));
     }
     token = String(exchangeData.access_token);
     exchangedIdentity = exchangeData.user;
@@ -92,20 +130,18 @@ export async function POST(request: NextRequest) {
   if (!token) return NextResponse.json({ success: false, error: 'Missing SPMT authorization code' }, { status: 400 });
 
   try {
-    // A code exchange is authoritative and already includes the canonical SPMT
-    // user, so login no longer pays for an immediate second userinfo round trip.
-    // Direct legacy token posts still validate through userinfo as before.
     const resolved = await resolveSpmtSession(token, exchangedIdentity);
-    return withSessionCookies(
-      NextResponse.json({ success: true, session: resolved.session }),
+    const response = withSessionCookies(
+      NextResponse.json({ success: true, session: resolved.session, next: nextPath }),
       resolved.token,
       exchangedRefreshToken,
       exchangedExpiresIn,
       exchangedRefreshExpiresIn
     );
+    return clearOauthCookies(response);
   } catch (error) {
     console.warn('[auth/spmt-session] Sign-in failed:', error);
-    return NextResponse.json({ success: false, error: 'SPMT sign-in failed' }, { status: 401 });
+    return clearOauthCookies(NextResponse.json({ success: false, error: 'SPMT sign-in failed' }, { status: 401 }));
   }
 }
 
@@ -113,5 +149,5 @@ export async function DELETE() {
   const response = NextResponse.json({ success: true });
   response.cookies.set(DSH_SPMT_COOKIE, '', { ...cookieOptions, maxAge: 0 });
   response.cookies.set(DSH_SPMT_REFRESH_COOKIE, '', { ...cookieOptions, maxAge: 0 });
-  return response;
+  return clearOauthCookies(response);
 }
