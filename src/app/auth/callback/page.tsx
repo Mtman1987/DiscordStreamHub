@@ -3,6 +3,11 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 
+function getSafeNextPath(value: unknown) {
+  const text = typeof value === 'string' ? value : '';
+  return text.startsWith('/') && !text.startsWith('//') ? text : '/dashboard';
+}
+
 export default function AuthCallbackPage() {
   const router = useRouter();
   const [message, setMessage] = React.useState('Completing SPMT sign in...');
@@ -13,10 +18,10 @@ export default function AuthCallbackPage() {
     async function completeLogin() {
       const searchParams = new URLSearchParams(window.location.search);
       const code = searchParams.get('code') || '';
-      const next = searchParams.get('next') || '/dashboard';
+      const state = searchParams.get('state') || '';
 
-      if (!code) {
-        setMessage('Missing SPMT authorization code. Return to login and try again.');
+      if (!code || !state) {
+        setMessage('Missing or invalid SPMT authorization response. Return to login and try again.');
         return;
       }
 
@@ -24,12 +29,14 @@ export default function AuthCallbackPage() {
         const sessionResponse = await fetch('/api/auth/spmt-session', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ code }),
+          body: JSON.stringify({ code, state }),
           credentials: 'include',
         });
         if (!sessionResponse.ok) throw new Error('SPMT session exchange failed');
         const data = await sessionResponse.json();
         const session = (data.session || {}) as Record<string, string>;
+        const next = getSafeNextPath(data.next);
+
         if (!cancelled && window.opener && !window.opener.closed) {
           window.opener.postMessage({ type: 'DSH_SPMT_AUTH_COMPLETE', session, next }, window.location.origin);
           setMessage('SPMT sign in complete. Returning to the chat popout...');
@@ -37,7 +44,7 @@ export default function AuthCallbackPage() {
           return;
         }
 
-        if (!cancelled) router.replace(next.startsWith('/') ? next : '/dashboard');
+        if (!cancelled) router.replace(next);
       } catch (error) {
         console.error('[auth/callback] SPMT login failed', error);
         if (!cancelled) setMessage('SPMT sign in failed. Return to login and try again.');
