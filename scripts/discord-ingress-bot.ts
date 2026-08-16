@@ -6,6 +6,7 @@ import {
   Message,
   Partials,
 } from 'discord.js';
+import { getDiscordIngressTimeoutMs } from '../src/lib/discord-ingress-timeout';
 
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const DSH_INGRESS_URL = (
@@ -74,7 +75,9 @@ async function forwardMessage(message: Message) {
   if (!DISCORD_BOT_TOKEN) throw new Error('DISCORD_BOT_TOKEN is required');
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 12_000);
+  const mentionsBot = Boolean(message.client.user?.id && message.mentions.users.has(message.client.user.id));
+  const timeoutMs = getDiscordIngressTimeoutMs(message.content, mentionsBot);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   timeout.unref?.();
 
   try {
@@ -93,7 +96,7 @@ async function forwardMessage(message: Message) {
     if (!response.ok) {
       throw new Error(`DSH ingress ${response.status}: ${JSON.stringify(result)}`);
     }
-    console.log(`[DiscordIngress] ${message.id} ${message.author.username} -> ${message.channelId}`);
+    console.log(`[DiscordIngress] ${message.id} ${message.author.username} -> ${message.channelId} timeoutMs=${timeoutMs}`);
   } finally {
     clearTimeout(timeout);
   }
