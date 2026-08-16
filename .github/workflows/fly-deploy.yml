@@ -63,6 +63,15 @@ jobs:
       FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Validate Discord SPMT routing
+        run: |
+          npm ci
+          node --import tsx --test tests/discord-gateway-spmt-routing.test.ts tests/discord-dm-spmt-routing.test.ts
+          npm run typecheck
       - uses: superfly/flyctl-actions/setup-flyctl@master
       - name: Check Fly token
         run: |
