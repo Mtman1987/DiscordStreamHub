@@ -23,9 +23,14 @@ test('routes public live lookup through deterministic Athena wording', () => {
   );
 });
 
-test('converts public SPMT commands to native command syntax exactly once', () => {
+test('keeps Quackverse spmt pack out of the Pokemon bang-command lane', () => {
+  const command = normalizePublicSpmtCommand('spmt pack');
+  assert.equal(command?.controls, false);
+  assert.equal(command?.forwardMessage, undefined);
+});
+
+test('converts other public SPMT commands to native command syntax exactly once', () => {
   assert.equal(normalizePublicSpmtCommand('spmt points')?.forwardMessage, '!points');
-  assert.equal(normalizePublicSpmtCommand('spmt !pack')?.forwardMessage, '!pack');
 });
 
 test('recognizes the actual Discord bot mention as SPMT', () => {
