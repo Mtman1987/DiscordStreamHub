@@ -36,6 +36,7 @@ export default function RootLayout({
         <div className="star-field-2"></div>
         <div className="star-field-3"></div>
         <Script src="https://spmt.live/shared/ecosystem-header.js" data-app="discord-stream-hub" strategy="afterInteractive" />
+        <Script src="https://spmt.live/shared/workspace-controller.js" strategy="afterInteractive" />
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
           <DataComponentsProvider>
             {children}
