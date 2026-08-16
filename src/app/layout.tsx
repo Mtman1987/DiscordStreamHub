@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Script from 'next/script';
 import './globals.css';
 import './workspace-parity.css';
 import { cn } from '@/lib/utils';
@@ -34,6 +35,7 @@ export default function RootLayout({
         <div className="star-field"></div>
         <div className="star-field-2"></div>
         <div className="star-field-3"></div>
+        <Script src="https://spmt.live/shared/ecosystem-header.js" data-app="discord-stream-hub" strategy="afterInteractive" />
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
           <DataComponentsProvider>
             {children}
