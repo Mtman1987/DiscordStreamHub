@@ -31,6 +31,14 @@ export function normalizePublicSpmtCommand(message: string, discordClientId = ''
   if (lower === 'control' || lower === 'controls') {
     return { matched: true, controls: true, originalMessage };
   }
+
+  // `spmt pack` is a Quackverse/ChatTag command. Do not translate it to the
+  // StreamWeaver `!pack` command, which opens a Pokemon booster instead.
+  // The gateway already delivers the original SPMT message to ChatTag.
+  if (lower === 'pack') {
+    return { matched: true, controls: false, originalMessage };
+  }
+
   if (['status', 'sttus', 'stats'].includes(lower)) {
     return {
       matched: true,
