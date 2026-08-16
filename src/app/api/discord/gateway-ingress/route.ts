@@ -80,14 +80,19 @@ export async function POST(request: NextRequest) {
   if (!body) return NextResponse.json({ success: true, skipped: 'invalid-json' });
 
   const data = body?.root || body;
+  // The gateway bot sends a human-readable message for every ecosystem
+  // consumer plus the exact Discord wire text for immutable mention routing.
+  // Never make TTS/chat/event consumers parse snowflake IDs just so command
+  // detection can recognize <@botId> syntax.
   const message = String(data?.message || data?.content || '');
+  const rawMessage = String(data?.rawMessage || data?.rawContent || message);
   const channelId = String(data?.channelId || '');
   const guildId = String(data?.guildId || data?.serverId || '');
   const messageId = String(data?.messageId || '');
   const isBotAuthor = Boolean(data?.author?.bot || data?.user?.bot || data?.member?.user?.bot);
   const isDirectMessage = Boolean(data?.isDM || data?.isDirectMessage || data?.is_direct_message);
-  const normalized = message.trim().toLowerCase();
-  const spmtCommand = normalizePublicSpmtCommand(message, getDiscordClientId());
+  const normalized = rawMessage.trim().toLowerCase();
+  const spmtCommand = normalizePublicSpmtCommand(rawMessage, getDiscordClientId());
   const isSpmtCommand = Boolean(spmtCommand);
   const isBangCommand = normalized.startsWith('!');
 
