@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { normalizePublicSpmtCommand } from '../src/app/api/discord/gateway-ingress/route';
+import { normalizePublicSpmtCommand } from '../src/lib/discord-spmt-command';
 
 test('routes public SPMT status through Athena status wording', () => {
   const command = normalizePublicSpmtCommand('spmt status');
