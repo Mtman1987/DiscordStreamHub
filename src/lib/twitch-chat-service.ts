@@ -4,6 +4,9 @@ import { db } from '@/data/server-init';
 import { getValidBotAccessToken } from './twitch-oauth-service';
 import { getHardcodedAdminTwitchId, getStreamweaverUrl } from './runtime-config';
 import { isExplicitAthenaInvocation } from './athena-visitor-gate';
+import { blacklistChatTagChannel, fetchTagData } from './chat-tag-service';
+import { sendOwnerDiscordDm } from './owner-dm-service';
+import { buildTwitchBanOwnerDm, isTwitchBanNotice, type TwitchBanProfileSnapshot } from './twitch-ban-blacklist';
 
 const ATHENA_OWNER_WINDOW_MS = 10 * 60 * 1000;
 
@@ -28,6 +31,9 @@ class TwitchChatService {
   private lastUpdatedAt: string | null = null;
   private lastMessageAt: string | null = null;
   private lastAthenaForwardAt: string | null = null;
+  private lastAutoBlacklistedChannel: string | null = null;
+  private lastAutoBlacklistedAt: string | null = null;
+  private blacklistJobs: Map<string, Promise<void>> = new Map();
 
   async start(serverId: string) {
     if (this.client) {
@@ -39,6 +45,7 @@ class TwitchChatService {
     this.lastError = null;
     this.serverId = serverId;
     await this.loadAllowedUsers();
+    await this.reconcilePendingBlacklists();
 
     const botConfig = await db.collection('servers').doc(serverId).collection('config').doc('twitchBotOAuth').get();
     if (!botConfig.exists || (!botConfig.data()?.accessToken && !botConfig.data()?.refreshToken)) {
@@ -78,6 +85,12 @@ class TwitchChatService {
     this.client.on('subgift', this.handleGiftSub.bind(this));
     this.client.on('cheer', this.handleCheer.bind(this));
     this.client.on('raided', this.handleRaid.bind(this));
+    this.client.on('notice', (channel, messageId, message) => {
+      if (!isTwitchBanNotice(messageId, message)) return;
+      void this.handleBannedChannel(channel, `${messageId}: ${message}`).catch((error) => {
+        console.error('[TwitchChat] Automatic blacklist failed:', error);
+      });
+    });
     this.client.on('join', (channel) => {
       const normalized = normalizeChannel(channel);
       if (normalized) this.joinedChannels.add(normalized);
@@ -101,10 +114,23 @@ class TwitchChatService {
       await this.client.connect();
       this.status = 'connected';
       this.lastStartedAt = new Date().toISOString();
-      this.joinedChannels = new Set(liveUsers.map(normalizeChannel).filter(Boolean));
-      console.log(`[TwitchChat] Monitoring ${liveUsers.length} channels`);
+      this.joinedChannels = new Set(this.client.getChannels().map(normalizeChannel).filter(Boolean));
+      console.log(`[TwitchChat] Monitoring ${this.joinedChannels.size} channels`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      if (isTwitchBanNotice(msg, msg)) {
+        if (this.blacklistJobs.size === 0 && liveUsers.length === 1) {
+          await this.handleBannedChannel(liveUsers[0], msg);
+        } else {
+          await Promise.allSettled(Array.from(this.blacklistJobs.values()));
+        }
+        console.warn(`[TwitchChat] Connection excluded a channel that permanently banned the bot: ${msg}`);
+        this.status = 'waiting-for-live-channels';
+        this.lastError = null;
+        this.client = null;
+        this.joinedChannels.clear();
+        return;
+      }
       console.warn(`[TwitchChat] Connection failed: ${msg} — token may be expired. Re-authorize bot in settings.`);
       this.status = 'error';
       this.lastError = msg;
@@ -115,6 +141,7 @@ class TwitchChatService {
 
   private async loadAllowedUsers() {
     const usersSnapshot = await db.collection('servers').doc(this.serverId!).collection('users').get();
+    const blacklistedChannels = await this.getBlacklistedChannels();
     this.allowedUserIds.clear();
     this.allowedLogins.clear();
     this.channelBroadcasterIds.clear();
@@ -125,6 +152,7 @@ class TwitchChatService {
       const data = doc.data();
       const twitchId = String(data.twitchId || '').trim();
       const twitchLogin = normalizeChannel(data.twitchLogin);
+      if (twitchLogin && blacklistedChannels.has(twitchLogin)) return;
       if (twitchId) this.allowedUserIds.add(twitchId);
       if (twitchLogin) this.allowedLogins.add(twitchLogin);
       if (twitchId && twitchLogin) this.channelBroadcasterIds.set(twitchLogin, twitchId);
@@ -136,6 +164,7 @@ class TwitchChatService {
 
   private async getLiveChannels(): Promise<string[]> {
     const usersSnapshot = await db.collection('servers').doc(this.serverId!).collection('users').get();
+    const blacklistedChannels = await this.getBlacklistedChannels();
     const liveChannels: string[] = [];
 
     for (const doc of usersSnapshot.docs) {
@@ -143,7 +172,7 @@ class TwitchChatService {
       if (shoutoutState.exists && shoutoutState.data()?.isLive) {
         const twitchLogin = doc.data().twitchLogin;
         const channel = normalizeChannel(twitchLogin);
-        if (channel) liveChannels.push(channel);
+        if (channel && !blacklistedChannels.has(channel)) liveChannels.push(channel);
       }
     }
 
@@ -251,6 +280,7 @@ class TwitchChatService {
       this.serverId = serverId;
     }
     this.lastUpdatedAt = new Date().toISOString();
+    await this.reconcilePendingBlacklists();
     const liveChannels = await this.getLiveChannels();
     if (!this.client) {
       if (liveChannels.length > 0 && this.serverId) {
@@ -269,9 +299,18 @@ class TwitchChatService {
     for (const channel of liveChannels) {
       const normalized = normalizeChannel(channel);
       if (normalized && !currentChannels.includes(normalized)) {
-        await this.client.join(channel);
-        this.joinedChannels.add(normalized);
-        console.log(`[TwitchChat] Joined live Space Mountain channel #${normalized}`);
+        try {
+          await this.client.join(channel);
+          this.joinedChannels.add(normalized);
+          console.log(`[TwitchChat] Joined live Space Mountain channel #${normalized}`);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (isTwitchBanNotice(message, message)) {
+            await this.handleBannedChannel(normalized, message);
+            continue;
+          }
+          throw error;
+        }
       }
     }
     
@@ -309,6 +348,8 @@ class TwitchChatService {
       lastUpdatedAt: this.lastUpdatedAt,
       lastMessageAt: this.lastMessageAt,
       lastAthenaForwardAt: this.lastAthenaForwardAt,
+      lastAutoBlacklistedChannel: this.lastAutoBlacklistedChannel,
+      lastAutoBlacklistedAt: this.lastAutoBlacklistedAt,
       athenaHomeChannel: this.athenaHomeChannel,
       activeAthenaVisitorChannels: Array.from(this.athenaChannelAccess.entries())
         .filter(([, access]) => access.broadcasterAuthorized || access.ownerWindowUntil > Date.now())
@@ -440,6 +481,217 @@ class TwitchChatService {
       this.lastError = `Athena forward failed: ${msg}`;
       console.error('[TwitchChat] Athena forward failed:', error);
     }
+  }
+
+  private blacklistCollection() {
+    return db.collection('servers').doc(this.serverId!).collection('twitchChatBlacklist');
+  }
+
+  private async getBlacklistedChannels(): Promise<Set<string>> {
+    if (!this.serverId) return new Set();
+    const snapshot = await this.blacklistCollection().get();
+    return new Set(
+      snapshot.docs
+        .map((doc: { id: string; data: () => any }) => normalizeChannel(doc.data()?.channel || doc.id))
+        .filter(Boolean),
+    );
+  }
+
+  private async handleBannedChannel(channel: string, detail: string): Promise<void> {
+    const normalized = normalizeChannel(channel);
+    if (!normalized || !this.serverId) return;
+
+    const active = this.blacklistJobs.get(normalized);
+    if (active) return active;
+
+    const job = this.persistAndFinishBlacklist(normalized, detail)
+      .finally(() => this.blacklistJobs.delete(normalized));
+    this.blacklistJobs.set(normalized, job);
+    return job;
+  }
+
+  private async persistAndFinishBlacklist(channel: string, detail: string): Promise<void> {
+    const ref = this.blacklistCollection().doc(channel);
+    const snapshot = await ref.get();
+    const now = new Date().toISOString();
+    await ref.set({
+      channel,
+      reason: 'twitch-msg-banned',
+      noticeDetail: String(detail || 'msg_banned').slice(0, 500),
+      firstDetectedAt: snapshot.data()?.firstDetectedAt || now,
+      lastDetectedAt: now,
+      permanent: true,
+    }, { merge: true });
+
+    this.joinedChannels.delete(channel);
+    this.athenaChannelAccess.delete(channel);
+    this.allowedLogins.delete(channel);
+    const broadcasterId = this.channelBroadcasterIds.get(channel);
+    if (broadcasterId) this.allowedUserIds.delete(broadcasterId);
+    this.channelBroadcasterIds.delete(channel);
+    this.lastAutoBlacklistedChannel = channel;
+    this.lastAutoBlacklistedAt = now;
+
+    if (this.client) {
+      await this.client.part(`#${channel}`).catch(() => undefined);
+    }
+
+    console.warn(`[TwitchChat] Permanently blacklisted #${channel} after msg_banned`);
+    await this.finishBlacklist(channel);
+  }
+
+  private async reconcilePendingBlacklists(): Promise<void> {
+    if (!this.serverId) return;
+    const snapshot = await this.blacklistCollection().get();
+    for (const doc of snapshot.docs as Array<{ id: string; data: () => any }>) {
+      const channel = normalizeChannel(doc.data()?.channel || doc.id);
+      const data = doc.data() || {};
+      if (!channel || (data.streamweaverSyncedAt && data.chatTagSyncedAt && data.notificationSentAt)) continue;
+      if (this.blacklistJobs.has(channel)) continue;
+
+      const job = this.finishBlacklist(channel).finally(() => this.blacklistJobs.delete(channel));
+      this.blacklistJobs.set(channel, job);
+      await job;
+    }
+  }
+
+  private async finishBlacklist(channel: string): Promise<void> {
+    const ref = this.blacklistCollection().doc(channel);
+    let record = (await ref.get()).data() || {};
+    let profile = record.profileSnapshot as TwitchBanProfileSnapshot | undefined;
+
+    if (!profile) {
+      profile = await this.collectProfileSnapshot(channel);
+      await ref.set({ profileSnapshot: profile }, { merge: true });
+    }
+
+    const errors: string[] = [];
+    if (!record.streamweaverSyncedAt) {
+      try {
+        await this.blacklistInStreamweaver(channel);
+        await ref.set({ streamweaverSyncedAt: new Date().toISOString() }, { merge: true });
+      } catch (error) {
+        errors.push(`StreamWeaver: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
+    if (!record.chatTagSyncedAt) {
+      try {
+        await blacklistChatTagChannel(channel);
+        await ref.set({ chatTagSyncedAt: new Date().toISOString() }, { merge: true });
+      } catch (error) {
+        errors.push(`Chat Tag: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
+    record = (await ref.get()).data() || {};
+    if (record.streamweaverSyncedAt && record.chatTagSyncedAt && !record.notificationSentAt) {
+      try {
+        const delivery = await sendOwnerDiscordDm({ message: buildTwitchBanOwnerDm(profile) });
+        await ref.set({
+          notificationSentAt: new Date().toISOString(),
+          notificationMessageId: delivery.messageId,
+        }, { merge: true });
+      } catch (error) {
+        errors.push(`Owner DM: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
+    if (errors.length > 0) {
+      const lastSyncError = errors.join(' | ').slice(0, 1000);
+      await ref.set({ lastSyncError, lastSyncAttemptAt: new Date().toISOString() }, { merge: true });
+      this.lastError = `Blacklist synchronization pending for #${channel}: ${lastSyncError}`;
+      console.warn(`[TwitchChat] ${this.lastError}`);
+      return;
+    }
+
+    await ref.set({ lastSyncError: null, completedAt: new Date().toISOString() }, { merge: true });
+    if (this.lastError?.startsWith('Blacklist synchronization pending')) this.lastError = null;
+  }
+
+  private async blacklistInStreamweaver(channel: string): Promise<void> {
+    const secret = String(process.env.STREAMWEAVER_SECRET || process.env.DSH_SERVICE_SECRET || '').trim();
+    const tenantId = String(getHardcodedAdminTwitchId() || '').trim();
+    if (!secret) throw new Error('STREAMWEAVER_SECRET is not configured.');
+    if (!tenantId) throw new Error('Owner Twitch tenant ID is not configured.');
+
+    const response = await fetch(`${getStreamweaverUrl().replace(/\/$/, '')}/api/internal/known-bots`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: channel, tenantId, source: 'twitch-msg-banned' }),
+      signal: AbortSignal.timeout(8_000),
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || payload?.success === false) {
+      throw new Error(payload?.error || `StreamWeaver blacklist returned ${response.status}`);
+    }
+  }
+
+  private async collectProfileSnapshot(channel: string): Promise<TwitchBanProfileSnapshot> {
+    const usersSnapshot = await db.collection('servers').doc(this.serverId!).collection('users').get();
+    const userDoc = usersSnapshot.docs.find((doc: { data: () => any }) => {
+      return normalizeChannel(doc.data()?.twitchLogin) === channel;
+    });
+    const user = userDoc?.data() || {};
+    const discordUserId = String(userDoc?.id || user.discordUserId || '').trim();
+    const activity = user.discordActivity || {};
+    const tagData = await fetchTagData().catch(() => null);
+    const player = Array.isArray(tagData?.players)
+      ? tagData.players.find((candidate: any) => normalizeChannel(candidate?.twitchUsername || candidate?.username) === channel)
+      : null;
+    const chatTagJoinedAt = player?.joinedAt || this.findChatTagJoinDate(tagData?.adminHistory, channel);
+    const discordJoinedAt = user.discordJoinedAt
+      || await this.fetchDiscordJoinDate(discordUserId).catch(() => null);
+    const lastPlayedValue = player?.lastPlayedAt || player?.lastChatAt || activity.lastSeenAt || null;
+    const lastPlayedAt = typeof lastPlayedValue === 'number'
+      ? new Date(lastPlayedValue).toISOString()
+      : lastPlayedValue;
+
+    return {
+      channel,
+      displayName: user.displayName || user.username || player?.displayName || player?.twitchUsername || channel,
+      twitchId: String(user.twitchId || this.channelBroadcasterIds.get(channel) || '').trim() || null,
+      discordUserId: discordUserId || null,
+      chatTagJoinedAt: chatTagJoinedAt || null,
+      discordJoinedAt: discordJoinedAt || null,
+      firstSeenAt: activity.firstSeenAt || null,
+      lastPlayedAt: lastPlayedAt || null,
+      daysPlayed: this.numberOrNull(player?.daysPlayed ?? activity.activeDays),
+      tags: this.numberOrNull(player?.tags),
+      tagged: this.numberOrNull(player?.tagged),
+    };
+  }
+
+  private findChatTagJoinDate(adminHistory: unknown, channel: string): string | null {
+    if (!Array.isArray(adminHistory)) return null;
+    const matches = adminHistory
+      .filter((entry: any) => String(entry?.action || '').toLowerCase() === 'join')
+      .filter((entry: any) => {
+        const details = String(entry?.details || '').trim().toLowerCase();
+        const actor = normalizeChannel(entry?.performedBy);
+        return actor === channel || details.startsWith(`${channel} joined the game`);
+      })
+      .map((entry: any) => new Date(entry?.timestamp).getTime())
+      .filter((timestamp: number) => Number.isFinite(timestamp));
+    return matches.length > 0 ? new Date(Math.min(...matches)).toISOString() : null;
+  }
+
+  private async fetchDiscordJoinDate(discordUserId: string): Promise<string | null> {
+    const botToken = String(process.env.DISCORD_BOT_TOKEN || '').trim();
+    if (!botToken || !this.serverId || !discordUserId) return null;
+    const response = await fetch(`https://discord.com/api/v10/guilds/${this.serverId}/members/${discordUserId}`, {
+      headers: { Authorization: `Bot ${botToken}` },
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!response.ok) return null;
+    const member = await response.json().catch(() => null);
+    return String(member?.joined_at || '').trim() || null;
+  }
+
+  private numberOrNull(value: unknown): number | null {
+    if (value === null || value === undefined || value === '') return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
   }
 
 }

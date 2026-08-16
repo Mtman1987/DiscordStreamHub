@@ -762,6 +762,25 @@ export async function fetchTagData(): Promise<any> {
   return tagApi('/api/tag');
 }
 
+export async function blacklistChatTagChannel(channel: string): Promise<{ added: boolean }> {
+  const normalized = String(channel || '').trim().toLowerCase().replace(/^#/, '');
+  const secret = getChatTagServiceSecret();
+  if (!normalized) throw new Error('Chat Tag blacklist channel is required.');
+  if (!secret) throw new Error('CHAT_TAG_BOT_SECRET is not configured.');
+
+  const response = await fetch(`${CHAT_TAG_API}/api/bot/blacklist`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-bot-secret': secret },
+    body: JSON.stringify({ channel: normalized, source: 'twitch-msg-banned' }),
+    signal: AbortSignal.timeout(8_000),
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok || payload?.success === false) {
+    throw new Error(payload?.error || `Chat Tag blacklist returned ${response.status}`);
+  }
+  return { added: payload?.added !== false };
+}
+
 export async function fetchBingoState(): Promise<any> {
   return tagApi('/api/bingo/state');
 }

@@ -111,6 +111,7 @@ class DiscordSyncService {
         avatarUrl: member.user.avatar 
           ? `https://cdn.discordapp.com/avatars/${member.user.id}/${member.user.avatar}.png`
           : `https://cdn.discordapp.com/embed/avatars/${member.user.discriminator % 5}.png`,
+        discordJoinedAt: member.joined_at || null,
         roles: member.roles,
         isOnline: false, // Will be updated by Twitch polling
         group: await this.determineGroup(member.roles, serverId),
@@ -438,4 +439,3 @@ export async function getUserRolesAndGroup(
 
   return { roles, group };
 }
-
