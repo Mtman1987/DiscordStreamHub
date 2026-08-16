@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getChatTagApiBase, getHearMeOutUrl, getStreamweaverUrl } from '@/lib/runtime-config';
+import { getChatTagApiBase, getDiscordClientId, getHearMeOutUrl, getStreamweaverUrl } from '@/lib/runtime-config';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,6 +40,88 @@ async function postJson(url: string, body: any, headers: Record<string, string> 
   }
 }
 
+export type PublicSpmtCommand = {
+  matched: true;
+  controls: boolean;
+  originalMessage: string;
+  forwardMessage?: string;
+};
+
+export function normalizePublicSpmtCommand(message: string, discordClientId = ''): PublicSpmtCommand | null {
+  const originalMessage = String(message || '').trim();
+  if (!originalMessage) return null;
+
+  let remainder = '';
+  const botMention = discordClientId
+    ? [
+        `<@${discordClientId}>`,
+        `<@!${discordClientId}>`,
+      ].find((prefix) => originalMessage.startsWith(prefix))
+    : undefined;
+
+  if (botMention) {
+    remainder = originalMessage.slice(botMention.length).trim();
+  } else {
+    const match = originalMessage.match(/^@?spmt(?:\s+|$)(.*)$/i);
+    if (!match) return null;
+    remainder = String(match[1] || '').trim();
+  }
+
+  if (!remainder) {
+    return { matched: true, controls: false, originalMessage, forwardMessage: '!commands' };
+  }
+
+  const lower = remainder.toLowerCase();
+  if (lower === 'control' || lower === 'controls') {
+    return { matched: true, controls: true, originalMessage };
+  }
+  if (['status', 'sttus', 'stats'].includes(lower)) {
+    return {
+      matched: true,
+      controls: false,
+      originalMessage,
+      forwardMessage: 'Athena, show me the Chat Tag status.',
+    };
+  }
+  if (['live', 'online'].includes(lower)) {
+    return {
+      matched: true,
+      controls: false,
+      originalMessage,
+      forwardMessage: 'Athena, how many Chat Tag users are live right now?',
+    };
+  }
+
+  const command = remainder.replace(/^!+/, '').trim();
+  return {
+    matched: true,
+    controls: false,
+    originalMessage,
+    forwardMessage: command ? `!${command}` : '!commands',
+  };
+}
+
+function withForwardedSpmtMessage(body: any, command: PublicSpmtCommand) {
+  if (!command.forwardMessage) return body;
+  if (body?.root && typeof body.root === 'object') {
+    return {
+      ...body,
+      root: {
+        ...body.root,
+        message: command.forwardMessage,
+        content: command.forwardMessage,
+        originalSpmtMessage: command.originalMessage,
+      },
+    };
+  }
+  return {
+    ...body,
+    message: command.forwardMessage,
+    content: command.forwardMessage,
+    originalSpmtMessage: command.originalMessage,
+  };
+}
+
 export async function POST(request: NextRequest) {
   const traceId = request.headers.get('x-discord-trace-id') || crypto.randomUUID();
   const configuredBotToken = process.env.DISCORD_BOT_TOKEN;
@@ -65,7 +147,8 @@ export async function POST(request: NextRequest) {
   const isBotAuthor = Boolean(data?.author?.bot || data?.user?.bot || data?.member?.user?.bot);
   const isDirectMessage = Boolean(data?.isDM || data?.isDirectMessage || data?.is_direct_message);
   const normalized = message.trim().toLowerCase();
-  const isSpmtCommand = normalized.startsWith('spmt ') || normalized.startsWith('@spmt ');
+  const spmtCommand = normalizePublicSpmtCommand(message, getDiscordClientId());
+  const isSpmtCommand = Boolean(spmtCommand);
   const isBangCommand = normalized.startsWith('!');
 
   trace(traceId, 'ingress', {
@@ -74,6 +157,7 @@ export async function POST(request: NextRequest) {
     messageId: messageId || null,
     isDirectMessage,
     isBotAuthor,
+    isSpmtCommand,
     messagePreview: message.slice(0, 120),
   });
 
@@ -95,6 +179,22 @@ export async function POST(request: NextRequest) {
     postJson(dshUrl, body, commonHeaders, 12_000).then((result) => ({ destination: 'dsh', ...result })),
     postJson(chatTagUrl, body, commonHeaders, 8_000).then((result) => ({ destination: 'chat-tag', ...result })),
   ];
+
+  // DSH owns the controls button, but all other public SPMT commands must be
+  // routed exactly once to StreamWeaver. Previously they were recognized here,
+  // excluded from passive fanout, and then silently dropped by DSH unless the
+  // command was "controls".
+  if (spmtCommand?.forwardMessage && !spmtCommand.controls) {
+    const forwarded = withForwardedSpmtMessage(body, spmtCommand);
+    jobs.push(
+      postJson(
+        streamweaverUrl,
+        forwarded,
+        { ...commonHeaders, 'x-chat-origin': 'dsh-discord-gateway-spmt' },
+        45_000,
+      ).then((result) => ({ destination: 'streamweaver-spmt', ...result })),
+    );
+  }
 
   // DSH already routes active bang commands to StreamWeaver/HearMeOut. Avoid
   // sending those twice. Regular public chat goes to both passive consumers so
@@ -119,6 +219,12 @@ export async function POST(request: NextRequest) {
     success: true,
     traceId,
     messageId,
+    spmtCommand: spmtCommand
+      ? {
+          controls: spmtCommand.controls,
+          forwarded: Boolean(spmtCommand.forwardMessage && !spmtCommand.controls),
+        }
+      : null,
     deliveries,
   });
 }
