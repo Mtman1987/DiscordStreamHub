@@ -7,6 +7,7 @@ import {
   Partials,
 } from 'discord.js';
 import { getDiscordIngressTimeoutMs } from '../src/lib/discord-ingress-timeout';
+import { humanizeDiscordText } from '../src/lib/discord-human-text';
 
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const DSH_INGRESS_URL = (
@@ -25,19 +26,43 @@ function shouldForward(message: Message) {
   return true;
 }
 
+function displayNameForUser(message: Message, userId: string) {
+  const member = message.mentions.members?.get(userId);
+  const user = message.mentions.users.get(userId);
+  return member?.displayName || user?.globalName || user?.username || '';
+}
+
 function buildPayload(message: Message) {
+  const users = Object.fromEntries(
+    [...message.mentions.users.values()].map((user) => [user.id, displayNameForUser(message, user.id)]),
+  );
+  const channels = Object.fromEntries(
+    [...message.mentions.channels.values()].map((channel: any) => [channel.id, String(channel?.name || '')]),
+  );
+  const roles = Object.fromEntries(
+    [...message.mentions.roles.values()].map((role) => [role.id, role.name]),
+  );
+  const rawContent = String(message.content || '');
+  const humanContent = humanizeDiscordText(rawContent, { users, channels, roles });
+  const channelName = 'name' in message.channel ? String(message.channel.name || '') : '';
+  const displayName = message.member?.displayName || message.author.globalName || message.author.username;
+
   return {
     userId: message.author.id,
-    userName: message.member?.displayName || message.author.globalName || message.author.username,
-    displayName: message.member?.displayName || message.author.globalName || message.author.username,
+    userName: displayName,
+    displayName,
     userAvatar: message.author.displayAvatarURL({ size: 256 }),
     guildId: message.guildId,
+    guildName: message.guild?.name || '',
     serverId: message.guildId,
     channelId: message.channelId,
-    channelName: 'name' in message.channel ? message.channel.name : '',
+    channelName,
     messageId: message.id,
-    message: message.content,
-    content: message.content,
+    message: humanContent,
+    content: humanContent,
+    cleanContent: humanContent,
+    rawMessage: rawContent,
+    rawContent,
     isDM: false,
     isDirectMessage: false,
     dispatch: true,
@@ -46,26 +71,63 @@ function buildPayload(message: Message) {
     author: {
       id: message.author.id,
       username: message.author.username,
+      global_name: message.author.globalName || undefined,
       bot: message.author.bot,
+    },
+    member: {
+      displayName,
+      nick: message.member?.nickname || undefined,
+      user: {
+        id: message.author.id,
+        username: message.author.username,
+        global_name: message.author.globalName || undefined,
+      },
+    },
+    guild: {
+      id: message.guildId,
+      name: message.guild?.name || '',
+    },
+    channel: {
+      id: message.channelId,
+      name: channelName,
+      type: message.channel.type,
     },
     mentions: [...message.mentions.users.values()].map((user) => ({
       id: user.id,
       username: user.username,
-      displayName: user.globalName || user.username,
+      global_name: user.globalName || undefined,
+      displayName: displayNameForUser(message, user.id),
     })),
+    mentionMetadata: {
+      users,
+      channels,
+      roles,
+    },
     attachments: [...message.attachments.values()].map((attachment) => ({
       id: attachment.id,
       name: attachment.name,
+      filename: attachment.name,
       url: attachment.url,
       proxyUrl: attachment.proxyURL,
+      proxy_url: attachment.proxyURL,
       contentType: attachment.contentType,
+      content_type: attachment.contentType,
       size: attachment.size,
+      width: attachment.width,
+      height: attachment.height,
+      description: attachment.description,
     })),
     embeds: message.embeds.map((embed) => embed.toJSON()),
     stickers: [...message.stickers.values()].map((sticker) => ({
       id: sticker.id,
       name: sticker.name,
       format: sticker.format,
+      format_type: sticker.format,
+    })),
+    sticker_items: [...message.stickers.values()].map((sticker) => ({
+      id: sticker.id,
+      name: sticker.name,
+      format_type: sticker.format,
     })),
   };
 }
