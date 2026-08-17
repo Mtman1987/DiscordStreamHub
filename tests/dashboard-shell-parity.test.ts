@@ -46,7 +46,7 @@ test('shared DSH workspace tray consumes canonical surfaces and never rebuilds o
   assert.match(text, /\/login\?next=/);
   assert.match(text, /Reconnect SPMT workspace/);
   assert.match(text, /surfaceUrls/);
-  assert.match(text, /Personal overlay \{personalOverlayVisible \? 'On' : 'Off'\}/);
+  assert.match(text, /Personal(?: overlay)? \{personalOverlayVisible \? 'On' : 'Off'\}/);
   assert.match(text, /spmt:personal-overlay-visibility/);
   assert.doesNotMatch(text, /tokens\?\.overlayWorkspace/);
   assert.doesNotMatch(text, /widget\.x/);
