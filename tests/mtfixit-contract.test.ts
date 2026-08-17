@@ -112,12 +112,31 @@ test('orchestrator notifies mtman at start, gates new fixes, and reports success
 test('Discord owns mtfixit before generic command fanout and approval decisions are restricted', () => {
   const ingress = source('src/app/api/discord/gateway-ingress/route.ts');
   const mtfixit = source('src/app/api/discord/mtfixit/route.ts');
+  const discordDelivery = source('src/lib/mtfixit-discord-delivery.ts');
   const decisions = source('src/app/api/internal/mtfixit/decision/route.ts');
   const bot = source('scripts/discord-ingress-bot.ts');
   assert.ok(ingress.indexOf('if (isMtFixItCommand)') < ingress.indexOf('const dshUrl'));
   assert.match(ingress, /\/api\/discord\/mtfixit/);
-  assert.match(mtfixit, /author: \{ name: 'Athena'/);
+  assert.match(mtfixit, /sendDiscordMtFixItMessage/);
+  assert.match(discordDelivery, /author: \{ name: 'Athena'/);
   assert.match(decisions, /userId !== getMtmanDiscordId\(\)/);
   assert.match(bot, /mtfixit_\(approve\|deny\)/);
   assert.match(bot, /\/api\/internal\/mtfixit\/decision/);
+  assert.match(bot, /GatewayIntentBits\.DirectMessages/);
+});
+
+test('mtfixit original-chat delivery survives DSH self-deploy restarts', () => {
+  const delivery = source('src/lib/mtfixit-delivery.ts');
+  const discord = source('scripts/discord-ingress-bot.ts');
+  const twitch = source('scripts/watch-mtfixit-twitch.ts');
+  const discordRoute = source('src/app/api/discord/mtfixit/route.ts');
+  assert.match(delivery, /MTFIXIT_DATA_DIR/);
+  assert.match(delivery, /deliveries/);
+  assert.match(delivery, /resumePendingMtFixItDeliveries/);
+  assert.match(delivery, /resolution\.status === 'deployed'/);
+  assert.match(delivery, /mtfixit_approve:\$\{record\.jobId\}/);
+  assert.match(discord, /resumePendingMtFixItDeliveries\('discord'/);
+  assert.match(twitch, /resumePendingMtFixItDeliveries\('twitch'/);
+  assert.match(discordRoute, /registerMtFixItDelivery/);
+  assert.match(twitch, /registerMtFixItDelivery/);
 });
