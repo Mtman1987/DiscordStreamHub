@@ -188,7 +188,7 @@ async function runWatcher() {
     const reporter = String(tags['display-name'] || tags.username || 'Twitch user').trim();
     if (!reporterId) return;
     try {
-      await submitMtFixIt({
+      const submission = await submitMtFixIt({
         source: 'twitch',
         reporter,
         reporterId,
@@ -197,10 +197,15 @@ async function runWatcher() {
         channelId: targetChannel,
         channelName: targetChannel,
         messageId: String(tags.id || '').trim() || undefined,
+      }, {
+        onFinal: async (event) => {
+          await client.say(`#${targetChannel}`, mtFixItPublicReply(event.outcome));
+        },
       });
-      await client.say(`#${targetChannel}`, mtFixItPublicReply('accepted'));
+      const outcome = submission.disposition === 'submitted' ? 'accepted' : 'escalated';
+      await client.say(`#${targetChannel}`, mtFixItPublicReply(outcome));
     } catch (error) {
-      console.error('[MtFixIt:Twitch] Submission failed:', error);
+      console.error('[MtFixIt:Twitch] Submission handler failed:', errorText(error));
       await client.say(`#${targetChannel}`, mtFixItPublicReply('failed')).catch(console.error);
     }
   });
