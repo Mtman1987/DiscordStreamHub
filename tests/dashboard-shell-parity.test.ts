@@ -42,7 +42,8 @@ test('shared DSH workspace tray consumes canonical surfaces and never rebuilds o
   const personal = source('src/components/personal-overlay-host.tsx');
   const bridge = source('src/app/api/spmt/workspace-theme/route.ts');
 
-  assert.match(text, /aria-label="SPMT workspace tray"/);
+  assert.match(text, /spmt:workspace-state/);
+  assert.match(text, /aria-label="Collapse workspace into ecosystem header"/);
   assert.match(text, /\/login\?next=/);
   assert.match(text, /Reconnect SPMT workspace/);
   assert.match(text, /surfaceUrls/);
