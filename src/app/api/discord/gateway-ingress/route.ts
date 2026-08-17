@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getChatTagApiBase, getDiscordClientId, getHearMeOutUrl, getStreamweaverUrl } from '@/lib/runtime-config';
 import { normalizePublicSpmtCommand, type PublicSpmtCommand } from '@/lib/discord-spmt-command';
+import { parseMtFixItCommand } from '@/lib/mtfixit-contract';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,41 +26,18 @@ async function postJson(url: string, body: any, headers: Record<string, string> 
       signal: timeoutSignal(timeoutMs),
     });
     const payload = await response.json().catch(() => null);
-    return {
-      ok: response.ok,
-      status: response.status,
-      durationMs: Date.now() - startedAt,
-      payload,
-    };
+    return { ok: response.ok, status: response.status, durationMs: Date.now() - startedAt, payload };
   } catch (error) {
-    return {
-      ok: false,
-      status: 0,
-      durationMs: Date.now() - startedAt,
-      error: error instanceof Error ? error.message : String(error),
-    };
+    return { ok: false, status: 0, durationMs: Date.now() - startedAt, error: error instanceof Error ? error.message : String(error) };
   }
 }
 
 function withForwardedSpmtMessage(body: any, command: PublicSpmtCommand) {
   if (!command.forwardMessage) return body;
   if (body?.root && typeof body.root === 'object') {
-    return {
-      ...body,
-      root: {
-        ...body.root,
-        message: command.forwardMessage,
-        content: command.forwardMessage,
-        originalSpmtMessage: command.originalMessage,
-      },
-    };
+    return { ...body, root: { ...body.root, message: command.forwardMessage, content: command.forwardMessage, originalSpmtMessage: command.originalMessage } };
   }
-  return {
-    ...body,
-    message: command.forwardMessage,
-    content: command.forwardMessage,
-    originalSpmtMessage: command.originalMessage,
-  };
+  return { ...body, message: command.forwardMessage, content: command.forwardMessage, originalSpmtMessage: command.originalMessage };
 }
 
 export async function POST(request: NextRequest) {
@@ -90,6 +68,7 @@ export async function POST(request: NextRequest) {
   const spmtCommand = normalizePublicSpmtCommand(message, getDiscordClientId());
   const isSpmtCommand = Boolean(spmtCommand);
   const isBangCommand = normalized.startsWith('!');
+  const isMtFixItCommand = parseMtFixItCommand(message) !== null;
 
   trace(traceId, 'ingress', {
     guildId: guildId || null,
@@ -98,6 +77,7 @@ export async function POST(request: NextRequest) {
     isDirectMessage,
     isBotAuthor,
     isSpmtCommand,
+    isMtFixItCommand,
     messagePreview: message.slice(0, 120),
   });
 
@@ -105,66 +85,48 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, skipped: 'not-public-human-message' });
   }
 
-  const dshUrl = `${request.nextUrl.origin.replace(/\/$/, '')}/api/discord/chat`;
+  const origin = request.nextUrl.origin.replace(/\/$/, '');
+  const commonHeaders = { 'x-chat-origin': 'dsh-discord-gateway', 'x-discord-trace-id': traceId };
+
+  // MtFixIt is a DSH-owned operational command. Route it exactly once to the
+  // dedicated lifecycle endpoint and do not fan it out to StreamWeaver/ChatTag.
+  if (isMtFixItCommand) {
+    const delivery = await postJson(`${origin}/api/discord/mtfixit`, body, {
+      ...commonHeaders,
+      'x-discord-bot-token': configuredBotToken,
+    }, 45_000);
+    trace(traceId, 'delivery', { destination: 'dsh-mtfixit', ...delivery });
+    return NextResponse.json({ success: delivery.ok, traceId, messageId, mtfixit: delivery }, { status: delivery.ok ? 200 : 502 });
+  }
+
+  const dshUrl = `${origin}/api/discord/chat`;
   const chatTagUrl = `${getChatTagApiBase().replace(/\/$/, '')}/api/discord/chat`;
   const streamweaverUrl = `${getStreamweaverUrl().replace(/\/$/, '')}/api/discord/chat`;
   const hearMeOutUrl = `${getHearMeOutUrl().replace(/\/$/, '')}/api/discord/chat`;
-
-  const commonHeaders = {
-    'x-chat-origin': 'dsh-discord-gateway',
-    'x-discord-trace-id': traceId,
-  };
 
   const jobs: Array<Promise<any>> = [
     postJson(dshUrl, body, commonHeaders, 12_000).then((result) => ({ destination: 'dsh', ...result })),
     postJson(chatTagUrl, body, commonHeaders, 8_000).then((result) => ({ destination: 'chat-tag', ...result })),
   ];
 
-  // DSH owns the controls button, but all other public SPMT commands must be
-  // routed exactly once to StreamWeaver. Previously they were recognized here,
-  // excluded from passive fanout, and then silently dropped by DSH unless the
-  // command was "controls".
   if (spmtCommand?.forwardMessage && !spmtCommand.controls) {
     const forwarded = withForwardedSpmtMessage(body, spmtCommand);
-    jobs.push(
-      postJson(
-        streamweaverUrl,
-        forwarded,
-        { ...commonHeaders, 'x-chat-origin': 'dsh-discord-gateway-spmt' },
-        45_000,
-      ).then((result) => ({ destination: 'streamweaver-spmt', ...result })),
-    );
+    jobs.push(postJson(streamweaverUrl, forwarded, { ...commonHeaders, 'x-chat-origin': 'dsh-discord-gateway-spmt' }, 45_000).then((result) => ({ destination: 'streamweaver-spmt', ...result })));
   }
 
-  // DSH already routes active bang commands to StreamWeaver/HearMeOut. Avoid
-  // sending those twice. Regular public chat goes to both passive consumers so
-  // Athena/context features keep receiving the same messages Kite carried.
   if (!isBangCommand && !isSpmtCommand) {
-    jobs.push(
-      postJson(streamweaverUrl, body, commonHeaders, 12_000)
-        .then((result) => ({ destination: 'streamweaver', ...result })),
-    );
-    jobs.push(
-      postJson(hearMeOutUrl, { ...body, dispatch: false }, commonHeaders, 8_000)
-        .then((result) => ({ destination: 'hearmeout-passive', ...result })),
-    );
+    jobs.push(postJson(streamweaverUrl, body, commonHeaders, 12_000).then((result) => ({ destination: 'streamweaver', ...result })));
+    jobs.push(postJson(hearMeOutUrl, { ...body, dispatch: false }, commonHeaders, 8_000).then((result) => ({ destination: 'hearmeout-passive', ...result })));
   }
 
   const deliveries = await Promise.all(jobs);
-  for (const delivery of deliveries) {
-    trace(traceId, 'delivery', delivery);
-  }
+  for (const delivery of deliveries) trace(traceId, 'delivery', delivery);
 
   return NextResponse.json({
     success: true,
     traceId,
     messageId,
-    spmtCommand: spmtCommand
-      ? {
-          controls: spmtCommand.controls,
-          forwarded: Boolean(spmtCommand.forwardMessage && !spmtCommand.controls),
-        }
-      : null,
+    spmtCommand: spmtCommand ? { controls: spmtCommand.controls, forwarded: Boolean(spmtCommand.forwardMessage && !spmtCommand.controls) } : null,
     deliveries,
   });
 }

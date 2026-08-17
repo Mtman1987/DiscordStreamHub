@@ -6,6 +6,12 @@ const DISCORD_TRANSIENT_RETRIES = 2;
 export const OWNER_DM_MAX_MESSAGE_LENGTH = 1900;
 export const OWNER_DM_MAX_FILE_BYTES = 500_000;
 
+type OwnerDmButton = {
+  label: string;
+  customId: string;
+  style?: 1 | 2 | 3 | 4;
+};
+
 export class OwnerDmDeliveryError extends Error {
   constructor(message: string, public readonly status: number) {
     super(message);
@@ -13,10 +19,7 @@ export class OwnerDmDeliveryError extends Error {
   }
 }
 
-function getMtmanDiscordId(): string {
-  // Privileged server-side delivery must be able to use a production Fly secret.
-  // runtime-config intentionally ignores env overrides in production, which can
-  // leave a stale persisted public ID in control of private support delivery.
+export function getMtmanDiscordId(): string {
   return String(
     process.env.MTFIXIT_MTMAN_DISCORD_ID
       || process.env.HARDCODED_ADMIN_DISCORD_ID
@@ -64,15 +67,31 @@ async function discordFetch(url: string, init: RequestInit, label: string): Prom
   );
 }
 
+function buttonComponents(buttons: OwnerDmButton[] | undefined) {
+  const safe = (buttons || []).slice(0, 5).filter((button) => button.label && /^mtfixit_(?:approve|deny):[a-zA-Z0-9_-]{8,100}$/.test(button.customId));
+  if (!safe.length) return undefined;
+  return [{
+    type: 1,
+    components: safe.map((button) => ({
+      type: 2,
+      style: button.style || 2,
+      label: String(button.label).slice(0, 80),
+      custom_id: button.customId,
+    })),
+  }];
+}
+
 export async function sendOwnerDiscordDm(input: {
   message?: string;
   fileName?: string;
   fileContent?: string;
+  buttons?: OwnerDmButton[];
 }): Promise<{ channelId: string; messageId: string }> {
   const ownerId = getMtmanDiscordId();
   const message = String(input.message || '').trim().slice(0, OWNER_DM_MAX_MESSAGE_LENGTH);
   const fileName = String(input.fileName || 'athena-support.txt').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120);
   const fileContent = String(input.fileContent || '');
+  const components = buttonComponents(input.buttons);
 
   if (!ownerId) throw new OwnerDmDeliveryError('Mtman Discord ID is not configured.', 503);
   if (!message && !fileContent) throw new OwnerDmDeliveryError('Message or file content is required.', 400);
@@ -102,7 +121,7 @@ export async function sendOwnerDiscordDm(input: {
   if (fileContent) {
     const form = new FormData();
     form.append('files[0]', new Blob([fileContent], { type: 'text/plain' }), fileName);
-    if (message) form.append('payload_json', JSON.stringify({ content: message, allowed_mentions: { parse: [] } }));
+    form.append('payload_json', JSON.stringify({ content: message, allowed_mentions: { parse: [] }, ...(components ? { components } : {}) }));
     sent = await discordFetch(`${DISCORD_API_BASE}/channels/${channelId}/messages`, {
       method: 'POST',
       headers: { Authorization: `Bot ${botToken}` },
@@ -112,7 +131,7 @@ export async function sendOwnerDiscordDm(input: {
     sent = await discordFetch(`${DISCORD_API_BASE}/channels/${channelId}/messages`, {
       method: 'POST',
       headers: { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: message, allowed_mentions: { parse: [] } }),
+      body: JSON.stringify({ content: message, allowed_mentions: { parse: [] }, ...(components ? { components } : {}) }),
     }, 'send');
   }
 

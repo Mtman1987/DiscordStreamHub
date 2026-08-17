@@ -12,12 +12,22 @@ export type MtFixItSubmissionInput = {
   messageId?: string;
 };
 
-export type MtFixItPublicOutcome = 'accepted' | 'analysis' | 'escalated' | 'usage' | 'failed';
+export type MtFixItPublicOutcome =
+  | 'accepted'
+  | 'fixed'
+  | 'waiting-review'
+  | 'no-change'
+  | 'failed'
+  | 'usage';
 
 export function parseMtFixItCommand(message: string): string | null {
   const match = String(message || '').trim().match(/^!mtfixit(?:\s+([\s\S]*))?$/i);
   if (!match) return null;
-  return String(match[1] || '').trim();
+  const description = String(match[1] || '').trim();
+  if (description.length >= 2 && ((description.startsWith('"') && description.endsWith('"')) || (description.startsWith("'") && description.endsWith("'")))) {
+    return description.slice(1, -1).trim();
+  }
+  return description;
 }
 
 function numericTwitchId(value: unknown): string {
@@ -26,9 +36,8 @@ function numericTwitchId(value: unknown): string {
 }
 
 export function resolveTwitchMtFixItTenantId(roomId: unknown, linkedTwitchId: unknown): string | undefined {
-  // StreamWeaver tenant storage is keyed by Twitch broadcaster ID. Twitch IRC's
-  // room-id is authoritative for the channel receiving the command; the linked
-  // DSH user record is a fallback for clients that omit that tag.
+  // Tenant identity remains useful report metadata, but MtFixIt diagnostic
+  // capture itself is ecosystem-global through Commlink and does not require it.
   return numericTwitchId(roomId) || numericTwitchId(linkedTwitchId) || undefined;
 }
 
@@ -51,16 +60,19 @@ export function buildMtFixItJobRequest(input: MtFixItSubmissionInput) {
 
 export function mtFixItPublicReply(outcome: MtFixItPublicOutcome): string {
   if (outcome === 'accepted') {
-    return 'Athena received the report and is checking a tenant-scoped diagnostic snapshot now. If the repair still needs help, I’ll send it to mtman.';
+    return 'Athena captured an ecosystem snapshot and has begun working on your report. I’ll message you back here with the outcome.';
   }
-  if (outcome === 'analysis') {
-    return 'Athena finished the diagnostic pass and produced repair findings for review. The remaining work has been sent to mtman.';
+  if (outcome === 'fixed') {
+    return 'Athena found the problem, applied the approved fix, and the deployment checks passed.';
   }
-  if (outcome === 'escalated') {
-    return 'Athena received the report but could not complete the automatic repair. It has been queued for mtman.';
+  if (outcome === 'waiting-review') {
+    return 'Athena found and validated a possible fix. It is waiting for mtman review before deployment.';
   }
-  if (outcome === 'usage') {
-    return 'Please include the problem after `!mtfixit`, for example: `!mtfixit leaderboard image generation is timing out`.';
+  if (outcome === 'no-change') {
+    return 'Athena finished checking the report but did not find a safe code change to apply. The findings were sent to mtman.';
   }
-  return 'Athena received the report, but the automatic repair path is temporarily unavailable. The report is being kept for follow-up.';
+  if (outcome === 'failed') {
+    return 'Athena could not safely complete this repair. The report and findings were sent to mtman for review.';
+  }
+  return 'Please include the problem after `!mtfixit`, for example: `!mtfixit "I cannot tag people even though I am it"`.';
 }
