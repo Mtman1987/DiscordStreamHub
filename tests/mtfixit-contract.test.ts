@@ -43,9 +43,17 @@ test('builds a DSH-owned rotator request without publication authority', () => {
   assert.equal('publish' in request, false);
 });
 
-test('public replies never expose job or engineering details', () => {
-  assert.match(mtFixItPublicReply('accepted'), /owner/i);
-  assert.doesNotMatch(mtFixItPublicReply('accepted'), /mtfix_/i);
+test('public replies use Athena and mtman without exposing engineering internals', () => {
+  for (const outcome of ['accepted', 'analysis', 'escalated', 'failed'] as const) {
+    const reply = mtFixItPublicReply(outcome);
+    assert.match(reply, /Athena/i);
+    assert.doesNotMatch(reply, /Athena\s+Coder/i);
+    assert.doesNotMatch(reply, /\bowner\b/i);
+    assert.doesNotMatch(reply, /mtfix_[a-z0-9_-]+/i);
+  }
+  assert.match(mtFixItPublicReply('accepted'), /mtman/i);
+  assert.match(mtFixItPublicReply('analysis'), /mtman/i);
+  assert.match(mtFixItPublicReply('escalated'), /mtman/i);
   assert.match(mtFixItPublicReply('usage'), /!mtfixit/i);
-  assert.match(mtFixItPublicReply('failed'), /could not accept/i);
+  assert.doesNotMatch(mtFixItPublicReply('failed'), /exception|token|secret|http\s+\d+/i);
 });
