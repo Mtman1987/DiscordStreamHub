@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { buildMtFixItJobRequest, type MtFixItSubmissionInput } from './mtfixit-contract';
+import { captureCommlinkDiagnosticSnapshot, type CommlinkDiagnosticSnapshot } from './mtfixit-commlink';
 import { sendOwnerDiscordDm } from './owner-dm-service';
 
 const DEFAULT_ROTATOR_URL = 'https://mtman-machine-rotator.fly.dev';
@@ -47,6 +48,7 @@ type DiagnosticEvidence = {
   ecosystemSnapshot:
     | { status: 'captured'; endpoint: string; snapshotJson: string; truncated: boolean }
     | { status: 'unavailable'; endpoint: string; error: string };
+  commlinkSnapshot: CommlinkDiagnosticSnapshot;
   adapters: Record<string, { status: 'captured' | 'unavailable' | 'pending-adapter'; note: string }>;
 };
 
@@ -123,6 +125,12 @@ async function captureDiagnosticEvidence(input: MtFixItSubmissionInput): Promise
     ecosystemSnapshot = { status: 'unavailable', endpoint, error: safeErrorText(error) };
   }
 
+  const commlinkSnapshot = await captureCommlinkDiagnosticSnapshot({
+    serviceKey: sharedKey(),
+    capturedAt,
+    source: input.source,
+  });
+
   return {
     schemaVersion: 'dsh.mtfixit.snapshot/v1',
     capturedAt,
@@ -136,11 +144,14 @@ async function captureDiagnosticEvidence(input: MtFixItSubmissionInput): Promise
     incidentWindow: { beforeMinutes: 10, afterMinutes: 0 },
     sourceMessage: { reporter: input.reporter, description: input.description },
     ecosystemSnapshot,
+    commlinkSnapshot,
     adapters: {
       ecosystemHealth: { status: ecosystemSnapshot.status === 'captured' ? 'captured' : 'unavailable', note: 'Rotator runtime and managed-app health inventory.' },
-      dshChatHistory: { status: 'pending-adapter', note: 'Tenant-scoped DSH chat-history adapter is not yet exposed to this service.' },
-      streamweaverSharedChat: { status: 'pending-adapter', note: 'Tenant-scoped StreamWeaver shared-chat history adapter is not yet exposed to this service.' },
-      appRuntimeLogs: { status: 'pending-adapter', note: 'Per-app tenant log adapters must remain tenant-scoped and redacted.' },
+      commlinkGlobal: {
+        status: commlinkSnapshot.status === 'captured' ? 'captured' : 'unavailable',
+        note: 'Global Commlink incident-window evidence across ecosystem apps and systems; tenant ID is not required for capture.',
+      },
+      appRuntimeLogs: { status: 'pending-adapter', note: 'Per-app runtime log ingestion remains a separate redacted diagnostic source.' },
       rotatorRepairHistory: { status: 'pending-adapter', note: 'The repair job itself records Athena findings, changed files, checks, and failures.' },
     },
   };
