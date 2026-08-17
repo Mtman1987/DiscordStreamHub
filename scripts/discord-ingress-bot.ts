@@ -17,6 +17,7 @@ const DSH_INGRESS_URL = (
 const PRESENCE_TEXT = process.env.DSH_DISCORD_PRESENCE || 'Powered by Space Mountain';
 
 const VOICE_OWNED_COMMAND = /^!(?:dj|ignore|unignore|ignored|skip|voteskip|wr|watch|add|accept)(?:\s|$)/i;
+const MTFIXIT_DECISION = /^mtfixit_(approve|deny):([a-zA-Z0-9_-]{8,100})$/;
 
 function shouldForward(message: Message) {
   if (!message.guild) return false;
@@ -93,51 +94,79 @@ async function forwardMessage(message: Message) {
       signal: controller.signal,
     });
     const result = await response.json().catch(() => null);
-    if (!response.ok) {
-      throw new Error(`DSH ingress ${response.status}: ${JSON.stringify(result)}`);
-    }
+    if (!response.ok) throw new Error(`DSH ingress ${response.status}: ${JSON.stringify(result)}`);
     console.log(`[DiscordIngress] ${message.id} ${message.author.username} -> ${message.channelId} timeoutMs=${timeoutMs}`);
   } finally {
     clearTimeout(timeout);
   }
 }
 
+async function handleMtFixItDecision(interaction: any) {
+  if (!interaction?.isButton?.()) return false;
+  const match = String(interaction.customId || '').match(MTFIXIT_DECISION);
+  if (!match) return false;
+  if (!DISCORD_BOT_TOKEN) throw new Error('DISCORD_BOT_TOKEN is required');
+
+  const action = match[1] as 'approve' | 'deny';
+  const jobId = match[2];
+  await interaction.deferUpdate();
+  const response = await fetch(`${DSH_INGRESS_URL}/api/internal/mtfixit/decision`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-discord-bot-token': DISCORD_BOT_TOKEN,
+    },
+    body: JSON.stringify({ userId: interaction.user.id, jobId, action }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  const result = await response.json().catch(() => null);
+  if (!response.ok) {
+    await interaction.followUp({ content: `MtFixIt ${action} failed: ${String(result?.error || `HTTP ${response.status}`).slice(0, 500)}`, ephemeral: true }).catch(() => undefined);
+    return true;
+  }
+
+  const state = String(result?.state?.status || (action === 'approve' ? 'deploying' : 'denied'));
+  const suffix = action === 'approve'
+    ? `\n\n✅ mtman approved this repair. Athena is ${state === 'deployed' ? 'finished deploying it.' : 'merging/deploying it now.'}`
+    : '\n\n⛔ mtman denied automatic deployment. Athena is holding this repair for further instructions.';
+  const existing = String(interaction.message?.content || '').replace(/\n\n(?:✅|⛔)[\s\S]*$/, '');
+  await interaction.editReply({ content: `${existing}${suffix}`.slice(0, 1900), components: [] });
+  console.log(`[DiscordIngress] MtFixIt decision action=${action} job=${jobId} user=${interaction.user.id} state=${state}`);
+  return true;
+}
+
 async function main() {
   if (!DISCORD_BOT_TOKEN) throw new Error('DISCORD_BOT_TOKEN is required');
 
   const client = new Client({
-    intents: [
-      GatewayIntentBits.Guilds,
-      GatewayIntentBits.GuildMessages,
-      GatewayIntentBits.MessageContent,
-    ],
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
     partials: [Partials.Channel, Partials.Message],
   });
 
   client.once('clientReady', (readyClient) => {
-    readyClient.user.setPresence({
-      status: 'online',
-      activities: [{ name: PRESENCE_TEXT, type: ActivityType.Watching }],
-    });
+    readyClient.user.setPresence({ status: 'online', activities: [{ name: PRESENCE_TEXT, type: ActivityType.Watching }] });
     console.log(`[DiscordIngress] READY as ${readyClient.user.tag}`);
     console.log(`[DiscordIngress] Presence: ${PRESENCE_TEXT}`);
     console.log(`[DiscordIngress] DSH endpoint: ${DSH_INGRESS_URL}/api/discord/gateway-ingress`);
   });
 
   client.on('messageCreate', (message) => {
-    forwardMessage(message).catch((error) => {
-      console.error(`[DiscordIngress] Failed ${message.id}:`, error);
+    forwardMessage(message).catch((error) => console.error(`[DiscordIngress] Failed ${message.id}:`, error));
+  });
+
+  client.on('interactionCreate', (interaction) => {
+    handleMtFixItDecision(interaction).catch(async (error) => {
+      console.error('[DiscordIngress] MtFixIt interaction failed:', error);
+      if (interaction.isRepliable?.()) {
+        await interaction.followUp?.({ content: 'MtFixIt could not process that decision. The repair has not been approved.', ephemeral: true }).catch(() => undefined);
+      }
     });
   });
 
   client.on('error', (error) => console.error('[DiscordIngress] Client error:', error));
   client.on('warn', (warning) => console.warn('[DiscordIngress] Client warning:', warning));
-  client.on('shardDisconnect', (event, shardId) => {
-    console.warn(`[DiscordIngress] Shard ${shardId} disconnected (${event.code})`);
-  });
-  client.on('shardResume', (shardId, replayedEvents) => {
-    console.log(`[DiscordIngress] Shard ${shardId} resumed; replayed ${replayedEvents} events`);
-  });
+  client.on('shardDisconnect', (event, shardId) => console.warn(`[DiscordIngress] Shard ${shardId} disconnected (${event.code})`));
+  client.on('shardResume', (shardId, replayedEvents) => console.log(`[DiscordIngress] Shard ${shardId} resumed; replayed ${replayedEvents} events`));
 
   await client.login(DISCORD_BOT_TOKEN);
 }
