@@ -30,18 +30,18 @@ function surfaceUrls(payload: unknown) {
       return '';
     }
   };
-  return {
-    worktray: build('worktray', 'panel'),
-    overlays: build('overlays', 'full'),
-    settings: build('settings', 'full'),
-  };
+  return { worktray: build('worktray', 'panel'), overlays: build('overlays', 'full'), settings: build('settings', 'full') };
+}
+
+function authHeaders(token: string) {
+  return { Authorization: `Bearer ${token}`, Accept: 'application/json' };
 }
 
 export async function GET(request: NextRequest) {
   const token = request.cookies.get(DSH_SPMT_COOKIE)?.value || '';
   if (!token) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
 
-  const headers = { Authorization: `Bearer ${token}`, Accept: 'application/json' };
+  const headers = authHeaders(token);
   const [profileResponse, personalResponse, publicResponse, surfacesResponse] = await Promise.all([
     fetch(`${SPMT_BASE_URL}/api/workspace-profile`, { headers, cache: 'no-store' }),
     fetch(`${SPMT_BASE_URL}/api/personal-overlay-launch`, { headers, cache: 'no-store' }),
@@ -49,29 +49,22 @@ export async function GET(request: NextRequest) {
     fetch(`${SPMT_BASE_URL}/api/platform/surfaces`, { headers, cache: 'no-store' }),
   ]);
   const [payload, personalPayload, publicPayload, surfacesPayload] = await Promise.all([
-    profileResponse.json().catch(() => null),
-    personalResponse.json().catch(() => null),
-    publicResponse.json().catch(() => null),
-    surfacesResponse.json().catch(() => null),
+    profileResponse.json().catch(() => null), personalResponse.json().catch(() => null), publicResponse.json().catch(() => null), surfacesResponse.json().catch(() => null),
   ]);
   if (!profileResponse.ok || !payload?.profile) {
     return NextResponse.json({ error: payload?.error || 'Workspace theme unavailable' }, { status: profileResponse.status || 502 });
   }
 
-  const tenant = publicResponse.ok
-    ? String(publicPayload?.tenant || '').trim().toLowerCase()
+  const tenant = publicResponse.ok ? String(publicPayload?.tenant || '').trim().toLowerCase()
     : (personalResponse.ok ? String(personalPayload?.tenant || '').trim().toLowerCase() : '');
   const personalCanonical = personalResponse.ok && typeof personalPayload?.canonicalUrl === 'string'
-    ? personalPayload.canonicalUrl
-    : (tenant ? `${SPMT_BASE_URL}/tenant/${encodeURIComponent(tenant)}/personal` : null);
+    ? personalPayload.canonicalUrl : (tenant ? `${SPMT_BASE_URL}/tenant/${encodeURIComponent(tenant)}/personal` : null);
 
   return NextResponse.json({
     tokens: workspaceThemeTokens(payload.profile, 'discord-stream-hub', null),
     tenant: tenant || null,
     tenantOutputs: tenant ? {
-      public: publicResponse.ok && typeof publicPayload?.urls?.public === 'string'
-        ? publicPayload.urls.public
-        : `${SPMT_BASE_URL}/tenant/${encodeURIComponent(tenant)}/public`,
+      public: publicResponse.ok && typeof publicPayload?.urls?.public === 'string' ? publicPayload.urls.public : `${SPMT_BASE_URL}/tenant/${encodeURIComponent(tenant)}/public`,
       personal: personalCanonical,
     } : null,
     personalOverlayUrl: personalResponse.ok && typeof personalPayload?.url === 'string' ? personalPayload.url : null,
@@ -79,4 +72,50 @@ export async function GET(request: NextRequest) {
     revision: payload.profile.revision,
     updatedAt: payload.profile.updatedAt,
   });
+}
+
+export async function PATCH(request: NextRequest) {
+  const token = request.cookies.get(DSH_SPMT_COOKIE)?.value || '';
+  if (!token) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+  const input = await request.json().catch(() => ({}));
+  const url = String(input?.url || '').trim();
+  const title = String(input?.title || input?.appId || 'Workspace app').trim().slice(0, 100);
+  if (!url) return NextResponse.json({ error: 'url is required' }, { status: 400 });
+
+  const headers = authHeaders(token);
+  const profileResponse = await fetch(`${SPMT_BASE_URL}/api/workspace-profile`, { headers, cache: 'no-store' });
+  const payload = await profileResponse.json().catch(() => null);
+  if (!profileResponse.ok || !payload?.profile) {
+    return NextResponse.json({ error: payload?.error || 'Workspace profile unavailable' }, { status: profileResponse.status || 502 });
+  }
+
+  const profile = payload.profile;
+  const slots = Array.isArray(profile.dockSlots) ? profile.dockSlots.map((slot: any) => ({ ...slot })) : [];
+  const requestedSlotId = Number(input?.slotId || 0);
+  let target = slots.find((slot: any) => String(slot.url || '').trim().toLowerCase() === url.toLowerCase());
+  if (!target && requestedSlotId) target = slots.find((slot: any) => Number(slot.id) === requestedSlotId);
+  if (!target) target = slots.find((slot: any) => slot.collapsed || !String(slot.url || '').trim()) || slots[0];
+  if (!target) return NextResponse.json({ error: 'No Workspace slot available' }, { status: 409 });
+
+  target.title = title;
+  target.url = url;
+  target.collapsed = false;
+  const etag = profileResponse.headers.get('etag') || `"workspace-${profile.revision}"`;
+  const update = await fetch(`${SPMT_BASE_URL}/api/workspace-profile`, {
+    method: 'PATCH',
+    headers: { ...headers, 'Content-Type': 'application/json', 'If-Match': etag },
+    body: JSON.stringify({
+      profile: {
+        appearance: profile.appearance || {},
+        dockSlots: slots,
+        activeOverlaySceneId: profile.activeOverlaySceneId ?? null,
+        ttsSubscriptions: profile.ttsSubscriptions || [],
+        appThemeMappings: profile.appThemeMappings || {},
+        savedThemes: profile.savedThemes || [],
+      },
+    }),
+  });
+  const updated = await update.json().catch(() => null);
+  if (!update.ok) return NextResponse.json({ error: updated?.error || 'Workspace update failed' }, { status: update.status });
+  return NextResponse.json({ ok: true, slotId: Number(target.id), profile: updated?.profile || null });
 }
