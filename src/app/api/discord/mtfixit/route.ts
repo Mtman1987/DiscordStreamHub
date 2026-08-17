@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { mtFixItPublicReply, parseMtFixItCommand } from '@/lib/mtfixit-contract';
 import { submitMtFixItOrchestrated } from '@/lib/mtfixit-orchestrator';
+import { recordMtFixItOutcome, registerMtFixItDelivery } from '@/lib/mtfixit-delivery';
 import { getSpaceMountainIconUrl } from '@/lib/runtime-config';
 
 export const dynamic = 'force-dynamic';
@@ -18,7 +19,7 @@ function athenaPayload(content: string) {
   };
 }
 
-async function sendDiscordChannelMessage(channelId: string, content: string) {
+export async function sendDiscordMtFixItMessage(channelId: string, content: string) {
   const token = String(process.env.DISCORD_BOT_TOKEN || '').trim();
   if (!token) throw new Error('DISCORD_BOT_TOKEN is not configured');
   const response = await fetch(`https://discord.com/api/v10/channels/${encodeURIComponent(channelId)}/messages`, {
@@ -49,32 +50,33 @@ export async function POST(request: NextRequest) {
   if (!channelId || !guildId || !reporterId) return NextResponse.json({ error: 'Missing Discord report context' }, { status: 400 });
 
   if (!description) {
-    const sent = await sendDiscordChannelMessage(channelId, mtFixItPublicReply('usage'));
+    const sent = await sendDiscordMtFixItMessage(channelId, mtFixItPublicReply('usage'));
     return NextResponse.json({ success: true, commandHandled: 'mtfixit-usage', sent });
   }
 
   try {
+    let registeredJobId = '';
     const submission = await submitMtFixItOrchestrated({
-      source: 'discord',
-      reporter,
-      reporterId,
-      description,
-      channelId,
+      source: 'discord', reporter, reporterId, description, channelId,
       channelName: String(data.channelName || data.channel?.name || '').trim() || undefined,
-      guildId,
-      messageId: String(data.messageId || '').trim() || undefined,
+      guildId, messageId: String(data.messageId || '').trim() || undefined,
     }, {
       onLifecycle: async (event) => {
-        await sendDiscordChannelMessage(channelId, mtFixItPublicReply(event.outcome));
+        await recordMtFixItOutcome(event.jobId, event.outcome);
+        await sendDiscordMtFixItMessage(channelId, mtFixItPublicReply(event.outcome));
       },
     });
-
+    registeredJobId = submission.jobId;
+    if (submission.disposition === 'submitted') {
+      await registerMtFixItDelivery({ jobId: submission.jobId, source: 'discord', reporter, description, channelId, guildId });
+    }
     const firstOutcome = submission.disposition === 'submitted' ? 'accepted' : 'failed';
-    const sent = await sendDiscordChannelMessage(channelId, mtFixItPublicReply(firstOutcome));
+    const sent = await sendDiscordMtFixItMessage(channelId, mtFixItPublicReply(firstOutcome));
+    if (firstOutcome === 'failed' && registeredJobId) await recordMtFixItOutcome(registeredJobId, 'failed');
     return NextResponse.json({ success: true, commandHandled: 'mtfixit', jobId: submission.jobId, sent });
   } catch (error) {
     console.error('[DiscordMtFixIt] submission failed:', error);
-    const sent = await sendDiscordChannelMessage(channelId, mtFixItPublicReply('failed')).catch(() => null);
+    const sent = await sendDiscordMtFixItMessage(channelId, mtFixItPublicReply('failed')).catch(() => null);
     return NextResponse.json({ success: false, commandHandled: 'mtfixit', error: error instanceof Error ? error.message : 'MtFixIt failed', sent }, { status: 502 });
   }
 }
