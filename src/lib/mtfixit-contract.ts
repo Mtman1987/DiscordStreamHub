@@ -20,6 +20,18 @@ export function parseMtFixItCommand(message: string): string | null {
   return String(match[1] || '').trim();
 }
 
+function numericTwitchId(value: unknown): string {
+  const normalized = String(value || '').trim();
+  return /^\d{3,30}$/.test(normalized) ? normalized : '';
+}
+
+export function resolveTwitchMtFixItTenantId(roomId: unknown, linkedTwitchId: unknown): string | undefined {
+  // StreamWeaver tenant storage is keyed by Twitch broadcaster ID. Twitch IRC's
+  // room-id is authoritative for the channel receiving the command; the linked
+  // DSH user record is a fallback for clients that omit that tag.
+  return numericTwitchId(roomId) || numericTwitchId(linkedTwitchId) || undefined;
+}
+
 export function buildMtFixItJobRequest(input: MtFixItSubmissionInput) {
   return {
     source: `dsh:${input.source}`,
