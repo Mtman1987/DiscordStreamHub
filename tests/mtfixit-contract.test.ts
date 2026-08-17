@@ -4,6 +4,7 @@ import {
   buildMtFixItJobRequest,
   mtFixItPublicReply,
   parseMtFixItCommand,
+  resolveTwitchMtFixItTenantId,
 } from '../src/lib/mtfixit-contract';
 
 test('parses mtfixit case-insensitively and preserves the report', () => {
@@ -16,6 +17,13 @@ test('distinguishes a missing description from a non-mtfixit message', () => {
   assert.equal(parseMtFixItCommand('!mtfixit'), '');
   assert.equal(parseMtFixItCommand('!mtfixit   '), '');
   assert.equal(parseMtFixItCommand('hello !mtfixit'), null);
+});
+
+test('resolves Twitch mtfixit tenant from broadcaster room-id before linked fallback', () => {
+  assert.equal(resolveTwitchMtFixItTenantId('123456789', '987654321'), '123456789');
+  assert.equal(resolveTwitchMtFixItTenantId(undefined, '987654321'), '987654321');
+  assert.equal(resolveTwitchMtFixItTenantId('not-a-twitch-id', '987654321'), '987654321');
+  assert.equal(resolveTwitchMtFixItTenantId('not-a-twitch-id', 'also-bad'), undefined);
 });
 
 test('builds a DSH-owned rotator request without publication authority', () => {
