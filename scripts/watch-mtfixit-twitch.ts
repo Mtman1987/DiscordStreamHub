@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { db } from '../src/lib/db';
 import { mtFixItPublicReply, parseMtFixItCommand, resolveTwitchMtFixItTenantId } from '../src/lib/mtfixit-contract';
-import { submitMtFixIt } from '../src/lib/mtfixit-service';
+import { submitMtFixItOrchestrated } from '../src/lib/mtfixit-orchestrator';
 
 const CHANNEL_REFRESH_MS = 60_000;
 const TOKEN_RETRY_MS = 5 * 60_000;
@@ -15,43 +15,20 @@ type RetryState = { attempts: number; nextAt: number };
 type LiveChannel = { channel: string; tenantId?: string };
 
 function readRuntimeConfig(): any {
-  const candidates = [
-    process.env.RUNTIME_CONFIG_FILE,
-    '/data/runtime-config.json',
-    join(process.cwd(), 'data', 'runtime-config.json'),
-  ].filter(Boolean) as string[];
+  const candidates = [process.env.RUNTIME_CONFIG_FILE, '/data/runtime-config.json', join(process.cwd(), 'data', 'runtime-config.json')].filter(Boolean) as string[];
   for (const candidate of candidates) {
-    try {
-      if (existsSync(candidate)) return JSON.parse(readFileSync(candidate, 'utf8'));
-    } catch (error) {
-      console.warn(`[MtFixIt:Twitch] Could not read runtime config ${candidate}:`, error);
-    }
+    try { if (existsSync(candidate)) return JSON.parse(readFileSync(candidate, 'utf8')); }
+    catch (error) { console.warn(`[MtFixIt:Twitch] Could not read runtime config ${candidate}:`, error); }
   }
   return {};
 }
 
 const runtimeConfig = readRuntimeConfig();
-const serverId = String(
-  process.env.HARDCODED_GUILD_ID
-    || process.env.NEXT_PUBLIC_HARDCODED_GUILD_ID
-    || process.env.GUILD_ID
-    || runtimeConfig?.publicIds?.hardcodedGuildId
-    || '',
-).trim();
-const twitchClientId = String(
-  process.env.TWITCH_CLIENT_ID
-    || process.env.NEXT_PUBLIC_TWITCH_CLIENT_ID
-    || runtimeConfig?.publicIds?.twitchClientId
-    || '',
-).trim();
+const serverId = String(process.env.HARDCODED_GUILD_ID || process.env.NEXT_PUBLIC_HARDCODED_GUILD_ID || process.env.GUILD_ID || runtimeConfig?.publicIds?.hardcodedGuildId || '').trim();
+const twitchClientId = String(process.env.TWITCH_CLIENT_ID || process.env.NEXT_PUBLIC_TWITCH_CLIENT_ID || runtimeConfig?.publicIds?.twitchClientId || '').trim();
 
-function normalizeChannel(value: string): string {
-  return String(value || '').trim().toLowerCase().replace(/^#/, '');
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error || 'unknown error');
-}
+function normalizeChannel(value: string): string { return String(value || '').trim().toLowerCase().replace(/^#/, ''); }
+function errorText(error: unknown): string { return error instanceof Error ? error.message : String(error || 'unknown error'); }
 
 function scheduleRetry(retries: Map<string, RetryState>, channel: string) {
   const previous = retries.get(channel);
@@ -70,8 +47,7 @@ async function getLiveChannels(): Promise<LiveChannel[]> {
     const data = user.data() || {};
     const channel = normalizeChannel(data.twitchLogin);
     if (!channel) continue;
-    const tenantId = resolveTwitchMtFixItTenantId(undefined, data.twitchId);
-    channels.set(channel, { channel, tenantId });
+    channels.set(channel, { channel, tenantId: resolveTwitchMtFixItTenantId(undefined, data.twitchId) });
   }
   return [...channels.values()];
 }
@@ -85,20 +61,13 @@ async function getValidBotCredentials(): Promise<{ username: string; accessToken
   const accessToken = String(data.accessToken || '').trim();
   const refreshToken = String(data.refreshToken || data.refresh_token || '').trim();
   const expiresAt = Number(data.expiresAt || 0);
-  if (username && accessToken && Date.now() < expiresAt - 5 * 60_000) {
-    return { username, accessToken };
-  }
+  if (username && accessToken && Date.now() < expiresAt - 5 * 60_000) return { username, accessToken };
   if (!username || !refreshToken || !twitchClientId || !process.env.TWITCH_CLIENT_SECRET) return null;
 
   const response = await fetch('https://id.twitch.tv/oauth2/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id: twitchClientId,
-      client_secret: process.env.TWITCH_CLIENT_SECRET,
-      grant_type: 'refresh_token',
-      refresh_token: refreshToken,
-    }),
+    body: new URLSearchParams({ client_id: twitchClientId, client_secret: process.env.TWITCH_CLIENT_SECRET, grant_type: 'refresh_token', refresh_token: refreshToken }),
     signal: AbortSignal.timeout(15_000),
   });
   const payload = await response.json().catch(() => null) as any;
@@ -106,50 +75,28 @@ async function getValidBotCredentials(): Promise<{ username: string; accessToken
     console.error(`[MtFixIt:Twitch] Bot token refresh failed status=${response.status} payload=${JSON.stringify(payload)}`);
     return null;
   }
-
   const updated = {
-    accessToken: String(payload.access_token),
-    refreshToken: String(payload.refresh_token || refreshToken),
-    expiresAt: Date.now() + Number(payload.expires_in || 3600) * 1000,
-    updatedAt: new Date().toISOString(),
-    refreshErrorCode: null,
-    refreshErrorAt: null,
-    lastRefreshError: null,
+    accessToken: String(payload.access_token), refreshToken: String(payload.refresh_token || refreshToken),
+    expiresAt: Date.now() + Number(payload.expires_in || 3600) * 1000, updatedAt: new Date().toISOString(),
+    refreshErrorCode: null, refreshErrorAt: null, lastRefreshError: null,
   };
   await ref.set(updated, { merge: true });
   return { username, accessToken: updated.accessToken };
 }
 
-async function syncChannels(
-  client: tmi.Client,
-  joined: Set<string>,
-  retries: Map<string, RetryState>,
-  tenantByChannel: Map<string, string>,
-) {
+async function syncChannels(client: tmi.Client, joined: Set<string>, retries: Map<string, RetryState>, tenantByChannel: Map<string, string>) {
   const liveChannels = await getLiveChannels();
   const live = new Set(liveChannels.map((entry) => entry.channel));
   tenantByChannel.clear();
-  for (const entry of liveChannels) {
-    if (entry.tenantId) tenantByChannel.set(entry.channel, entry.tenantId);
-  }
-
-  for (const channel of [...retries.keys()]) {
-    if (!live.has(channel)) retries.delete(channel);
-  }
+  for (const entry of liveChannels) if (entry.tenantId) tenantByChannel.set(entry.channel, entry.tenantId);
+  for (const channel of [...retries.keys()]) if (!live.has(channel)) retries.delete(channel);
 
   for (const channel of live) {
-    if (joined.has(channel)) {
-      retries.delete(channel);
-      continue;
-    }
+    if (joined.has(channel)) { retries.delete(channel); continue; }
     const retry = retries.get(channel);
     if (retry && retry.nextAt > Date.now()) continue;
-
     try {
-      await client.join(channel);
-      joined.add(channel);
-      retries.delete(channel);
-      console.log(`[MtFixIt:Twitch] Joined #${channel}`);
+      await client.join(channel); joined.add(channel); retries.delete(channel); console.log(`[MtFixIt:Twitch] Joined #${channel}`);
     } catch (error) {
       const delay = scheduleRetry(retries, channel);
       console.warn(`[MtFixIt:Twitch] Join #${channel} deferred for ${Math.round(delay / 1000)}s: ${errorText(error)}`);
@@ -158,15 +105,9 @@ async function syncChannels(
 
   for (const channel of [...joined]) {
     if (live.has(channel)) continue;
-    try {
-      await client.part(channel);
-    } catch (error) {
-      console.warn(`[MtFixIt:Twitch] Part #${channel} did not confirm: ${errorText(error)}`);
-    } finally {
-      joined.delete(channel);
-      retries.delete(channel);
-      tenantByChannel.delete(channel);
-    }
+    try { await client.part(channel); }
+    catch (error) { console.warn(`[MtFixIt:Twitch] Part #${channel} did not confirm: ${errorText(error)}`); }
+    finally { joined.delete(channel); retries.delete(channel); tenantByChannel.delete(channel); }
     console.log(`[MtFixIt:Twitch] Parted #${channel}`);
   }
 }
@@ -183,12 +124,9 @@ async function runWatcher() {
   const initialChannels = await getLiveChannels();
   const joined = new Set<string>();
   const retries = new Map<string, RetryState>();
-  const tenantByChannel = new Map<string, string>(
-    initialChannels.filter((entry) => entry.tenantId).map((entry) => [entry.channel, entry.tenantId as string]),
-  );
+  const tenantByChannel = new Map<string, string>(initialChannels.filter((entry) => entry.tenantId).map((entry) => [entry.channel, entry.tenantId as string]));
   const client = new tmi.Client({
-    options: { debug: false },
-    identity: { username: credentials.username, password: `oauth:${credentials.accessToken}` },
+    options: { debug: false }, identity: { username: credentials.username, password: `oauth:${credentials.accessToken}` },
     channels: initialChannels.map((entry) => entry.channel).filter(Boolean),
   });
 
@@ -206,38 +144,24 @@ async function runWatcher() {
     const reporter = String(tags['display-name'] || tags.username || 'Twitch user').trim();
     if (!reporterId) return;
     const tenantId = resolveTwitchMtFixItTenantId(tags['room-id'], tenantByChannel.get(targetChannel));
-    if (!tenantId) {
-      console.warn(`[MtFixIt:Twitch] No broadcaster Twitch tenant ID resolved for #${targetChannel}; report will remain unscoped rather than using the DSH guild ID.`);
-    }
     try {
-      const submission = await submitMtFixIt({
-        source: 'twitch',
-        reporter,
-        reporterId,
-        description,
-        tenantId,
-        guildId: serverId,
-        channelId: targetChannel,
-        channelName: targetChannel,
+      const submission = await submitMtFixItOrchestrated({
+        source: 'twitch', reporter, reporterId, description, tenantId,
+        guildId: serverId, channelId: targetChannel, channelName: targetChannel,
         messageId: String(tags.id || '').trim() || undefined,
       }, {
-        onFinal: async (event) => {
+        onLifecycle: async (event) => {
           await client.say(`#${targetChannel}`, mtFixItPublicReply(event.outcome));
         },
       });
-      const outcome = submission.disposition === 'submitted' ? 'accepted' : 'escalated';
-      await client.say(`#${targetChannel}`, mtFixItPublicReply(outcome));
+      await client.say(`#${targetChannel}`, mtFixItPublicReply(submission.disposition === 'submitted' ? 'accepted' : 'failed'));
     } catch (error) {
       console.error('[MtFixIt:Twitch] Submission handler failed:', errorText(error));
       await client.say(`#${targetChannel}`, mtFixItPublicReply('failed')).catch(console.error);
     }
   });
 
-  client.on('join', (channel) => {
-    const normalized = normalizeChannel(channel);
-    joined.add(normalized);
-    retries.delete(normalized);
-  });
+  client.on('join', (channel) => { const normalized = normalizeChannel(channel); joined.add(normalized); retries.delete(normalized); });
   client.on('part', (channel) => joined.delete(normalizeChannel(channel)));
   client.on('disconnected', (reason) => {
     console.warn(`[MtFixIt:Twitch] Disconnected: ${reason}`);
