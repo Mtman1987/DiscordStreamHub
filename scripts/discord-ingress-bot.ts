@@ -7,6 +7,9 @@ import {
   Partials,
 } from 'discord.js';
 import { getDiscordIngressTimeoutMs } from '../src/lib/discord-ingress-timeout';
+import { mtFixItPublicReply } from '../src/lib/mtfixit-contract';
+import { resumePendingMtFixItDeliveries } from '../src/lib/mtfixit-delivery';
+import { sendDiscordMtFixItMessage } from '../src/lib/mtfixit-discord-delivery';
 
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const DSH_INGRESS_URL = (
@@ -115,6 +118,11 @@ async function main() {
     console.log(`[DiscordIngress] READY as ${readyClient.user.tag}`);
     console.log(`[DiscordIngress] Presence: ${PRESENCE_TEXT}`);
     console.log(`[DiscordIngress] DSH endpoint: ${DSH_INGRESS_URL}/api/discord/gateway-ingress`);
+    void resumePendingMtFixItDeliveries('discord', async (record, outcome) => {
+      await sendDiscordMtFixItMessage(record.channelId, mtFixItPublicReply(outcome));
+    }).then((count) => {
+      if (count) console.log(`[DiscordIngress] Resumed ${count} pending Discord MtFixIt delivery record(s).`);
+    }).catch((error) => console.error('[DiscordIngress] Failed to resume MtFixIt deliveries:', error));
   });
   client.on('messageCreate', (message) => { forwardMessage(message).catch((error) => console.error(`[DiscordIngress] Failed ${message.id}:`, error)); });
   client.on('interactionCreate', (interaction) => {
