@@ -133,7 +133,7 @@ test('mtfixit original-chat delivery survives DSH self-deploy restarts', () => {
   assert.match(delivery, /MTFIXIT_DATA_DIR/);
   assert.match(delivery, /deliveries/);
   assert.match(delivery, /resumePendingMtFixItDeliveries/);
-  assert.match(delivery, /resolution\.status === 'deployed'/);
+  assert.match(delivery, /resolution\?\.status === 'deployed'/);
   assert.match(delivery, /mtfixit_approve:\$\{record\.jobId\}/);
   assert.match(discord, /resumePendingMtFixItDeliveries\('discord'/);
   assert.match(twitch, /resumePendingMtFixItDeliveries\('twitch'/);
