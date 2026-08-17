@@ -125,7 +125,7 @@ test('Discord owns mtfixit before generic command fanout and approval decisions 
   assert.match(bot, /GatewayIntentBits\.DirectMessages/);
 });
 
-test('mtfixit original-chat delivery survives DSH self-deploy restarts', () => {
+test('mtfixit original-chat delivery survives DSH self-deploy restarts and transient outages', () => {
   const delivery = source('src/lib/mtfixit-delivery.ts');
   const discord = source('scripts/discord-ingress-bot.ts');
   const twitch = source('scripts/watch-mtfixit-twitch.ts');
@@ -135,6 +135,10 @@ test('mtfixit original-chat delivery survives DSH self-deploy restarts', () => {
   assert.match(delivery, /resumePendingMtFixItDeliveries/);
   assert.match(delivery, /resolution\?\.status === 'deployed'/);
   assert.match(delivery, /mtfixit_approve:\$\{record\.jobId\}/);
+  assert.match(delivery, /RESUME_ERROR_BACKOFF_MS = 30_000/);
+  assert.match(delivery, /transient resume poll failed/);
+  assert.match(delivery, /resumed chat delivery failed/);
+  assert.match(delivery, /await delay\(RESUME_ERROR_BACKOFF_MS\);\s*continue;/);
   assert.match(discord, /resumePendingMtFixItDeliveries\('discord'/);
   assert.match(twitch, /resumePendingMtFixItDeliveries\('twitch'/);
   assert.match(discordRoute, /registerMtFixItDelivery/);
