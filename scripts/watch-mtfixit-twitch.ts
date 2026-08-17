@@ -3,7 +3,7 @@ import tmi from 'tmi.js';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { db } from '../src/lib/db';
-import { mtFixItPublicReply, parseMtFixItCommand } from '../src/lib/mtfixit-contract';
+import { mtFixItPublicReply, parseMtFixItCommand, resolveTwitchMtFixItTenantId } from '../src/lib/mtfixit-contract';
 import { submitMtFixIt } from '../src/lib/mtfixit-service';
 
 const CHANNEL_REFRESH_MS = 60_000;
@@ -12,6 +12,7 @@ const CHANNEL_RETRY_BASE_MS = 60_000;
 const CHANNEL_RETRY_MAX_MS = 30 * 60_000;
 
 type RetryState = { attempts: number; nextAt: number };
+type LiveChannel = { channel: string; tenantId?: string };
 
 function readRuntimeConfig(): any {
   const candidates = [
@@ -60,16 +61,19 @@ function scheduleRetry(retries: Map<string, RetryState>, channel: string) {
   return delay;
 }
 
-async function getLiveChannels(): Promise<string[]> {
+async function getLiveChannels(): Promise<LiveChannel[]> {
   const users = await db.collection('servers').doc(serverId).collection('users').get();
-  const channels = new Set<string>();
+  const channels = new Map<string, LiveChannel>();
   for (const user of users.docs) {
     const state = await user.ref.collection('shoutoutState').doc('current').get();
     if (!state.exists || !state.data()?.isLive) continue;
-    const channel = normalizeChannel(user.data()?.twitchLogin);
-    if (channel) channels.add(channel);
+    const data = user.data() || {};
+    const channel = normalizeChannel(data.twitchLogin);
+    if (!channel) continue;
+    const tenantId = resolveTwitchMtFixItTenantId(undefined, data.twitchId);
+    channels.set(channel, { channel, tenantId });
   }
-  return [...channels];
+  return [...channels.values()];
 }
 
 async function getValidBotCredentials(): Promise<{ username: string; accessToken: string } | null> {
@@ -116,8 +120,18 @@ async function getValidBotCredentials(): Promise<{ username: string; accessToken
   return { username, accessToken: updated.accessToken };
 }
 
-async function syncChannels(client: tmi.Client, joined: Set<string>, retries: Map<string, RetryState>) {
-  const live = new Set((await getLiveChannels()).map(normalizeChannel).filter(Boolean));
+async function syncChannels(
+  client: tmi.Client,
+  joined: Set<string>,
+  retries: Map<string, RetryState>,
+  tenantByChannel: Map<string, string>,
+) {
+  const liveChannels = await getLiveChannels();
+  const live = new Set(liveChannels.map((entry) => entry.channel));
+  tenantByChannel.clear();
+  for (const entry of liveChannels) {
+    if (entry.tenantId) tenantByChannel.set(entry.channel, entry.tenantId);
+  }
 
   for (const channel of [...retries.keys()]) {
     if (!live.has(channel)) retries.delete(channel);
@@ -151,6 +165,7 @@ async function syncChannels(client: tmi.Client, joined: Set<string>, retries: Ma
     } finally {
       joined.delete(channel);
       retries.delete(channel);
+      tenantByChannel.delete(channel);
     }
     console.log(`[MtFixIt:Twitch] Parted #${channel}`);
   }
@@ -168,10 +183,13 @@ async function runWatcher() {
   const initialChannels = await getLiveChannels();
   const joined = new Set<string>();
   const retries = new Map<string, RetryState>();
+  const tenantByChannel = new Map<string, string>(
+    initialChannels.filter((entry) => entry.tenantId).map((entry) => [entry.channel, entry.tenantId as string]),
+  );
   const client = new tmi.Client({
     options: { debug: false },
     identity: { username: credentials.username, password: `oauth:${credentials.accessToken}` },
-    channels: initialChannels.map(normalizeChannel).filter(Boolean),
+    channels: initialChannels.map((entry) => entry.channel).filter(Boolean),
   });
 
   client.on('message', async (channel, tags, message, self) => {
@@ -187,13 +205,18 @@ async function runWatcher() {
     const reporterId = String(tags['user-id'] || '').trim();
     const reporter = String(tags['display-name'] || tags.username || 'Twitch user').trim();
     if (!reporterId) return;
+    const tenantId = resolveTwitchMtFixItTenantId(tags['room-id'], tenantByChannel.get(targetChannel));
+    if (!tenantId) {
+      console.warn(`[MtFixIt:Twitch] No broadcaster Twitch tenant ID resolved for #${targetChannel}; report will remain unscoped rather than using the DSH guild ID.`);
+    }
     try {
       const submission = await submitMtFixIt({
         source: 'twitch',
         reporter,
         reporterId,
         description,
-        tenantId: serverId,
+        tenantId,
+        guildId: serverId,
         channelId: targetChannel,
         channelName: targetChannel,
         messageId: String(tags.id || '').trim() || undefined,
@@ -224,7 +247,7 @@ async function runWatcher() {
   await client.connect();
   for (const channel of client.getChannels()) joined.add(normalizeChannel(channel));
   console.log(`[MtFixIt:Twitch] Connected as ${credentials.username}; watching ${joined.size} live channel(s).`);
-  const timer = setInterval(() => syncChannels(client, joined, retries).catch((error) => {
+  const timer = setInterval(() => syncChannels(client, joined, retries, tenantByChannel).catch((error) => {
     console.warn('[MtFixIt:Twitch] Channel list refresh deferred:', errorText(error));
   }), CHANNEL_REFRESH_MS);
   timer.unref?.();
