@@ -21,4 +21,12 @@ if (!source.includes('async function sendRotatorRequest(')) {
 }
 
 fs.writeFileSync(file, source, 'utf8');
+
+const ownerDmFile = path.join(root, 'src', 'lib', 'owner-dm-service.ts');
+let ownerDm = fs.readFileSync(ownerDmFile, 'utf8').replace(/\r\n/g, '\n');
+ownerDm = ownerDm.replace(
+  "const components = (buttons || []).slice(0, 5).flatMap((button) => {",
+  "const components = (buttons || []).slice(0, 5).flatMap<Record<string, unknown>>((button) => {",
+);
+fs.writeFileSync(ownerDmFile, ownerDm, 'utf8');
 console.log('MtFixIt scoped SPMT service OAuth patch applied.');
