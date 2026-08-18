@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getChatTagApiBase, getDiscordClientId, getHearMeOutUrl, getStreamweaverUrl } from '@/lib/runtime-config';
 import { normalizePublicSpmtCommand, type PublicSpmtCommand } from '@/lib/discord-spmt-command';
 import { parseMtFixItCommand } from '@/lib/mtfixit-contract';
+import { getPendingMtFixItConversation } from '@/lib/mtfixit-conversation';
 
 export const dynamic = 'force-dynamic';
 
@@ -62,6 +63,7 @@ export async function POST(request: NextRequest) {
   const channelId = String(data?.channelId || '');
   const guildId = String(data?.guildId || data?.serverId || '');
   const messageId = String(data?.messageId || '');
+  const reporterId = String(data?.userId || data?.author?.id || '').trim();
   const isBotAuthor = Boolean(data?.author?.bot || data?.user?.bot || data?.member?.user?.bot);
   const isDirectMessage = Boolean(data?.isDM || data?.isDirectMessage || data?.is_direct_message);
   const normalized = message.trim().toLowerCase();
@@ -74,6 +76,7 @@ export async function POST(request: NextRequest) {
     guildId: guildId || null,
     channelId: channelId || null,
     messageId: messageId || null,
+    reporterId: reporterId || null,
     isDirectMessage,
     isBotAuthor,
     isSpmtCommand,
@@ -87,15 +90,21 @@ export async function POST(request: NextRequest) {
 
   const origin = request.nextUrl.origin.replace(/\/$/, '');
   const commonHeaders = { 'x-chat-origin': 'dsh-discord-gateway', 'x-discord-trace-id': traceId };
+  const pendingMtFixIt = !isMtFixItCommand && !isBangCommand && reporterId
+    ? await getPendingMtFixItConversation(channelId, reporterId)
+    : null;
 
-  // MtFixIt is a DSH-owned operational command. Route it exactly once to the
-  // dedicated lifecycle endpoint and do not fan it out to StreamWeaver/ChatTag.
-  if (isMtFixItCommand) {
+  // MtFixIt owns both the explicit command and the next plain message after a
+  // bare !mtfixit prompt. Do not fan either message into normal chat systems.
+  if (isMtFixItCommand || pendingMtFixIt) {
     const delivery = await postJson(`${origin}/api/discord/mtfixit`, body, {
       ...commonHeaders,
       'x-discord-bot-token': configuredBotToken,
     }, 45_000);
-    trace(traceId, 'delivery', { destination: 'dsh-mtfixit', ...delivery });
+    trace(traceId, 'delivery', {
+      destination: pendingMtFixIt ? 'dsh-mtfixit-followup' : 'dsh-mtfixit',
+      ...delivery,
+    });
     return NextResponse.json({ success: delivery.ok, traceId, messageId, mtfixit: delivery }, { status: delivery.ok ? 200 : 502 });
   }
 
