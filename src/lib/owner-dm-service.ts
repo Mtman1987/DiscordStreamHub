@@ -8,8 +8,16 @@ export const OWNER_DM_MAX_FILE_BYTES = 500_000;
 
 type OwnerDmButton = {
   label: string;
-  customId: string;
+  customId?: string;
+  url?: string;
   style?: 1 | 2 | 3 | 4;
+};
+
+type OwnerDmEmbed = {
+  title?: string;
+  description?: string;
+  fields?: Array<{ name?: string; value?: string; inline?: boolean }>;
+  footer?: string;
 };
 
 export class OwnerDmDeliveryError extends Error {
@@ -76,7 +84,7 @@ function dshPublicBaseUrl() {
   ).trim().replace(/\/$/, '');
 }
 
-function approvalUrl(customId: string) {
+function legacyMtFixItApprovalUrl(customId: string) {
   const match = customId.match(/^mtfixit_(approve|deny):([a-zA-Z0-9_-]{8,100})$/);
   if (!match) return '';
   const action = match[1] === 'approve' ? 'approve' : 'deny';
@@ -84,18 +92,31 @@ function approvalUrl(customId: string) {
   return `${dshPublicBaseUrl()}/api/mtfixit/decision?jobId=${encodeURIComponent(jobId)}&action=${action}`;
 }
 
+function safeHttpsUrl(value: unknown) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  try {
+    const parsed = new URL(raw);
+    return parsed.protocol === 'https:' ? parsed.toString() : '';
+  } catch {
+    return '';
+  }
+}
+
 function buttonComponents(buttons: OwnerDmButton[] | undefined) {
-  const safe = (buttons || []).slice(0, 5).filter((button) => button.label && /^mtfixit_(?:approve|deny):[a-zA-Z0-9_-]{8,100}$/.test(button.customId));
-  if (!safe.length) return undefined;
-  return [{
-    type: 1,
-    components: safe.map((button) => ({
-      type: 2,
-      style: 5,
-      label: String(button.label).slice(0, 80),
-      url: approvalUrl(button.customId),
-    })),
-  }];
+  const components = (buttons || []).slice(0, 5).flatMap((button) => {
+    const label = String(button.label || '').trim().slice(0, 80);
+    if (!label) return [];
+    const directUrl = safeHttpsUrl(button.url);
+    const legacyUrl = button.customId ? legacyMtFixItApprovalUrl(button.customId) : '';
+    const url = directUrl || legacyUrl;
+    if (url) return [{ type: 2, style: 5, label, url }];
+    if (button.customId && /^mtfixit_(?:approve|deny):[a-zA-Z0-9_-]{8,100}$/.test(button.customId)) {
+      return [{ type: 2, style: button.style || 2, label, custom_id: button.customId }];
+    }
+    return [];
+  });
+  return components.length ? [{ type: 1, components }] : undefined;
 }
 
 function reportValue(fileContent: string, label: string) {
@@ -103,8 +124,8 @@ function reportValue(fileContent: string, label: string) {
   return line ? line.slice(line.indexOf(':') + 1).trim() : '';
 }
 
-function approvalEmbed(message: string, fileContent: string, buttons: OwnerDmButton[] | undefined) {
-  if (!(buttons || []).some((button) => /^mtfixit_(?:approve|deny):/.test(button.customId))) return undefined;
+function legacyApprovalEmbed(message: string, fileContent: string, buttons: OwnerDmButton[] | undefined) {
+  if (!(buttons || []).some((button) => String(button.customId || '').startsWith('mtfixit_'))) return undefined;
   const job = reportValue(fileContent, 'Athena repair job') || 'unknown';
   const repo = reportValue(fileContent, 'Repository') || 'inferred by Athena';
   const resolution = reportValue(fileContent, 'Resolution') || 'awaiting approval';
@@ -113,12 +134,11 @@ function approvalEmbed(message: string, fileContent: string, buttons: OwnerDmBut
   const checksBlock = fileContent.match(/Checks:\s*\n([\s\S]*?)(?:\n\s*PR:|$)/i)?.[1]?.trim() || 'No checks recorded';
   const passCount = (checksBlock.match(/^PASS\b/gm) || []).length;
   const failCount = (checksBlock.match(/^FAIL\b/gm) || []).length;
-  const color = failCount > 0 ? 0xed4245 : 0x57f287;
   return [{
     author: { name: 'Athena · Repair Gate' },
     title: 'Approval required',
     description: String(message || 'Athena has a validated repair waiting for owner review.').slice(0, 3500),
-    color,
+    color: failCount > 0 ? 0xed4245 : 0x57f287,
     fields: [
       { name: 'Job', value: `\`${job}\``, inline: true },
       { name: 'Repository', value: repo.slice(0, 1024), inline: true },
@@ -132,21 +152,40 @@ function approvalEmbed(message: string, fileContent: string, buttons: OwnerDmBut
   }];
 }
 
+function explicitEmbed(input: OwnerDmEmbed | undefined) {
+  if (!input || (!input.title && !input.description && !input.fields?.length)) return undefined;
+  const fields = (input.fields || []).slice(0, 25).flatMap((field) => {
+    const name = String(field?.name || '').trim().slice(0, 256);
+    const value = String(field?.value || '').trim().slice(0, 1024);
+    return name && value ? [{ name, value, inline: Boolean(field.inline) }] : [];
+  });
+  return [{
+    author: { name: 'Athena · Repair Gate' },
+    title: String(input.title || 'Approval required').slice(0, 256),
+    description: String(input.description || '').slice(0, 4096) || undefined,
+    color: 0x5865f2,
+    fields,
+    footer: input.footer ? { text: String(input.footer).slice(0, 2048) } : undefined,
+    timestamp: new Date().toISOString(),
+  }];
+}
+
 export async function sendOwnerDiscordDm(input: {
   message?: string;
   fileName?: string;
   fileContent?: string;
   buttons?: OwnerDmButton[];
+  embed?: OwnerDmEmbed;
 }): Promise<{ channelId: string; messageId: string }> {
   const ownerId = getMtmanDiscordId();
   const message = String(input.message || '').trim().slice(0, OWNER_DM_MAX_MESSAGE_LENGTH);
   const fileName = String(input.fileName || 'athena-support.txt').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120);
   const fileContent = String(input.fileContent || '');
   const components = buttonComponents(input.buttons);
-  const embeds = approvalEmbed(message, fileContent, input.buttons);
+  const embeds = explicitEmbed(input.embed) || legacyApprovalEmbed(message, fileContent, input.buttons);
 
   if (!ownerId) throw new OwnerDmDeliveryError('Mtman Discord ID is not configured.', 503);
-  if (!message && !fileContent) throw new OwnerDmDeliveryError('Message or file content is required.', 400);
+  if (!message && !fileContent && !embeds) throw new OwnerDmDeliveryError('Message, embed, or file content is required.', 400);
   if (Buffer.byteLength(fileContent, 'utf8') > OWNER_DM_MAX_FILE_BYTES) {
     throw new OwnerDmDeliveryError('Attachment is too large.', 413);
   }
