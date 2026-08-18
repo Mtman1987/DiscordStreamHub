@@ -60,3 +60,12 @@ test('SPMT identity events and XP use the existing DSH service-token helper', ()
   assert.match(source, /clearSpmtServiceTokenCache\(\)/);
   assert.match(source, /process\.env\.DSH_CLIENT_SECRET \|\| SPMT_API_KEY/);
 });
+
+test('DSH service tokens are cached per normalized scope set instead of one global slot', () => {
+  const source = fs.readFileSync(path.join(process.cwd(), 'src/lib/spmt-service-token.ts'), 'utf8');
+  assert.match(source, /const cached = new Map<string, ServiceToken>\(\)/);
+  assert.match(source, /const inFlight = new Map<string, Promise<string>>\(\)/);
+  assert.match(source, /const key = requested\.join\(' '\)/);
+  assert.match(source, /cached\.get\(key\)/);
+  assert.match(source, /cached\.set\(key,/);
+});
