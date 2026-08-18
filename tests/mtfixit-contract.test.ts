@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import './mtfixit-conversation.test';
 import {
   buildMtFixItJobRequest,
   mtFixItPublicReply,
@@ -9,6 +10,7 @@ import {
   resolveTwitchMtFixItTenantId,
 } from '../src/lib/mtfixit-contract';
 import { captureCommlinkDiagnosticSnapshot, mtFixItCommlinkContract } from '../src/lib/mtfixit-commlink';
+import { clearSpmtServiceTokenCache } from '../src/lib/spmt-service-token';
 
 function source(path: string) { return readFileSync(resolve(process.cwd(), path), 'utf8'); }
 
@@ -60,15 +62,25 @@ test('public replies match the conversational Athena lifecycle without exposing 
   assert.doesNotMatch(mtFixItPublicReply('failed'), /exception|token|secret|http\s+\d+/i);
 });
 
-test('mtfixit Commlink evidence is ecosystem-global and never requires a tenant id', async () => {
+test('mtfixit Commlink evidence is ecosystem-global and uses scoped service OAuth', async () => {
   assert.equal(mtFixItCommlinkContract.scope, 'ecosystem-global');
   const originalFetch = globalThis.fetch;
   const originalBase = process.env.SPMT_BASE_URL;
+  const originalSecret = process.env.DSH_CLIENT_SECRET;
   let requestedUrl = '';
   let requestedAuth = '';
   process.env.SPMT_BASE_URL = 'https://spmt.test';
+  process.env.DSH_CLIENT_SECRET = 'client-secret';
+  clearSpmtServiceTokenCache();
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    requestedUrl = String(input);
+    const url = String(input);
+    if (url.endsWith('/api/oauth/token')) {
+      return new Response(JSON.stringify({ access_token: 'oauth-service-token', expires_in: 3600 }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    requestedUrl = url;
     requestedAuth = String((init?.headers as Record<string, string> | undefined)?.authorization || '');
     return new Response(JSON.stringify({
       schemaVersion: 'commlink.diagnostic-feed/v1', scope: 'ecosystem-global', count: 2, totalMatched: 2,
@@ -80,20 +92,21 @@ test('mtfixit Commlink evidence is ecosystem-global and never requires a tenant 
     }), { status: 200, headers: { 'content-type': 'application/json' } });
   }) as typeof fetch;
   try {
-    const snapshot = await captureCommlinkDiagnosticSnapshot({ serviceKey: 'shared-service-key', capturedAt: '2026-08-17T21:01:00.000Z', source: 'twitch' });
+    const snapshot = await captureCommlinkDiagnosticSnapshot({ serviceKey: 'legacy-key', capturedAt: '2026-08-17T21:01:00.000Z', source: 'twitch' });
     assert.equal(snapshot.status, 'captured');
     assert.equal(snapshot.scope, 'ecosystem-global');
     assert.match(requestedUrl, /\/api\/internal\/commlink\/diagnostic-feed\?/);
     assert.doesNotMatch(requestedUrl, /tenant/i);
-    assert.equal(requestedAuth, 'Bearer shared-service-key');
+    assert.equal(requestedAuth, 'Bearer oauth-service-token');
     if (snapshot.status === 'captured') {
       assert.match(snapshot.snapshotJson, /tenant-a-message/);
       assert.match(snapshot.snapshotJson, /tenant-b-message/);
     }
   } finally {
+    clearSpmtServiceTokenCache();
     globalThis.fetch = originalFetch;
-    if (originalBase === undefined) delete process.env.SPMT_BASE_URL;
-    else process.env.SPMT_BASE_URL = originalBase;
+    if (originalBase === undefined) delete process.env.SPMT_BASE_URL; else process.env.SPMT_BASE_URL = originalBase;
+    if (originalSecret === undefined) delete process.env.DSH_CLIENT_SECRET; else process.env.DSH_CLIENT_SECRET = originalSecret;
   }
 });
 
@@ -115,7 +128,7 @@ test('Discord owns mtfixit before generic command fanout and approval decisions 
   const discordDelivery = source('src/lib/mtfixit-discord-delivery.ts');
   const decisions = source('src/app/api/internal/mtfixit/decision/route.ts');
   const bot = source('scripts/discord-ingress-bot.ts');
-  assert.ok(ingress.indexOf('if (isMtFixItCommand)') < ingress.indexOf('const dshUrl'));
+  assert.ok(ingress.indexOf('if (isMtFixItCommand || pendingMtFixIt)') < ingress.indexOf('const dshUrl'));
   assert.match(ingress, /\/api\/discord\/mtfixit/);
   assert.match(mtfixit, /sendDiscordMtFixItMessage/);
   assert.match(discordDelivery, /author: \{ name: 'Athena'/);
