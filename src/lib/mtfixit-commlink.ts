@@ -1,3 +1,5 @@
+import { clearSpmtServiceTokenCache, getSpmtServiceToken } from './spmt-service-token';
+
 const DEFAULT_SPMT_URL = 'https://spmt.live';
 const COMMLINK_WINDOW_MINUTES = 10;
 const COMMLINK_ITEM_LIMIT = 300;
@@ -72,16 +74,22 @@ function compactPayload(value: unknown): { snapshotJson: string; itemCount: numb
   };
 }
 
+async function requestDiagnosticFeed(requestUrl: string, bearer: string) {
+  const response = await fetch(requestUrl, {
+    headers: { accept: 'application/json', authorization: `Bearer ${bearer}` },
+    cache: 'no-store',
+    signal: AbortSignal.timeout(12_000),
+  });
+  const payload = await response.json().catch(() => null);
+  return { response, payload };
+}
+
 export async function captureCommlinkDiagnosticSnapshot(options: {
-  serviceKey: string;
+  serviceKey?: string;
   capturedAt: string;
   source?: string;
 }): Promise<CommlinkDiagnosticSnapshot> {
   const endpoint = `${baseUrl()}/api/internal/commlink/diagnostic-feed`;
-  if (!options.serviceKey) {
-    return { status: 'unavailable', endpoint, scope: 'ecosystem-global', error: 'SPMT service key is unavailable.' };
-  }
-
   const untilMs = Date.parse(options.capturedAt) || Date.now();
   const params = new URLSearchParams({
     since: new Date(untilMs - COMMLINK_WINDOW_MINUTES * 60_000).toISOString(),
@@ -92,17 +100,33 @@ export async function captureCommlinkDiagnosticSnapshot(options: {
   const requestUrl = `${endpoint}?${params.toString()}`;
 
   try {
-    const response = await fetch(requestUrl, {
-      headers: {
-        accept: 'application/json',
-        authorization: `Bearer ${options.serviceKey}`,
-      },
-      cache: 'no-store',
-      signal: AbortSignal.timeout(12_000),
-    });
-    const payload = await response.json().catch(() => null);
-    if (!response.ok || !payload) throw new Error(`Commlink diagnostic feed HTTP ${response.status}`);
-    const compacted = compactPayload(payload);
+    let bearer = '';
+    try {
+      bearer = await getSpmtServiceToken(['athena:write']);
+    } catch (error) {
+      console.warn('[MtFixIt] SPMT service OAuth unavailable for Commlink diagnostics:', safeText(error));
+    }
+
+    let result = bearer ? await requestDiagnosticFeed(requestUrl, bearer) : null;
+    if (result && (result.response.status === 401 || result.response.status === 403)) {
+      clearSpmtServiceTokenCache();
+      try {
+        bearer = await getSpmtServiceToken(['athena:write']);
+        result = await requestDiagnosticFeed(requestUrl, bearer);
+      } catch {}
+    }
+
+    // Temporary compatibility while old SPMT deployments are still accepting
+    // the legacy machine credential. New deployments should succeed above.
+    if ((!result || !result.response.ok) && options.serviceKey) {
+      result = await requestDiagnosticFeed(requestUrl, options.serviceKey);
+    }
+
+    if (!result || !result.response.ok || !result.payload) {
+      const status = result?.response.status || 0;
+      throw new Error(`Commlink diagnostic feed HTTP ${status || 'unavailable'}`);
+    }
+    const compacted = compactPayload(result.payload);
     return {
       status: 'captured',
       endpoint,
