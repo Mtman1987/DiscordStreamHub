@@ -27,10 +27,14 @@ test('Signal destination is owned and resolved by DiscordStreamHub', () => {
   assert.match(destination, /hasAuthorizedBearerToken/);
   assert.match(destination, /getServiceToServiceSecrets/);
   assert.match(destination, /SIGNAL_CHANNEL_NAME = 'comms-lounge'/);
+  assert.match(destination, /SIGNAL_CHANNEL_ID = '1283213768419180567'/);
+  assert.match(destination, /discord\.com\/api\/v10\/channels\/\$\{SIGNAL_CHANNEL_ID\}/);
+  assert.match(destination, /String\(channel\.guild_id \|\| ''\) !== SERVER_ID/);
   assert.match(destination, /collection\('channels'\)/);
   assert.match(destination, /where\('name', '==', SIGNAL_CHANNEL_NAME\)/);
   assert.match(destination, /DISCORD_BOT_TOKEN/);
   assert.match(destination, /discord\.com\/api\/v10\/guilds\/\$\{SERVER_ID\}\/channels/);
+  assert.match(destination, /canonical \|\| stored \|\| await fetchSignalChannelIdFromDiscord\(\)/);
   assert.match(destination, /kind: 'signal-destination'/);
   assert.match(destination, /guildId: SERVER_ID/);
   assert.match(destination, /channelId/);
