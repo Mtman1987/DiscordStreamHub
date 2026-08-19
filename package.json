@@ -18,7 +18,7 @@
     "test:athena-gate": "node --import tsx --test tests/athena-visitor-gate.test.ts",
     "test:mtfixit": "npm run patch:spmt-service-oauth && node --import tsx --test tests/mtfixit-contract.test.ts",
     "test:spmt-identity": "npm run patch:spmt-service-oauth && node --import tsx --test tests/spmt-points-identity.test.ts",
-    "test:contracts": "node --import tsx --test tests/tenant-contracts.test.ts tests/spmt-onboarding-contract.test.ts",
+    "test:contracts": "node --import tsx --test tests/tenant-contracts.test.ts tests/spmt-onboarding-contract.test.ts tests/signal-carrier-roster.test.ts",
     "test:applications": "node --experimental-strip-types --test tests/application-flow.test.ts"
   },
   "dependencies": {
