@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { getChannels } from '@/lib/discord-sync-service';
 import { buildSpmtOnboardingButton } from '@/lib/spmt-onboarding-contract';
 import { buildSpmtWelcomeEmbed } from '@/lib/spmt-onboarding-embed';
 
@@ -18,6 +19,7 @@ export async function POST(req: NextRequest) {
 
     const existingLinkingDoc = await db.collection('servers').doc(serverId).collection('config').doc('linkingEmbed').get();
     const existingLinkingEmbed = existingLinkingDoc.exists ? existingLinkingDoc.data() : null;
+    const channelName = String((await getChannels(serverId)).find(channel => channel.id === channelId)?.name || '').trim() || null;
 
     // Get branding
     const brandingDoc = await db.collection('servers').doc(serverId).collection('config').doc('branding').get();
@@ -104,10 +106,13 @@ export async function POST(req: NextRequest) {
       }).catch(() => {});
     }
 
-    // Save as the linking embed so updateLinkingEmbed can refresh it
+    // Save both ID and name. Discord channel IDs can change if a channel is
+    // deleted/recreated; the name lets polling safely relocate this embed.
     await db.collection('servers').doc(serverId).collection('config').doc('linkingEmbed').set({
       messageId: msg.id,
       channelId,
+      channelName,
+      needsDispatch: false,
       updatedAt: new Date().toISOString(),
     });
 
