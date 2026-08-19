@@ -7,14 +7,20 @@ const root = path.resolve(process.cwd());
 const route = fs.readFileSync(path.join(root, 'src/app/api/internal/signal/carriers/route.ts'), 'utf8');
 const destination = fs.readFileSync(path.join(root, 'src/app/api/internal/signal/channel/route.ts'), 'utf8');
 
-test('Signal carrier roster is authenticated and follows the DSH community shoutout group', () => {
+test('Signal carrier roster is authenticated and follows the live DSH shoutout roster', () => {
   assert.match(route, /hasAuthorizedBearerToken/);
   assert.match(route, /getServiceToServiceSecrets/);
-  assert.match(route, /isCommunityGroup\(user\?\.group\)/);
-  assert.match(route, /twitchLogin \|\| user\?\.username \|\| user\?\.displayName/);
+  assert.match(route, /collection\('users'\)/);
+  assert.match(route, /collection\('shoutoutState'\)\.doc\('current'\)/);
+  assert.match(route, /shoutoutState\.data\(\)\?\.isLive !== true/);
+  assert.match(route, /doc\.data\(\)\?\.twitchLogin/);
+  assert.match(route, /collection\('twitchChatBlacklist'\)/);
+  assert.match(route, /blacklistedChannels\.has\(channel\)/);
   assert.match(route, /kind: 'signal-carriers'/);
   assert.match(route, /'Cache-Control': 'private, no-store'/);
-  assert.doesNotMatch(route, /where\('isOnline'/, 'Signal listening follows shoutout-list membership, not a potentially stale online snapshot');
+  assert.doesNotMatch(route, /isCommunityGroup/);
+  assert.doesNotMatch(route, /user\?\.username/);
+  assert.doesNotMatch(route, /user\?\.displayName/);
 });
 
 test('Signal destination is owned and resolved by DiscordStreamHub', () => {
