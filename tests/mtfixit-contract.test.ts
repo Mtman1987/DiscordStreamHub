@@ -109,7 +109,7 @@ test('orchestrator notifies mtman at start, gates new fixes, and reports success
   assert.match(text, /outcome: 'waiting-review'/);
 });
 
-test('Discord owns mtfixit before generic command fanout and approval decisions are restricted', () => {
+test('Discord owns mtfixit before generic command fanout and repair decisions stay owner-restricted', () => {
   const ingress = source('src/app/api/discord/gateway-ingress/route.ts');
   const mtfixit = source('src/app/api/discord/mtfixit/route.ts');
   const discordDelivery = source('src/lib/mtfixit-discord-delivery.ts');
@@ -120,7 +120,8 @@ test('Discord owns mtfixit before generic command fanout and approval decisions 
   assert.match(mtfixit, /sendDiscordMtFixItMessage/);
   assert.match(discordDelivery, /author: \{ name: 'Athena'/);
   assert.match(decisions, /userId !== getMtmanDiscordId\(\)/);
-  assert.match(bot, /mtfixit_\(approve\|deny\)/);
+  assert.match(bot, /\(mtfixit\|chatgpt\)_\(approve\|deny\)/);
+  assert.match(bot, /kind = match\[1\]/);
   assert.match(bot, /\/api\/internal\/mtfixit\/decision/);
   assert.match(bot, /GatewayIntentBits\.DirectMessages/);
 });
