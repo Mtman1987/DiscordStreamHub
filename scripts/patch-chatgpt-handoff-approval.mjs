@@ -59,10 +59,12 @@ patchFile('src/app/api/internal/mtfixit/decision/route.ts', (source) => {
     "const body = await request.json().catch(() => null) as { userId?: unknown; jobId?: unknown; action?: unknown } | null;",
     "const body = await request.json().catch(() => null) as { userId?: unknown; jobId?: unknown; action?: unknown; kind?: unknown } | null;",
   );
-  next = next.replace(
-    "const action = String(body?.action || '').trim().toLowerCase();",
-    "const action = String(body?.action || '').trim().toLowerCase();\n  const kind = String(body?.kind || 'mtfixit').trim().toLowerCase();",
-  );
+  if (!next.includes("const kind = String(body?.kind || 'mtfixit').trim().toLowerCase();")) {
+    next = next.replace(
+      "const action = String(body?.action || '').trim().toLowerCase();",
+      "const action = String(body?.action || '').trim().toLowerCase();\n  const kind = String(body?.kind || 'mtfixit').trim().toLowerCase();",
+    );
+  }
   next = next.replace(
     "if (!/^[a-zA-Z0-9_-]{8,100}$/.test(jobId)) return NextResponse.json({ error: 'Invalid job ID' }, { status: 400 });",
     "if (!/^[a-zA-Z0-9_-]{8,120}$/.test(jobId)) return NextResponse.json({ error: 'Invalid job ID' }, { status: 400 });\n  if (kind !== 'mtfixit' && kind !== 'chatgpt') return NextResponse.json({ error: 'Invalid repair decision kind' }, { status: 400 });",
