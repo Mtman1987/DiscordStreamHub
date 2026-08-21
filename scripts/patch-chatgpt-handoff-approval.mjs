@@ -8,7 +8,7 @@ function patchFile(relative, transform) {
   const file = path.join(root, relative);
   const before = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
   const after = transform(before);
-  if (after === before) throw new Error(`ChatGPT approval patch made no change to ${relative}`);
+  if (after === before) return;
   fs.writeFileSync(file, after, 'utf8');
 }
 
@@ -18,6 +18,7 @@ patchFile('src/lib/owner-dm-service.ts', (source) => {
     "if (button.customId && /^mtfixit_(?:approve|deny):[a-zA-Z0-9_-]{8,100}$/.test(button.customId)) {",
     "if (button.customId && /^(?:mtfixit|chatgpt)_(?:approve|deny):[a-zA-Z0-9_-]{8,120}$/.test(button.customId)) {",
   );
+  if (!next.includes('(?:mtfixit|chatgpt)_(?:approve|deny)')) throw new Error('Owner DM repair-button marker missing');
   return next;
 });
 
@@ -43,6 +44,8 @@ patchFile('scripts/discord-ingress-bot.ts', (source) => {
     "console.log(`[DiscordIngress] MtFixIt decision action=${action} job=${jobId} user=${interaction.user.id} state=${state}`);",
     "console.log(`[DiscordIngress] Repair decision kind=${kind} action=${action} job=${jobId} user=${interaction.user.id} state=${state}`);",
   );
+  if (!next.includes('const REPAIR_DECISION = /^(mtfixit|chatgpt)_(approve|deny)')) throw new Error('Discord repair-decision marker missing');
+  if (!next.includes('jobId, action, kind')) throw new Error('Discord repair-decision payload marker missing');
   return next;
 });
 
@@ -68,6 +71,8 @@ patchFile('src/app/api/internal/mtfixit/decision/route.ts', (source) => {
     "const state = await decideMtFixIt(jobId, action);\n    return NextResponse.json({ ok: true, state });",
     "const state = kind === 'chatgpt'\n      ? await decideChatGptHandoff(jobId, action)\n      : await decideMtFixIt(jobId, action);\n    return NextResponse.json({ ok: true, state });",
   );
+  if (!next.includes('decideChatGptHandoff')) throw new Error('ChatGPT handoff decision route marker missing');
+  if (!next.includes("kind !== 'mtfixit' && kind !== 'chatgpt'")) throw new Error('Repair decision kind validation marker missing');
   return next;
 });
 
@@ -86,6 +91,8 @@ patchFile('src/lib/mtfixit-orchestrator.ts', (source) => {
     if (!next.includes(failedMarker)) throw new Error('MtFixIt failed-job marker missing');
     next = next.replace(failedMarker, `if (job.status === 'failed') {\n        const report = jobReport(job, input);\n        const handoffMatch = String(job.error || '').match(/awaiting-chatgpt:(chatgpt-[A-Za-z0-9_-]{8,120})/);\n        if (handoffMatch) {\n          const handoffId = handoffMatch[1];\n          await notifyMtman(\n            \`Local Qwen could not produce a safe fix for **\${input.reporter}**’s report: “\${input.description.slice(0, 800)}”\\n\\nApprove once to send this prepared repair packet to the next hourly ChatGPT Business repair pass, or decline to hold it.\`,\n            {\n              fileName: \`\${job.id}.txt\`,\n              fileContent: report,\n              buttons: [\n                { label: 'Approve ChatGPT Repair', customId: \`chatgpt_approve:\${handoffId}\`, style: 3 },\n                { label: 'Decline / Hold', customId: \`chatgpt_deny:\${handoffId}\`, style: 4 },\n              ],\n            },\n          );\n          await emit(options, { jobId, outcome: 'waiting-review', stage: 'waiting-review', message: \`ChatGPT fallback \${handoffId} awaits mtman approval.\` });\n          return;\n        }\n        await notifyMtman(\`Athena failed to produce a safe fix for **\${input.reporter}**’s MtFixIt report. Job **\${job.id}** needs review.\`, { fileName: \`\${job.id}.txt\`, fileContent: report });\n        await emit(options, { jobId, outcome: 'failed', stage: 'failed', message: job.error || job.summary });\n        return;\n      }`);
   }
+  if (!next.includes('export async function decideChatGptHandoff')) throw new Error('ChatGPT orchestrator decision marker missing');
+  if (!next.includes('Approve ChatGPT Repair')) throw new Error('ChatGPT approval DM marker missing');
   return next;
 });
 
