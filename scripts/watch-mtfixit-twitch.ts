@@ -94,19 +94,19 @@ async function getAthenaReplyCredentials(): Promise<TwitchCredentials | null> {
   return { username, accessToken: refreshed.accessToken };
 }
 
-async function syncChannels(client: tmi.Client, joined: Set<string>, retries: Map<string, RetryState>, tenantByChannel: Map<string, string>) {
+async function syncChannels(client: tmi.Client, joined: Set<string>, retries: Map<string, RetryState>, tenantByChannel: Map<string, string>, label: string) {
   const liveChannels = await getLiveChannels(); const live = new Set(liveChannels.map((entry) => entry.channel)); tenantByChannel.clear();
   for (const entry of liveChannels) if (entry.tenantId) tenantByChannel.set(entry.channel, entry.tenantId);
   for (const channel of [...retries.keys()]) if (!live.has(channel)) retries.delete(channel);
   for (const channel of live) {
     if (joined.has(channel)) { retries.delete(channel); continue; }
     const retry = retries.get(channel); if (retry && retry.nextAt > Date.now()) continue;
-    try { await client.join(channel); joined.add(channel); retries.delete(channel); console.log(`[MtFixIt:Twitch] ${client.getUsername()} joined #${channel}`); }
-    catch (error) { const delay = scheduleRetry(retries, channel); console.warn(`[MtFixIt:Twitch] Join #${channel} deferred for ${Math.round(delay / 1000)}s: ${errorText(error)}`); }
+    try { await client.join(channel); joined.add(channel); retries.delete(channel); console.log(`[MtFixIt:Twitch] ${label} joined #${channel}`); }
+    catch (error) { const delay = scheduleRetry(retries, channel); console.warn(`[MtFixIt:Twitch] ${label} join #${channel} deferred for ${Math.round(delay / 1000)}s: ${errorText(error)}`); }
   }
   for (const channel of [...joined]) {
     if (live.has(channel)) continue;
-    try { await client.part(channel); } catch (error) { console.warn(`[MtFixIt:Twitch] Part #${channel} did not confirm: ${errorText(error)}`); }
+    try { await client.part(channel); } catch (error) { console.warn(`[MtFixIt:Twitch] ${label} part #${channel} did not confirm: ${errorText(error)}`); }
     finally { joined.delete(channel); retries.delete(channel); tenantByChannel.delete(channel); }
   }
 }
@@ -179,8 +179,8 @@ async function runWatcher() {
     await sayAsAthena(channel, mtFixItPublicReply(outcome));
   }).then((count) => { if (count) console.log(`[MtFixIt:Twitch] Resumed ${count} pending MtFixIt delivery record(s).`); });
   const timer = setInterval(() => {
-    syncChannels(client, joined, retries, tenantByChannel).catch((error) => console.warn('[MtFixIt:Twitch] Watcher channel refresh deferred:', errorText(error)));
-    if (athenaClient) syncChannels(athenaClient, athenaJoined, athenaRetries, tenantByChannel).catch((error) => console.warn('[MtFixIt:Twitch] Athena channel refresh deferred:', errorText(error)));
+    syncChannels(client, joined, retries, tenantByChannel, 'watcher').catch((error) => console.warn('[MtFixIt:Twitch] Watcher channel refresh deferred:', errorText(error)));
+    if (athenaClient) syncChannels(athenaClient, athenaJoined, athenaRetries, tenantByChannel, 'Athena reply client').catch((error) => console.warn('[MtFixIt:Twitch] Athena channel refresh deferred:', errorText(error)));
   }, CHANNEL_REFRESH_MS); timer.unref?.();
 }
 
