@@ -6,6 +6,10 @@ export async function GET() {
   return NextResponse.json({
     status: missingSecrets.length ? 'not-ready' : 'ok',
     timestamp: new Date().toISOString(),
+    service: 'discord-stream-hub',
+    manifestVersion: 'spmt.app-manifest/v1',
+    manifestUrl: '/api/platform/manifest',
+    buildSha: process.env.BUILD_SHA || 'development',
     startupServicesDisabled: process.env.DISABLE_STARTUP_SERVICES === 'true',
     dependencies: {
       serviceCredentials: missingSecrets.length
