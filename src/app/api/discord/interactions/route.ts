@@ -18,6 +18,7 @@ import {
   createSpmtOnboardingAuthorization,
 } from '@/lib/spmt-onboarding-service';
 import { SPMT_ONBOARDING_CUSTOM_ID } from '@/lib/spmt-onboarding-contract';
+import { setSignalSeekerMembership } from '@/lib/signal-seeker-service';
 import {
   APPLICATION_DEFINITIONS,
   APPLICATION_FLOW_VERSION,
@@ -400,6 +401,22 @@ export async function POST(request: NextRequest) {
     }
 
     if (body.type === 3 && customId) {
+      if (customId.startsWith('signal_seekers:')) {
+        const action = customId.slice('signal_seekers:'.length) === 'leave' ? 'leave' : 'join';
+        const discordUserId = String(body.member?.user?.id || body.user?.id || '').trim();
+        const guildId = String(body.guild_id || '').trim();
+        if (!discordUserId || !guildId) return ephemeral('⚠️ Open this control inside the Space Mountain server.');
+        try {
+          const membership = await setSignalSeekerMembership({ guildId, discordUserId, action });
+          return ephemeral(membership.status === 'joined'
+            ? '🥚 **You are now a Signal Seeker.** I will ping the role when a new Signal appears. Use `!signal` anytime to open these controls again.'
+            : 'You left the Signal Seekers. Use `!signal` anytime if you want to rejoin the hunt.');
+        } catch (error) {
+          console.error('[SignalSeekers] Role update failed:', error);
+          return ephemeral('⚠️ I could not update the Signal Seeker role. Please tell a moderator the bot needs Manage Roles permission.');
+        }
+      }
+
       if (customId.startsWith('signal_intercept:')) {
         const dropId = customId.slice('signal_intercept:'.length);
         const actor = body.member?.user || body.user || {};
@@ -443,7 +460,7 @@ export async function POST(request: NextRequest) {
         }
         return ephemeral(claim.alreadyClaimed
           ? '📡 **SIGNAL LOCKED** — this egg is already secured to your SPMT identity.'
-          : '🥚 **SIGNAL EGG ACQUIRED** — secured to your SPMT identity through Discord. No app sign-in required.');
+          : '🥚 **SIGNAL EGG ACQUIRED** — secured to your SPMT identity through Discord. No app sign-in required. Your reward is `!signal <message>`: on Twitch it sends your message plus your live shoutout to Space Mountain Discord; in Discord it sends your styled Signal message.');
       }
 
       if (customId.startsWith('sw_pokemon_trade_')) {
