@@ -4,6 +4,18 @@ import { db } from '@/lib/db';
 import { getServiceToServiceSecrets, hasAuthorizedBearerToken } from '@/lib/runtime-secrets';
 import { ensureSignalSeekerRole } from '@/lib/signal-seeker-service';
 
+const SIGNAL_DROP_TTL_MS = 10 * 60 * 1000;
+
+async function deleteSignalMessage(channelId: string, messageId: string, botToken: string) {
+  const response = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages/${messageId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bot ${botToken}` },
+  }).catch(() => null);
+  if (response && !response.ok && response.status !== 404) {
+    console.error(`[SignalDrop] Timed deletion failed (${response.status}) for ${channelId}/${messageId}`);
+  }
+}
+
 export async function POST(request: NextRequest) {
   if (!hasAuthorizedBearerToken(request.headers.get('authorization'), getServiceToServiceSecrets())) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -42,9 +54,16 @@ export async function POST(request: NextRequest) {
   });
   const message = await response.json().catch(() => null);
   if (!response.ok || !message?.id) return NextResponse.json({ error: `Discord post failed (${response.status})` }, { status: 502 });
+  const expiresAt = new Date(Date.now() + SIGNAL_DROP_TTL_MS).toISOString();
   await db.collection('signalDrops').doc(dropId).set({
     id: dropId, guildId, channelId, channelName, messageId: String(message.id), clue, botName,
-    createdAt: new Date().toISOString(), claims: 0,
+    createdAt: new Date().toISOString(), expiresAt, claims: 0,
   });
-  return NextResponse.json({ ok: true, dropId, messageId: String(message.id) });
+  const deletionTimer = setTimeout(() => {
+    deleteSignalMessage(channelId, String(message.id), botToken).catch((error) => {
+      console.error('[SignalDrop] Timed deletion crashed:', error);
+    });
+  }, SIGNAL_DROP_TTL_MS);
+  deletionTimer.unref?.();
+  return NextResponse.json({ ok: true, dropId, messageId: String(message.id), expiresAt });
 }

@@ -427,6 +427,11 @@ export async function POST(request: NextRequest) {
         if (!discordUserId || !dropDoc.exists || String(drop.guildId || '') !== String(body.guild_id || '')) {
           return ephemeral('⚠️ That Signal carrier is no longer valid.');
         }
+        const expiresAt = Date.parse(String(drop.expiresAt || ''));
+        if (Number.isFinite(expiresAt) && Date.now() >= expiresAt) {
+          await deleteDiscordMessage(String(drop.channelId || body.channel_id || ''), String(drop.messageId || body.message?.id || ''));
+          return ephemeral('📡 That Signal faded after 10 minutes. Wait for the next transmission.');
+        }
         const identity = await grandfatherDiscordIdentity({
           discordId: discordUserId,
           discordUsername: String(actor.username || discordUserId),
