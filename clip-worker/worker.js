@@ -62,7 +62,34 @@ const DEFAULT_CREW_MEMBERS = [
   'UDHero2K',
   'Scarletkitty1313',
 ];
-const BANNER_VERSION = '2026-06-01-worker-1';
+const BANNER_VERSION = '2026-08-28-role-aware-1';
+const BANNER_WIDTH = 960;
+const BANNER_HEIGHT = 100;
+const BANNER_FPS = 10;
+const BANNER_DURATION_SECONDS = 20;
+const BANNER_VARIANTS = {
+  commander: {
+    labelHtml: 'COMMANDER MT',
+    messageHtml: 'THE MOUNTAIN IS LIVE &bull; ALL SYSTEMS GO',
+    primaryColor: '#ffd24a',
+    secondaryColor: '#fff0a6',
+    showUsername: false,
+  },
+  crew: {
+    labelHtml: 'SPACEMOUNTAIN CREW',
+    messageHtml: 'CREW SIGNAL LOCKED &bull; LIVE NOW',
+    primaryColor: '#00b7ff',
+    secondaryColor: '#79dcff',
+    showUsername: true,
+  },
+  mountaineer: {
+    labelHtml: 'MOUNTAINEER <span class="heart">&hearts;</span>',
+    messageHtml: 'SIGNAL RECEIVED &bull; LIVE NOW',
+    primaryColor: '#39e58c',
+    secondaryColor: '#a3f7c7',
+    showUsername: true,
+  },
+};
 
 let twitchAccessToken = '';
 
@@ -110,23 +137,23 @@ async function handleBannerGenerationRequest(req, res) {
   }
 
   const body = await readJsonBody(req).catch(() => ({}));
-  const crewMembers = Array.isArray(body?.crewMembers) && body.crewMembers.length > 0
-    ? body.crewMembers.filter((name) => typeof name === 'string' && name.trim())
-    : DEFAULT_CREW_MEMBERS;
+  const bannerRequests = normalizeBannerRequests(body);
   const skipCommander = Boolean(body?.skipCommander);
   const commanderName = typeof body?.commanderName === 'string' && body.commanderName.trim()
     ? body.commanderName.trim()
     : 'mtman1987';
 
-  console.log(`[ClipWorker] Generating banners for ${crewMembers.length} crew members${skipCommander ? '' : ` + commander ${commanderName}`}`);
-  const commanderUrl = skipCommander ? null : await generateCommanderBanner(commanderName);
+  console.log(`[ClipWorker] Generating ${bannerRequests.length} role-aware banners${skipCommander ? '' : ` + commander ${commanderName}`}`);
+  const commanderUrl = skipCommander ? null : await generateBanner(commanderName, 'commander');
   let successCount = 0;
-  for (const member of crewMembers) {
+  const generatedByVariant = { commander: 0, crew: 0, mountaineer: 0 };
+  for (const request of bannerRequests) {
     try {
-      await generateCrewBanner(member);
+      await generateBanner(request.username, request.variant);
       successCount += 1;
+      generatedByVariant[request.variant] += 1;
     } catch (err) {
-      console.error(`[ClipWorker] Banner generation failed for ${member}:`, err?.message || err);
+      console.error(`[ClipWorker] Banner generation failed for ${request.username}:`, err?.message || err);
     }
   }
 
@@ -134,10 +161,33 @@ async function handleBannerGenerationRequest(req, res) {
   res.end(JSON.stringify({
     success: true,
     commanderUrl,
-    crewCount: crewMembers.length,
-    crewGenerated: successCount,
+    requestedCount: bannerRequests.length,
+    generatedCount: successCount,
+    generatedByVariant,
     bannerVersion: BANNER_VERSION,
   }));
+}
+
+function normalizeBannerVariant(value) {
+  const candidate = String(value || '').trim().toLowerCase();
+  if (candidate === 'commander' || candidate === 'crew') return candidate;
+  return 'mountaineer';
+}
+
+function normalizeBannerRequests(body) {
+  if (Array.isArray(body?.bannerRequests) && body.bannerRequests.length > 0) {
+    return body.bannerRequests
+      .filter((request) => request && typeof request.username === 'string' && request.username.trim())
+      .map((request) => ({
+        username: request.username.trim(),
+        variant: normalizeBannerVariant(request.variant),
+      }));
+  }
+
+  const legacyCrewMembers = Array.isArray(body?.crewMembers) && body.crewMembers.length > 0
+    ? body.crewMembers.filter((name) => typeof name === 'string' && name.trim())
+    : DEFAULT_CREW_MEMBERS;
+  return legacyCrewMembers.map((username) => ({ username: username.trim(), variant: 'crew' }));
 }
 
 async function readJsonBody(req) {
@@ -184,8 +234,6 @@ async function renderBannerGifFromHtml(html, bannerName) {
   const tempHtml = path.join(os.tmpdir(), `banner_${safeBannerName}_${renderId}.html`);
   const tempGif = path.join(os.tmpdir(), `banner_${safeBannerName}_${renderId}.gif`);
   const palette = path.join(os.tmpdir(), `banner_${safeBannerName}_${renderId}_palette.png`);
-  const fps = 30;
-  const duration = 10;
   const framePaths = [];
   let browser;
 
@@ -200,25 +248,35 @@ async function renderBannerGifFromHtml(html, bannerName) {
     });
 
     const page = await browser.newPage();
-    await page.setViewport({ width: 1920, height: 200 });
+    await page.setViewport({ width: BANNER_WIDTH, height: BANNER_HEIGHT, deviceScaleFactor: 1 });
     await page.setContent(html, { waitUntil: 'domcontentloaded' });
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await page.evaluate(() => {
+      for (const animation of document.getAnimations()) {
+        animation.pause();
+        animation.currentTime = 0;
+      }
+    });
 
-    const frameCount = Math.floor(duration * fps);
+    const frameCount = Math.floor(BANNER_DURATION_SECONDS * BANNER_FPS);
     for (let i = 0; i < frameCount; i++) {
       const framePath = path.join(frameDir, `frame_${String(i).padStart(3, '0')}.png`);
+      const animationTimeMs = (i * 1000) / BANNER_FPS;
+      await page.evaluate((currentTimeMs) => {
+        for (const animation of document.getAnimations()) {
+          animation.currentTime = currentTimeMs;
+        }
+      }, animationTimeMs);
       const screenshot = await page.screenshot({ type: 'png' });
       await fs.writeFile(framePath, screenshot);
       framePaths.push(framePath);
-      await new Promise((resolve) => setTimeout(resolve, 1000 / fps));
     }
 
     await browser.close();
     browser = null;
 
     const framePattern = path.join(frameDir, 'frame_%03d.png');
-    await execAsync(`ffmpeg -y -framerate ${fps} -i "${framePattern}" -vf "palettegen" "${palette}"`);
-    await execAsync(`ffmpeg -y -framerate ${fps} -i "${framePattern}" -i "${palette}" -filter_complex "paletteuse" "${tempGif}"`);
+    await execAsync(`ffmpeg -y -framerate ${BANNER_FPS} -i "${framePattern}" -vf "palettegen=max_colors=96:stats_mode=diff" "${palette}"`);
+    await execAsync(`ffmpeg -y -framerate ${BANNER_FPS} -i "${framePattern}" -i "${palette}" -filter_complex "paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle" -loop 0 -gifflags +transdiff "${tempGif}"`);
 
     const gifBuffer = await fs.readFile(tempGif);
     return gifBuffer;
@@ -234,10 +292,12 @@ async function renderBannerGifFromHtml(html, bannerName) {
   }
 }
 
-async function pushBannerToDSH(gifBuffer, bannerName) {
+async function pushBannerToDSH(gifBuffer, bannerName, variant) {
   const form = new FormData();
   form.append('gif', new Blob([gifBuffer], { type: 'image/gif' }), `${bannerName}.gif`);
   form.append('bannerName', bannerName);
+  form.append('bannerVariant', normalizeBannerVariant(variant));
+  form.append('bannerVersion', BANNER_VERSION);
 
   const res = await fetch(`${DSH_URL.replace(/\/$/, '')}/api/clips/upload`, {
     method: 'POST',
@@ -253,21 +313,37 @@ async function pushBannerToDSH(gifBuffer, bannerName) {
   return res.json();
 }
 
-async function generateCrewBanner(username) {
-  const template = await fetchBannerTemplate('/banner-crew.html');
-  const html = template.replace(/{{USERNAME}}/g, username.toUpperCase());
-  const gifBuffer = await renderBannerGifFromHtml(html, username.toLowerCase());
-  const result = await pushBannerToDSH(gifBuffer, username.toLowerCase());
-  console.log(`[ClipWorker] Generated crew banner for ${username}: ${result.gifUrl}`);
-  return result.gifUrl;
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
-async function generateCommanderBanner(username = 'mtman1987') {
-  const template = await fetchBannerTemplate('/banner-commander.html');
-  const html = template.replace(/{{USERNAME}}/g, username.toUpperCase());
+function fillBannerTemplate(template, username, variant) {
+  const normalizedVariant = normalizeBannerVariant(variant);
+  const appearance = BANNER_VARIANTS[normalizedVariant];
+  const escapedUsername = escapeHtml(username.toUpperCase());
+  const identityHtml = appearance.showUsername
+    ? ` <span class="separator">&bull;</span> <span class="username">${escapedUsername}</span>`
+    : '';
+  return template
+    .replace(/{{LABEL_HTML}}/g, appearance.labelHtml)
+    .replace(/{{IDENTITY_HTML}}/g, identityHtml)
+    .replace(/{{MESSAGE_HTML}}/g, appearance.messageHtml)
+    .replace(/{{PRIMARY_COLOR}}/g, appearance.primaryColor)
+    .replace(/{{SECONDARY_COLOR}}/g, appearance.secondaryColor);
+}
+
+async function generateBanner(username, variant) {
+  const normalizedVariant = normalizeBannerVariant(variant);
+  const template = await fetchBannerTemplate('/banner-template.html');
+  const html = fillBannerTemplate(template, username, normalizedVariant);
   const gifBuffer = await renderBannerGifFromHtml(html, username.toLowerCase());
-  const result = await pushBannerToDSH(gifBuffer, username.toLowerCase());
-  console.log(`[ClipWorker] Generated commander banner for ${username}: ${result.gifUrl}`);
+  const result = await pushBannerToDSH(gifBuffer, username.toLowerCase(), normalizedVariant);
+  console.log(`[ClipWorker] Generated ${normalizedVariant} banner for ${username}: ${result.gifUrl} (${(gifBuffer.length / 1024).toFixed(0)}KB)`);
   return result.gifUrl;
 }
 

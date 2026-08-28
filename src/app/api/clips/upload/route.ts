@@ -4,6 +4,7 @@ import { join } from 'path';
 import { existsSync } from 'fs';
 import { getStoragePath } from '@/lib/runtime-config';
 import { getClipWorkerSecret } from '@/lib/runtime-secrets';
+import { BANNER_VERSION, normalizeBannerVariant } from '@/lib/banner-policy';
 
 const STORAGE_PATH = getStoragePath();
 const MAX_GIFS_PER_STREAMER = 5;
@@ -59,6 +60,8 @@ export async function POST(request: NextRequest) {
     const file = formData.get('gif') as File | null;
     const streamer = formData.get('streamer') as string | null;
     const bannerName = formData.get('bannerName') as string | null;
+    const bannerVariant = formData.get('bannerVariant') as string | null;
+    const bannerVersion = formData.get('bannerVersion') as string | null;
 
     if (!file || (!streamer && !bannerName)) {
       return NextResponse.json({ error: 'gif and streamer/bannerName required' }, { status: 400 });
@@ -68,6 +71,12 @@ export async function POST(request: NextRequest) {
       const normalizedBannerName = bannerName.trim().toLowerCase();
       if (!/^[a-z0-9_-]{2,64}$/.test(normalizedBannerName)) {
         return NextResponse.json({ error: 'invalid bannerName' }, { status: 400 });
+      }
+      if (bannerVersion !== BANNER_VERSION) {
+        return NextResponse.json({ error: 'stale banner generator version' }, { status: 409 });
+      }
+      if (!bannerVariant || !['commander', 'crew', 'mountaineer'].includes(bannerVariant)) {
+        return NextResponse.json({ error: 'invalid bannerVariant' }, { status: 400 });
       }
 
       const bannersDir = join(STORAGE_PATH, 'banners');
@@ -82,6 +91,8 @@ export async function POST(request: NextRequest) {
       await writeFile(metaPath, JSON.stringify({
         generatedAt: new Date().toISOString(),
         source: 'clip-worker',
+        variant: normalizeBannerVariant(bannerVariant),
+        version: bannerVersion,
       }, null, 2));
 
       const gifUrl = `/api/media/banners/${normalizedBannerName}.gif`;

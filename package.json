@@ -21,6 +21,7 @@
     "test:mtfixit": "npm run patch:spmt-service-oauth && npm run patch:chatgpt-approval && node --import tsx --test tests/mtfixit-contract.test.ts tests/chatgpt-handoff-approval.test.ts",
     "test:spmt-identity": "npm run patch:spmt-service-oauth && node --import tsx --test tests/spmt-points-identity.test.ts",
     "test:contracts": "node --import tsx --test tests/tenant-contracts.test.ts tests/spmt-onboarding-contract.test.ts tests/signal-carrier-roster.test.ts tests/linking-channel-recovery.test.ts",
+    "test:banners": "node --experimental-strip-types --test tests/banner-role-contract.test.ts",
     "test:applications": "node --experimental-strip-types --test tests/application-flow.test.ts"
   },
   "dependencies": {

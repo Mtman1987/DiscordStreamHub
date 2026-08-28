@@ -3,147 +3,155 @@
 import puppeteer from 'puppeteer';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { writeFile, unlink, readFile, mkdir } from 'fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { existsSync } from 'fs';
-import { getStoragePath } from './runtime-config';
+import { getStoragePath } from './runtime-config.ts';
+import {
+  BANNER_VARIANTS,
+  BANNER_VERSION,
+  type BannerVariant,
+  bannerStorageKey,
+  isStoredBannerCurrent,
+  normalizeBannerVariant,
+} from './banner-policy.ts';
 
 const execAsync = promisify(exec);
 const STORAGE_PATH = getStoragePath();
-const BANNER_VERSION = '2026-05-02-1';
+const BANNER_WIDTH = 960;
+const BANNER_HEIGHT = 100;
+const BANNER_FPS = 10;
+const BANNER_DURATION_SECONDS = 20;
 
-export async function generateCrewBanners(crewMembers: string[]): Promise<void> {
-  console.log('[BannerGen] Generating crew banners...');
-  
-  const templatePath = join(process.cwd(), 'public', 'banner-crew.html');
-  const template = await readFile(templatePath, 'utf-8');
-  
-  for (const username of crewMembers) {
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function fillBannerTemplate(template: string, username: string, variant: BannerVariant): string {
+  const appearance = BANNER_VARIANTS[variant];
+  const escapedUsername = escapeHtml(username.toUpperCase());
+  const identityHtml = appearance.showUsername
+    ? ` <span class="separator">&bull;</span> <span class="username">${escapedUsername}</span>`
+    : '';
+  return template
+    .replace(/{{LABEL_HTML}}/g, appearance.labelHtml)
+    .replace(/{{IDENTITY_HTML}}/g, identityHtml)
+    .replace(/{{MESSAGE_HTML}}/g, appearance.message)
+    .replace(/{{PRIMARY_COLOR}}/g, appearance.primaryColor)
+    .replace(/{{SECONDARY_COLOR}}/g, appearance.secondaryColor);
+}
+
+async function generateBanners(usernames: string[], variant: BannerVariant): Promise<void> {
+  const templatePath = join(process.cwd(), 'public', 'banner-template.html');
+  const template = await readFile(templatePath, 'utf8');
+
+  for (const username of usernames) {
     try {
-      console.log(`[BannerGen] Creating banner for ${username}`);
-      
-      const html = template.replace(/{{USERNAME}}/g, username.toUpperCase());
-      const tempHtmlPath = join(tmpdir(), `banner_${username}.html`);
-      await writeFile(tempHtmlPath, html);
-      
-      const gifUrl = await recordBannerToGif(tempHtmlPath, username);
-      
-      await unlink(tempHtmlPath).catch(() => {});
-      
-      console.log(`[BannerGen] ✅ ${username}: ${gifUrl}`);
+      const html = fillBannerTemplate(template, username, variant);
+      const gifUrl = await recordBannerToGif(html, username, variant);
+      console.log(`[BannerGen] Generated ${variant} banner for ${username}: ${gifUrl}`);
     } catch (error) {
-      console.error(`[BannerGen] Error for ${username}:`, error);
+      console.error(`[BannerGen] ${variant} banner failed for ${username}:`, error);
     }
   }
-  
-  console.log('[BannerGen] 🎉 All crew banners generated!');
+}
+
+export async function generateCrewBanners(crewMembers: string[]): Promise<void> {
+  await generateBanners(crewMembers, 'crew');
+}
+
+export async function generateMountaineerBanners(members: string[]): Promise<void> {
+  await generateBanners(members, 'mountaineer');
 }
 
 export async function getCrewBannerUrl(username: string): Promise<string | null> {
-  const bannerKey = username.toLowerCase();
-  const bannersDir = join(STORAGE_PATH, 'banners');
-  const bannerPath = join(bannersDir, `${bannerKey}.gif`);
-  const metaPath = join(bannersDir, `${bannerKey}.gif.meta.json`);
-  const bannerUrl = `/api/media/banners/${bannerKey}.gif?v=${BANNER_VERSION}`;
-
-  try {
-    if (!existsSync(bannersDir)) {
-      await mkdir(bannersDir, { recursive: true });
-    }
-
-    if (!existsSync(bannerPath)) {
-      return null;
-    }
-
-    try {
-      const raw = await readFile(metaPath, 'utf-8');
-      const meta = JSON.parse(raw) as { version?: string };
-      if (meta.version && meta.version !== BANNER_VERSION) {
-        console.log(`[BannerGen] Banner for ${username} is stale (version ${meta.version}); worker should refresh it`);
-      }
-    } catch {
-      console.log(`[BannerGen] Banner meta missing for ${username}; worker should refresh it`);
-    }
-
-    return bannerUrl;
-  } catch (error) {
-    console.error(`[BannerGen] Failed to resolve banner for ${username}:`, error);
-  }
-
-  return null;
+  const bannerKey = bannerStorageKey(username);
+  if (!bannerKey || !isStoredBannerCurrent(STORAGE_PATH, bannerKey, 'crew')) return null;
+  return `/api/media/banners/${bannerKey}.gif?v=${BANNER_VERSION}`;
 }
 
 export async function generateCommanderBanner(): Promise<string> {
-  console.log('[BannerGen] Generating commander banner...');
-  
-  const htmlPath = join(process.cwd(), 'public', 'banner-commander.html');
-  const gifUrl = await recordBannerToGif(htmlPath, 'mtman1987');
-  
-  console.log(`[BannerGen] ✅ Commander banner: ${gifUrl}`);
-  return gifUrl;
+  const username = 'mtman1987';
+  const template = await readFile(join(process.cwd(), 'public', 'banner-template.html'), 'utf8');
+  return recordBannerToGif(fillBannerTemplate(template, username, 'commander'), username, 'commander');
 }
 
-async function recordBannerToGif(htmlPath: string, username: string): Promise<string> {
-  const bannerKey = username.toLowerCase();
-  const tempGif = join(tmpdir(), `banner_${username}.gif`);
-  const palettePath = join(tmpdir(), `banner_${username}_palette.png`);
-  const fps = 30;
-  const duration = 10;
-  
-  let browser;
-  const framePaths: string[] = [];
-  
+async function recordBannerToGif(
+  html: string,
+  username: string,
+  requestedVariant: BannerVariant,
+): Promise<string> {
+  const variant = normalizeBannerVariant(requestedVariant);
+  const bannerKey = bannerStorageKey(username);
+  if (!bannerKey) throw new Error('A valid Twitch login is required to generate a banner');
+
+  const workDir = await mkdtemp(join(tmpdir(), 'dsh-banner-'));
+  const frameDir = join(workDir, 'frames');
+  const tempGif = join(workDir, 'banner.gif');
+  const palettePath = join(workDir, 'palette.png');
+  let browser: Awaited<ReturnType<typeof puppeteer.launch>> | null = null;
+
   try {
+    await mkdir(frameDir, { recursive: true });
     browser = await puppeteer.launch({
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
     });
-    
+
     const page = await browser.newPage();
-    await page.setViewport({ width: 1920, height: 200 });
-    await page.goto(`file://${htmlPath}`, { waitUntil: 'networkidle0' });
-    
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    const frameCount = Math.floor(duration * fps);
-    for (let i = 0; i < frameCount; i++) {
-      const framePath = join(tmpdir(), `banner_${username}_frame_${i.toString().padStart(3, '0')}.png`);
-      const screenshot = await page.screenshot({ type: 'png' });
-      await writeFile(framePath, screenshot);
-      framePaths.push(framePath);
-      await new Promise(resolve => setTimeout(resolve, 1000 / fps));
+    await page.setViewport({ width: BANNER_WIDTH, height: BANNER_HEIGHT, deviceScaleFactor: 1 });
+    await page.setContent(html, { waitUntil: 'domcontentloaded' });
+    await page.evaluate(() => {
+      for (const animation of document.getAnimations()) {
+        animation.pause();
+        animation.currentTime = 0;
+      }
+    });
+
+    const frameCount = BANNER_DURATION_SECONDS * BANNER_FPS;
+    for (let index = 0; index < frameCount; index += 1) {
+      const currentTimeMs = (index * 1000) / BANNER_FPS;
+      await page.evaluate((animationTimeMs) => {
+        for (const animation of document.getAnimations()) {
+          animation.currentTime = animationTimeMs;
+        }
+      }, currentTimeMs);
+      await page.screenshot({
+        path: join(frameDir, `frame_${String(index).padStart(3, '0')}.png`),
+        type: 'png',
+      });
     }
-    
+
     await browser.close();
     browser = null;
-    
-    await execAsync(`ffmpeg -y -framerate ${fps} -i "${join(tmpdir(), `banner_${username}_frame_%03d.png`)}" -vf "palettegen" "${palettePath}"`);
-    await execAsync(`ffmpeg -y -framerate ${fps} -i "${join(tmpdir(), `banner_${username}_frame_%03d.png`)}" -i "${palettePath}" -filter_complex "paletteuse" "${tempGif}"`);
-    
+
+    const framePattern = join(frameDir, 'frame_%03d.png');
+    await execAsync(`ffmpeg -y -framerate ${BANNER_FPS} -i "${framePattern}" -vf "palettegen=max_colors=96:stats_mode=diff" "${palettePath}"`);
+    await execAsync(`ffmpeg -y -framerate ${BANNER_FPS} -i "${framePattern}" -i "${palettePath}" -filter_complex "paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle" -loop 0 -gifflags +transdiff "${tempGif}"`);
+
     const bannersDir = join(STORAGE_PATH, 'banners');
-    if (!existsSync(bannersDir)) {
-      await mkdir(bannersDir, { recursive: true });
-    }
-    
-    const storagePath = join(bannersDir, `${bannerKey}.gif`);
-    const metaPath = join(bannersDir, `${bannerKey}.gif.meta.json`);
+    await mkdir(bannersDir, { recursive: true });
     const gifBuffer = await readFile(tempGif);
-    await writeFile(storagePath, gifBuffer);
-    await writeFile(metaPath, JSON.stringify({
+    await writeFile(join(bannersDir, `${bannerKey}.gif`), gifBuffer);
+    await writeFile(join(bannersDir, `${bannerKey}.gif.meta.json`), JSON.stringify({
       version: BANNER_VERSION,
-      generatedAt: new Date().toISOString()
+      variant,
+      generatedAt: new Date().toISOString(),
+      width: BANNER_WIDTH,
+      height: BANNER_HEIGHT,
+      fps: BANNER_FPS,
+      durationSeconds: BANNER_DURATION_SECONDS,
     }, null, 2));
-    const gifUrl = `/api/media/banners/${bannerKey}.gif`;
-    
-    for (const fp of framePaths) await unlink(fp).catch(() => {});
-    await unlink(palettePath).catch(() => {});
-    await unlink(tempGif).catch(() => {});
-    
-    return gifUrl;
-  } catch (error) {
+
+    return `/api/media/banners/${bannerKey}.gif?v=${BANNER_VERSION}`;
+  } finally {
     if (browser) await browser.close().catch(() => {});
-    for (const fp of framePaths) await unlink(fp).catch(() => {});
-    throw error;
+    await rm(workDir, { recursive: true, force: true }).catch(() => {});
   }
 }
