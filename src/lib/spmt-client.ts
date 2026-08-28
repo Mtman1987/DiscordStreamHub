@@ -64,7 +64,7 @@ export async function claimDiscordSignalEgg(input: {
   messageId?: string;
 }) {
   const { getSpmtServiceToken } = await import('./spmt-service-token');
-  const token = await getSpmtServiceToken(['entitlements:write']);
+  const token = await getSpmtServiceToken(['identity:write']);
   const response = await fetch(`${SPMT_BASE_URL.replace(/\/$/, '')}/api/internal/easter-eggs/signal/claim`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
