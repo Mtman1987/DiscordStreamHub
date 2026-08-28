@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getServiceToServiceSecrets, hasAuthorizedBearerToken } from '@/lib/runtime-secrets';
+import { ensureSignalSeekerRole } from '@/lib/signal-seeker-service';
 
 export async function POST(request: NextRequest) {
   if (!hasAuthorizedBearerToken(request.headers.get('authorization'), getServiceToServiceSecrets())) {
@@ -18,10 +19,15 @@ export async function POST(request: NextRequest) {
   const botToken = String(process.env.DISCORD_BOT_TOKEN || '').trim();
   if (!botToken) return NextResponse.json({ error: 'Discord bot token is unavailable' }, { status: 503 });
   const dropId = randomUUID();
+  const signalSeekerRoleId = await ensureSignalSeekerRole(guildId).catch((error) => {
+    console.error('[SignalDrop] Unable to resolve Signal Seeker role:', error);
+    return '';
+  });
   const response = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
     method: 'POST',
     headers: { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
+      ...(signalSeekerRoleId ? { content: `<@&${signalSeekerRoleId}> a new Signal has appeared.` } : {}),
       embeds: [{
         author: { name: botName, ...(avatarUrl ? { icon_url: avatarUrl } : {}) },
         title: '📡 UNIDENTIFIED SIGNAL',
@@ -31,7 +37,7 @@ export async function POST(request: NextRequest) {
         timestamp: new Date().toISOString(),
       }],
       components: [{ type: 1, components: [{ type: 2, style: 1, label: 'INTERCEPT SIGNAL', custom_id: `signal_intercept:${dropId}`, emoji: { name: '📡' } }] }],
-      allowed_mentions: { parse: [] },
+      allowed_mentions: { parse: [], roles: signalSeekerRoleId ? [signalSeekerRoleId] : [] },
     }),
   });
   const message = await response.json().catch(() => null);

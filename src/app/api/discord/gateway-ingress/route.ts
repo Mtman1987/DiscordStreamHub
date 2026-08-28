@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getChatTagApiBase, getDiscordClientId, getHearMeOutUrl, getStreamweaverUrl } from '@/lib/runtime-config';
 import { normalizePublicSpmtCommand, type PublicSpmtCommand } from '@/lib/discord-spmt-command';
 import { parseMtFixItCommand } from '@/lib/mtfixit-contract';
+import { postSignalSeekerPanel } from '@/lib/signal-seeker-service';
 
 export const dynamic = 'force-dynamic';
 
@@ -69,6 +70,7 @@ export async function POST(request: NextRequest) {
   const isSpmtCommand = Boolean(spmtCommand);
   const isBangCommand = normalized.startsWith('!');
   const isStreamweaverSignalCommand = /^!signal(?:bot)?(?:\s|$)/i.test(message.trim());
+  const isSignalSeekerCommand = /^!signal\s*$/i.test(message.trim());
   const isMtFixItCommand = parseMtFixItCommand(message) !== null;
 
   trace(traceId, 'ingress', {
@@ -85,6 +87,17 @@ export async function POST(request: NextRequest) {
 
   if (!channelId || !guildId || isDirectMessage || isBotAuthor) {
     return NextResponse.json({ success: true, skipped: 'not-public-human-message' });
+  }
+
+  if (isSignalSeekerCommand) {
+    try {
+      const panel = await postSignalSeekerPanel({ guildId, channelId });
+      trace(traceId, 'delivery', { destination: 'dsh-signal-seekers', ok: true, messageId: panel?.id || null });
+      return NextResponse.json({ success: true, traceId, messageId, signalSeekers: true });
+    } catch (error) {
+      trace(traceId, 'delivery', { destination: 'dsh-signal-seekers', ok: false, error: error instanceof Error ? error.message : String(error) });
+      return NextResponse.json({ error: 'Unable to open the Signal Seeker journey' }, { status: 502 });
+    }
   }
 
   const origin = request.nextUrl.origin.replace(/\/$/, '');
