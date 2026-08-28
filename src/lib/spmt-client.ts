@@ -57,6 +57,26 @@ export async function grandfatherDiscordIdentity(input: {
   }
 }
 
+export async function claimDiscordSignalEgg(input: {
+  discordUserId: string;
+  guildId?: string;
+  channelId?: string;
+  messageId?: string;
+}) {
+  const { getSpmtServiceToken } = await import('./spmt-service-token');
+  const token = await getSpmtServiceToken(['entitlements:write']);
+  const response = await fetch(`${SPMT_BASE_URL.replace(/\/$/, '')}/api/internal/easter-eggs/signal/claim`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(input),
+    cache: 'no-store',
+    signal: typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(10_000) : undefined,
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(String(payload?.error || `SPMT Signal claim failed (${response.status})`));
+  return payload as { ok: true; claimed: boolean; alreadyClaimed: boolean; userId: string; username: string };
+}
+
 export async function grandfatherTwitchIdentity(input: {
   twitchId: string;
   twitchUsername: string;

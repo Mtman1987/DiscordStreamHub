@@ -12,7 +12,7 @@ import {
   getHearMeOutUrl as getHearMeOutUrlFromRuntime,
   getStreamweaverUrl,
 } from '@/lib/runtime-config';
-import { grandfatherDiscordIdentity } from '@/lib/spmt-client';
+import { claimDiscordSignalEgg, grandfatherDiscordIdentity } from '@/lib/spmt-client';
 import { getChatTagServiceSecret, getDshClientSecret } from '@/lib/runtime-secrets';
 import {
   createSpmtOnboardingAuthorization,
@@ -400,6 +400,52 @@ export async function POST(request: NextRequest) {
     }
 
     if (body.type === 3 && customId) {
+      if (customId.startsWith('signal_intercept:')) {
+        const dropId = customId.slice('signal_intercept:'.length);
+        const actor = body.member?.user || body.user || {};
+        const discordUserId = String(actor.id || '').trim();
+        const dropRef = db.collection('signalDrops').doc(dropId);
+        const dropDoc = await dropRef.get();
+        const drop = dropDoc.data() || {};
+        if (!discordUserId || !dropDoc.exists || String(drop.guildId || '') !== String(body.guild_id || '')) {
+          return ephemeral('⚠️ That Signal carrier is no longer valid.');
+        }
+        const identity = await grandfatherDiscordIdentity({
+          discordId: discordUserId,
+          discordUsername: String(actor.username || discordUserId),
+          displayName: String(body.member?.nick || actor.global_name || actor.username || discordUserId),
+          avatarUrl: discordAvatarUrl(actor),
+          issueSession: false,
+        });
+        if (!identity?.user?.id) return ephemeral('⚠️ SPMT could not secure this Signal. Try intercepting it again.');
+        const claim = await claimDiscordSignalEgg({
+          discordUserId,
+          guildId: String(body.guild_id || ''),
+          channelId: String(body.channel_id || drop.channelId || ''),
+          messageId: String(body.message?.id || drop.messageId || ''),
+        });
+        await dropRef.set({
+          claims: Number(drop.claims || 0) + (claim.claimed ? 1 : 0),
+          lastClaimedAt: new Date().toISOString(),
+          lastClaimedDiscordUserId: discordUserId,
+        }, { merge: true });
+        const ownerId = String(process.env.STREAMWEAVER_OWNER_DISCORD_ID || '767875979561009173').trim();
+        const botToken = String(process.env.DISCORD_BOT_TOKEN || '').trim();
+        if (ownerId && botToken) {
+          const dm = await fetch('https://discord.com/api/v10/users/@me/channels', {
+            method: 'POST', headers: { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ recipient_id: ownerId }),
+          }).then((response) => response.ok ? response.json() : null).catch(() => null);
+          if (dm?.id) await fetch(`https://discord.com/api/v10/channels/${dm.id}/messages`, {
+            method: 'POST', headers: { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: `👁️ Signal intercepted\nUser: ${actor.global_name || actor.username || discordUserId} (${discordUserId})\nChannel: <#${drop.channelId}>\nResult: ${claim.alreadyClaimed ? 'already owned' : 'Signal Egg acquired'}` }),
+          }).catch(() => null);
+        }
+        return ephemeral(claim.alreadyClaimed
+          ? '📡 **SIGNAL LOCKED** — this egg is already secured to your SPMT identity.'
+          : '🥚 **SIGNAL EGG ACQUIRED** — secured to your SPMT identity through Discord. No app sign-in required.');
+      }
+
       if (customId.startsWith('sw_pokemon_trade_')) {
         const applicationId = body.application_id || getDiscordClientId();
         forwardStreamWeaverPokemonTrade(body, customId)
