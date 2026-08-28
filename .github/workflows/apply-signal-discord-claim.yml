@@ -1,0 +1,72 @@
+name: Apply signed Discord Signal forwarding
+on:
+  push:
+    branches: [fix/signal-discord-identity-claim]
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/signal-discord-identity-claim
+      - name: Patch signed Signal interaction forwarding
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('src/app/api/discord/interactions/route.ts')
+          s = p.read_text()
+
+          helper_marker = "async function forwardStreamWeaverPokemonTrade(body: any, customId: string) {"
+          helper = r'''async function forwardStreamWeaverSignalClaim(body: any, customId: string) {
+  if (!/^sw_signal_claim:[^:]+$/.test(customId)) throw new Error('Invalid Signal control.');
+  const secret = getDshClientSecret();
+  if (!secret) throw new Error('DiscordStreamHub service secret is not configured.');
+  const actor = body.member?.user || body.user || {};
+  const response = await fetch(`${getStreamweaverUrl().replace(/\/$/, '')}/api/discord/signal-interaction`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${secret}`,
+    },
+    body: JSON.stringify({
+      customId,
+      actorDiscordId: actor.id,
+      actorUsername: actor.username,
+      actorName: body.member?.nick || actor.global_name || actor.username,
+      actorAvatarUrl: discordAvatarUrl(actor),
+      guildId: body.guild_id,
+      channelId: body.channel_id,
+      messageId: body.message?.id,
+    }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(payload?.error || `StreamWeaver returned ${response.status}.`);
+  return payload?.data || payload;
+}
+
+'''
+          if 'async function forwardStreamWeaverSignalClaim' not in s:
+              if helper_marker not in s:
+                  raise SystemExit('StreamWeaver Pokemon helper marker not found')
+              s = s.replace(helper_marker, helper + helper_marker)
+
+          dispatch_marker = """    if (body.type === 3 && customId) {\n      if (customId.startsWith('sw_pokemon_trade_')) {"""
+          dispatch = """    if (body.type === 3 && customId) {\n      if (customId.startsWith('sw_signal_claim:')) {\n        const applicationId = body.application_id || getDiscordClientId();\n        forwardStreamWeaverSignalClaim(body, customId)\n          .then((payload) => updateDeferredInteractionPayload(applicationId, body.token, payload))\n          .catch((error) => updateDeferredInteractionPayload(applicationId, body.token, {\n            content: `📡 ${error?.message || 'Signal interception failed.'}`,\n            allowed_mentions: { parse: [] },\n          }));\n        return NextResponse.json({\n          type: 5,\n          data: { content: '📡 Intercepting signal...', flags: 64, allowed_mentions: { parse: [] } },\n        });\n      }\n\n      if (customId.startsWith('sw_pokemon_trade_')) {"""
+          if "customId.startsWith('sw_signal_claim:')" not in s:
+              if dispatch_marker not in s:
+                  raise SystemExit('button dispatch marker not found')
+              s = s.replace(dispatch_marker, dispatch)
+
+          p.write_text(s)
+          PY
+          rm -f .github/workflows/apply-signal-discord-claim.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add src/app/api/discord/interactions/route.ts .github/workflows/apply-signal-discord-claim.yml
+          git commit -m "fix: forward Signal button with signed Discord identity"
+          git push origin HEAD:fix/signal-discord-identity-claim
