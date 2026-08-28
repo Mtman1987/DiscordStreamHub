@@ -68,6 +68,7 @@ export async function POST(request: NextRequest) {
   const spmtCommand = normalizePublicSpmtCommand(message, getDiscordClientId());
   const isSpmtCommand = Boolean(spmtCommand);
   const isBangCommand = normalized.startsWith('!');
+  const isStreamweaverSignalCommand = /^!signal(?:bot)?(?:\s|$)/i.test(message.trim());
   const isMtFixItCommand = parseMtFixItCommand(message) !== null;
 
   trace(traceId, 'ingress', {
@@ -77,6 +78,7 @@ export async function POST(request: NextRequest) {
     isDirectMessage,
     isBotAuthor,
     isSpmtCommand,
+    isStreamweaverSignalCommand,
     isMtFixItCommand,
     messagePreview: message.slice(0, 120),
   });
@@ -114,8 +116,11 @@ export async function POST(request: NextRequest) {
     jobs.push(postJson(streamweaverUrl, forwarded, { ...commonHeaders, 'x-chat-origin': 'dsh-discord-gateway-spmt' }, 45_000).then((result) => ({ destination: 'streamweaver-spmt', ...result })));
   }
 
-  if (!isBangCommand && !isSpmtCommand) {
+  if (isStreamweaverSignalCommand || (!isBangCommand && !isSpmtCommand)) {
     jobs.push(postJson(streamweaverUrl, body, commonHeaders, 12_000).then((result) => ({ destination: 'streamweaver', ...result })));
+  }
+
+  if (!isBangCommand && !isSpmtCommand) {
     jobs.push(postJson(hearMeOutUrl, { ...body, dispatch: false }, commonHeaders, 8_000).then((result) => ({ destination: 'hearmeout-passive', ...result })));
   }
 
