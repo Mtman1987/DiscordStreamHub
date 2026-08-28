@@ -9,6 +9,12 @@ fi
 
 # 2. Do not clean Discord channels on normal deploys. This deletes live bot
 # messages and shoutout state, so keep it as an explicit emergency action only.
+if [ -f scripts/purge-stale-banners.js ]; then
+  node scripts/purge-stale-banners.js
+else
+  echo "[Startup] No banner migration found; skipping stale banner purge"
+fi
+
 if [ "$RUN_DEPLOY_CLEANUP" = "true" ]; then
   if [ -f scripts/clean-channels.js ]; then
     node scripts/clean-channels.js

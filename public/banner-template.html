@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    body {
+      display: flex;
+      align-items: center;
+      color: {{PRIMARY_COLOR}};
+      background:
+        radial-gradient(circle at 4% 24%, #ffffff 0 1px, transparent 1.5px),
+        radial-gradient(circle at 13% 72%, #b9d7ff 0 1px, transparent 1.5px),
+        radial-gradient(circle at 24% 38%, #ffffff 0 1px, transparent 1.5px),
+        radial-gradient(circle at 37% 82%, #b9d7ff 0 1px, transparent 1.5px),
+        radial-gradient(circle at 49% 18%, #ffffff 0 1px, transparent 1.5px),
+        radial-gradient(circle at 61% 65%, #b9d7ff 0 1px, transparent 1.5px),
+        radial-gradient(circle at 74% 31%, #ffffff 0 1px, transparent 1.5px),
+        radial-gradient(circle at 88% 76%, #b9d7ff 0 1px, transparent 1.5px),
+        linear-gradient(135deg, #070b1a 0%, #10182f 55%, #070b1a 100%);
+    }
+
+    .banner-shell {
+      position: relative;
+      width: 100%;
+      overflow: hidden;
+      border-top: 1px solid {{PRIMARY_COLOR}};
+      border-bottom: 1px solid {{PRIMARY_COLOR}};
+      background: rgba(4, 8, 21, 0.62);
+      box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.65);
+    }
+
+    .ticker-track {
+      display: flex;
+      width: max-content;
+      align-items: center;
+      animation: banner-scroll 20s linear infinite;
+      will-change: transform;
+    }
+
+    .message {
+      flex: none;
+      padding: 13px 88px;
+      white-space: nowrap;
+      font-family: "Arial Black", "Liberation Sans", Arial, sans-serif;
+      font-size: 40px;
+      font-weight: 900;
+      letter-spacing: 1.5px;
+      line-height: 1.2;
+      color: {{PRIMARY_COLOR}};
+      text-shadow: 0 0 5px {{PRIMARY_COLOR}}, 2px 2px 2px #000000;
+    }
+
+    .username { color: {{SECONDARY_COLOR}}; }
+    .heart { color: #4aa8ff; }
+    .separator { color: #dce8ff; }
+
+    @keyframes banner-scroll {
+      from { transform: translate3d(0, 0, 0); }
+      to { transform: translate3d(-50%, 0, 0); }
+    }
+  </style>
+</head>
+<body>
+  <div class="banner-shell">
+    <div class="ticker-track">
+      <div class="message">{{LABEL_HTML}}{{IDENTITY_HTML}} <span class="separator">&bull;</span> {{MESSAGE_HTML}}</div>
+      <div class="message">{{LABEL_HTML}}{{IDENTITY_HTML}} <span class="separator">&bull;</span> {{MESSAGE_HTML}}</div>
+    </div>
+  </div>
+</body>
+</html>

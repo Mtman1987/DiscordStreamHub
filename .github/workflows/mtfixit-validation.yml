@@ -25,6 +25,8 @@ jobs:
         run: npm run test:mtfixit
       - name: Test Signal shoutout contract
         run: node --import tsx --test tests/signal-shoutout-contract.test.ts
+      - name: Test role-aware banners
+        run: npm run test:banners
       - name: Test dashboard and shared shell parity
         run: node --import tsx --test tests/dashboard-shell-parity.test.ts
       - name: Type check

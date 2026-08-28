@@ -5,7 +5,11 @@ import { getStreamByLogin } from '@/lib/twitch-api-service';
 import { sendShoutout } from '@/lib/discord-sync-service';
 import { getEmbedTemplates } from '@/lib/embed-templates';
 import { getNextGifCdnUrl } from '@/lib/gif-rotation-service';
-import { maybeRequestLiveBanner } from '@/lib/live-banner-request-service';
+import {
+  hasCurrentLiveBanner,
+  maybeRequestLiveBanner,
+  type LiveBannerContext,
+} from '@/lib/live-banner-request-service';
 import { getAppUrl, getDiscordInviteUrl, getStoragePath } from '@/lib/runtime-config';
 import { existsSync } from 'fs';
 import { join } from 'path';
@@ -29,7 +33,8 @@ function toAbsoluteUrl(url: string | null | undefined): string | null {
   return `${base}${url.startsWith('/') ? '' : '/'}${url}`;
 }
 
-function getStoredBannerUrl(username: string): string | null {
+function getStoredBannerUrl(username: string, context: LiveBannerContext): string | null {
+  if (!hasCurrentLiveBanner(username, context)) return null;
   const storagePath = getStoragePath();
   const bannerKey = username.toLowerCase();
   const bannerPath = join(storagePath, 'banners', `${bannerKey}.gif`);
@@ -99,7 +104,14 @@ async function generateCrewShoutout(twitchLogin: string, stream: any, baseMessag
   if (!userDoc.empty) {
     clip = await getNextGifCdnUrl(serverId, userDoc.docs[0].id, twitchLogin);
   }
-  const bannerUrl = getStoredBannerUrl(twitchLogin);
+  const linkedUser = userDoc.empty ? null : userDoc.docs[0];
+  const linkedUserData = linkedUser?.data() || {};
+  const bannerContext: LiveBannerContext = {
+    group: 'Crew',
+    discordUserId: linkedUser?.id || null,
+    twitchUserId: typeof linkedUserData.twitchId === 'string' ? linkedUserData.twitchId : null,
+  };
+  const bannerUrl = getStoredBannerUrl(twitchLogin, bannerContext);
   if (!bannerUrl && !userDoc.empty) {
     await maybeRequestLiveBanner(serverId, userDoc.docs[0].id, twitchLogin);
   }

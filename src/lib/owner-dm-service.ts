@@ -20,6 +20,10 @@ type OwnerDmEmbed = {
   footer?: string;
 };
 
+type OwnerDmButtonComponent =
+  | { type: number; style: number; label: string; url: string }
+  | { type: number; style: 1 | 2 | 3 | 4; label: string; custom_id: string };
+
 export class OwnerDmDeliveryError extends Error {
   constructor(message: string, public readonly status: number) {
     super(message);
@@ -104,14 +108,14 @@ function safeHttpsUrl(value: unknown) {
 }
 
 function buttonComponents(buttons: OwnerDmButton[] | undefined) {
-  const components = (buttons || []).slice(0, 5).flatMap((button) => {
+  const components = (buttons || []).slice(0, 5).flatMap<OwnerDmButtonComponent>((button) => {
     const label = String(button.label || '').trim().slice(0, 80);
     if (!label) return [];
     const directUrl = safeHttpsUrl(button.url);
     const legacyUrl = button.customId ? legacyMtFixItApprovalUrl(button.customId) : '';
     const url = directUrl || legacyUrl;
     if (url) return [{ type: 2, style: 5, label, url }];
-    if (button.customId && /^mtfixit_(?:approve|deny):[a-zA-Z0-9_-]{8,100}$/.test(button.customId)) {
+    if (button.customId && /^(?:mtfixit|chatgpt)_(?:approve|deny):[a-zA-Z0-9_-]{8,120}$/.test(button.customId)) {
       return [{ type: 2, style: button.style || 2, label, custom_id: button.customId }];
     }
     return [];

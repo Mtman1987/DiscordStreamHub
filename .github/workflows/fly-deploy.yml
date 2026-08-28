@@ -71,6 +71,7 @@ jobs:
         run: |
           npm ci
           node --import tsx --test tests/discord-gateway-spmt-routing.test.ts tests/discord-dm-spmt-routing.test.ts tests/discord-ingress-timeout.test.ts
+          npm run test:banners
           npm run typecheck
           DSH_BUILD_DB=1 npm run build
       - uses: superfly/flyctl-actions/setup-flyctl@master
@@ -102,4 +103,3 @@ jobs:
       - name: Deploy clip worker
         working-directory: clip-worker
         run: flyctl deploy --remote-only --config fly.toml --access-token "$FLY_API_TOKEN"
-

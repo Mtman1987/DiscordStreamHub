@@ -5,7 +5,7 @@ import { getStreamByLogin } from '@/lib/twitch-api-service';
 import { sendShoutoutToDiscord, getUserGroup } from '@/lib/shoutout-service';
 import { getAppUrl, getStoragePath } from '@/lib/runtime-config';
 import { getStreamsByLogins } from '@/lib/twitch-api-service';
-import { maybeRequestLiveBanner } from '@/lib/live-banner-request-service';
+import { hasCurrentLiveBanner, maybeRequestLiveBanner } from '@/lib/live-banner-request-service';
 import { buildSpmtOnboardingButton } from '@/lib/spmt-onboarding-contract';
 import { buildSpmtWelcomeEmbed } from '@/lib/spmt-onboarding-embed';
 
@@ -610,13 +610,12 @@ class TwitchPollingService {
       const bannerUrl = `${getAppUrl()}/api/media/banners/${twitchLogin.toLowerCase()}.gif?v=${Date.now()}`;
       const streamThumbnail = stream.thumbnail_url?.replace('{width}', '1920').replace('{height}', '1080');
       const crewImageUrl = clip || streamThumbnail || null;
-      
-      // Check if per-user banner exists on disk
-      const { existsSync: bannerExists } = await import('fs');
-      const { join: joinPath } = await import('path');
-      const CLIP_PATH = getStoragePath();
-      const bannerFilePath = joinPath(CLIP_PATH, 'banners', `${twitchLogin.toLowerCase()}.gif`);
-      const resolvedBannerUrl = bannerExists(bannerFilePath) ? bannerUrl : null;
+      const bannerContext = {
+        group,
+        discordUserId,
+        twitchUserId: typeof userDoc.data()?.twitchId === 'string' ? userDoc.data()?.twitchId : null,
+      };
+      const resolvedBannerUrl = hasCurrentLiveBanner(twitchLogin, bannerContext) ? bannerUrl : null;
       spaceMountainImageUrl = crewImageUrl;
       spaceMountainBannerUrl = resolvedBannerUrl;
       

@@ -2,7 +2,12 @@ import { db } from '@/lib/db';
 import { getAppUrl, getStoragePath, getStreamweaverUrl } from '@/lib/runtime-config';
 import { getClipsForUser, getStreamByLogin, getUserByLogin } from '@/lib/twitch-api-service';
 import { deleteDiscordMessage, editDiscordMessage, postDiscordMessage, sendShoutout } from '@/lib/discord-sync-service';
-import { requestLiveBannerFromWorker } from '@/lib/live-banner-request-service';
+import {
+  getExpectedLiveBannerVariant,
+  hasCurrentLiveBanner,
+  requestLiveBannerFromWorker,
+  type LiveBannerContext,
+} from '@/lib/live-banner-request-service';
 import { existsSync } from 'fs';
 import { readdir } from 'fs/promises';
 import { join } from 'path';
@@ -18,6 +23,7 @@ type ManualDiscordShoutoutRecord = {
   targetName: string;
   targetDiscordUserId?: string | null;
   linkedDiscordUserId?: string | null;
+  linkedTwitchUserId?: string | null;
   linkedGroup?: string | null;
   partnerDiscordLink?: string | null;
   aiShoutout: string;
@@ -50,6 +56,7 @@ type ResolvedManualTarget = {
   twitchLogin: string;
   displayName: string;
   linkedDiscordUserId: string | null;
+  linkedTwitchUserId: string | null;
   linkedGroup: string | null;
   partnerDiscordLink: string | null;
 };
@@ -81,7 +88,8 @@ function buildManualShoutoutId(twitchLogin: string, channelId: string): string {
   return `manual-${safeChannel}-${safeLogin}`;
 }
 
-function getStoredBannerUrl(twitchLogin: string): string | null {
+function getStoredBannerUrl(twitchLogin: string, context: LiveBannerContext): string | null {
+  if (!hasCurrentLiveBanner(twitchLogin, context)) return null;
   const bannerPath = join(getStoragePath(), 'banners', `${twitchLogin}.gif`);
   if (!existsSync(bannerPath)) return null;
   return `${getAppUrl().replace(/\/$/, '')}/api/media/banners/${twitchLogin}.gif?v=${Date.now()}`;
@@ -135,6 +143,7 @@ async function resolveManualTarget(input: RegisterManualDiscordShoutoutInput): P
       twitchLogin,
       displayName: twitchUser?.display_name || linked.displayName || linked.username || twitchLogin,
       linkedDiscordUserId: linked.id,
+      linkedTwitchUserId: String(linked.twitchId || twitchUser?.id || '').trim() || null,
       linkedGroup: typeof linked.group === 'string' ? linked.group : null,
       partnerDiscordLink: typeof linked.partnerDiscordLink === 'string' ? linked.partnerDiscordLink : null,
     };
@@ -155,6 +164,7 @@ async function resolveManualTarget(input: RegisterManualDiscordShoutoutInput): P
     twitchLogin,
     displayName: twitchUser.display_name || linked?.displayName || linked?.username || twitchLogin,
     linkedDiscordUserId: linked?.id || null,
+    linkedTwitchUserId: String(linked?.twitchId || twitchUser.id || '').trim() || null,
     linkedGroup: typeof linked?.group === 'string' ? linked.group : null,
     partnerDiscordLink: typeof linked?.partnerDiscordLink === 'string' ? linked.partnerDiscordLink : null,
   };
@@ -186,10 +196,20 @@ async function getAiShoutout(twitchLogin: string, serverId: string): Promise<str
   }
 }
 
-function getManualEmbedColor(group?: string | null): number {
-  if (group === 'Crew') return 0x00d9ff;
-  if (group === 'Partners') return 0x8b00ff;
-  return 0x14b8a6;
+function getBannerContext(entry: Pick<ManualDiscordShoutoutRecord,
+  'linkedGroup' | 'linkedDiscordUserId' | 'linkedTwitchUserId'>): LiveBannerContext {
+  return {
+    group: entry.linkedGroup,
+    discordUserId: entry.linkedDiscordUserId,
+    twitchUserId: entry.linkedTwitchUserId,
+  };
+}
+
+function getManualEmbedColor(twitchLogin: string, context: LiveBannerContext): number {
+  const variant = getExpectedLiveBannerVariant(twitchLogin, context);
+  if (variant === 'commander') return 0xffd24a;
+  if (variant === 'crew') return 0x00b7ff;
+  return 0x39e58c;
 }
 
 async function buildManualPayload(entry: ManualDiscordShoutoutRecord): Promise<{
@@ -209,8 +229,9 @@ async function buildManualPayload(entry: ManualDiscordShoutoutRecord): Promise<{
   const currentGifIndex = hasGif ? (entry.currentGifIndex % gifUrls.length) : 0;
   const gifUrl = hasGif ? gifUrls[currentGifIndex] : null;
   const nextGifIndex = hasGif ? (currentGifIndex + 1) % gifUrls.length : entry.currentGifIndex;
-  const hasBanner = Boolean(getStoredBannerUrl(entry.twitchLogin));
-  const bannerUrl = hasBanner ? getStoredBannerUrl(entry.twitchLogin) : null;
+  const bannerContext = getBannerContext(entry);
+  const bannerUrl = getStoredBannerUrl(entry.twitchLogin, bannerContext);
+  const hasBanner = Boolean(bannerUrl);
   const isLive = Boolean(stream);
   const displayName = twitchUser?.display_name || entry.displayName || entry.twitchLogin;
   const twitchUrl = `https://twitch.tv/${entry.twitchLogin}`;
@@ -232,7 +253,7 @@ async function buildManualPayload(entry: ManualDiscordShoutoutRecord): Promise<{
   if (bannerUrl) {
     embeds.push({
       image: { url: bannerUrl },
-      color: getManualEmbedColor(entry.linkedGroup),
+      color: getManualEmbedColor(entry.twitchLogin, bannerContext),
     });
   }
 
@@ -245,7 +266,7 @@ async function buildManualPayload(entry: ManualDiscordShoutoutRecord): Promise<{
     title: isLive ? `${displayName} is LIVE on Twitch` : `Shoutout for ${displayName}`,
     description: entry.aiShoutout,
     url: twitchUrl,
-    color: getManualEmbedColor(entry.linkedGroup),
+    color: getManualEmbedColor(entry.twitchLogin, bannerContext),
     fields: [
       {
         name: isLive ? 'Playing' : 'Status',
@@ -313,12 +334,13 @@ async function buildManualPayload(entry: ManualDiscordShoutoutRecord): Promise<{
 }
 
 async function maybeRequestBanner(serverId: string, entry: ManualDiscordShoutoutRecord, hasBanner: boolean): Promise<void> {
-  if (hasBanner || !entry.trackWhileLive || !entry.needsBanner) return;
-  if (getStoredBannerUrl(entry.twitchLogin)) return;
+  if (hasBanner || !entry.trackWhileLive) return;
+  const bannerContext = getBannerContext(entry);
+  if (getStoredBannerUrl(entry.twitchLogin, bannerContext)) return;
   const now = Date.now();
   if (entry.bannerRequestedAt && now - entry.bannerRequestedAt < BANNER_REQUEST_COOLDOWN_MS) return;
 
-  const accepted = await requestLiveBannerFromWorker(entry.twitchLogin);
+  const accepted = await requestLiveBannerFromWorker(entry.twitchLogin, bannerContext);
   if (!accepted) {
     console.warn(`[ManualDiscordShoutout] Banner request not accepted for ${entry.twitchLogin}`);
     return;
@@ -351,7 +373,12 @@ export async function registerManualDiscordShoutout(input: RegisterManualDiscord
   const stream = await getStreamByLogin(resolved.twitchLogin);
   const aiShoutout = await getAiShoutout(resolved.twitchLogin, input.serverId);
   const gifUrls = await getStoredGifUrls(resolved.twitchLogin);
-  const hasBanner = Boolean(getStoredBannerUrl(resolved.twitchLogin));
+  const resolvedBannerContext: LiveBannerContext = {
+    group: resolved.linkedGroup,
+    discordUserId: resolved.linkedDiscordUserId,
+    twitchUserId: resolved.linkedTwitchUserId,
+  };
+  const hasBanner = Boolean(getStoredBannerUrl(resolved.twitchLogin, resolvedBannerContext));
   const isLive = Boolean(stream);
   const nowIso = new Date().toISOString();
   const existing = await getExistingManualRecord(input.serverId, input.channelId, resolved.twitchLogin);
@@ -367,6 +394,7 @@ export async function registerManualDiscordShoutout(input: RegisterManualDiscord
     targetName: input.targetName || resolved.twitchLogin,
     targetDiscordUserId: input.targetDiscordUserId || null,
     linkedDiscordUserId: resolved.linkedDiscordUserId,
+    linkedTwitchUserId: resolved.linkedTwitchUserId,
     linkedGroup: resolved.linkedGroup,
     partnerDiscordLink: resolved.partnerDiscordLink,
     aiShoutout,
@@ -473,7 +501,7 @@ async function updateManualRecord(serverId: string, entry: ManualDiscordShoutout
     offlineDetectedAt: null,
     currentGifIndex: nextGifIndex,
     needsGif: entry.needsGif && !hasGif,
-    needsBanner: entry.needsBanner && !hasBanner,
+    needsBanner: !hasBanner,
     updatedAt: nowIso,
   };
 
