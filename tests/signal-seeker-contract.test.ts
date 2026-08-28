@@ -22,6 +22,13 @@ test('random Signal drops ping only the opt-in role', () => {
   assert.match(drop, /roles: signalSeekerRoleId \? \[signalSeekerRoleId\] : \[\]/);
 });
 
+test('Signal drops delete and stop accepting claims after ten minutes', () => {
+  assert.match(drop, /SIGNAL_DROP_TTL_MS = 10 \* 60 \* 1000/);
+  assert.match(drop, /method: 'DELETE'/);
+  assert.match(drop, /expiresAt/);
+  assert.match(interactions, /Signal faded after 10 minutes/);
+});
+
 test('Signal win response explains the unlocked reward', () => {
   assert.match(interactions, /Your reward is `!signal <message>`/);
   assert.match(interactions, /No app sign-in required/);
