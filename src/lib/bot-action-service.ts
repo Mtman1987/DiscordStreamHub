@@ -2,10 +2,18 @@ import { db } from '@/lib/db';
 import { submitCaptainLog, submitMission } from '@/lib/calendar-admin-actions';
 import { postCalendarToDiscord, refreshCalendarMessage } from '@/lib/calendar-discord-service-new';
 import { publicApplicationEmbed } from '@/lib/application-flow';
+import {
+  decideApplication,
+  isApplicationOwner,
+  notifyApplicationDecision,
+  type ApplicationDecision,
+} from '@/lib/application-admin-actions';
+import { registerManualDiscordShoutout } from '@/lib/manual-discord-shoutout-service';
 
 export const DSH_BOT_ACTIONS = [
   'dsh.shoutouts.active.read',
   'dsh.shoutouts.live.read',
+  'dsh.shoutouts.post',
   'dsh.calendar.read',
   'dsh.calendar.captain.read',
   'dsh.calendar.captain.create',
@@ -14,6 +22,7 @@ export const DSH_BOT_ACTIONS = [
   'dsh.calendar.refresh',
   'dsh.applications.read',
   'dsh.applications.deploy',
+  'dsh.applications.decide',
 ] as const;
 
 export type DshBotActionId = typeof DSH_BOT_ACTIONS[number];
@@ -32,6 +41,10 @@ type BotActionInput = {
   missionTimeZone?: string;
   status?: string;
   type?: string;
+  target?: string;
+  application?: string;
+  decision?: string;
+  requesterName?: string;
   idempotencyKey?: string;
 };
 
@@ -158,6 +171,23 @@ async function listApplications(serverId: string, status?: string, type?: string
     .sort((left: any, right: any) => String(right.submittedAt || '').localeCompare(String(left.submittedAt || '')));
 }
 
+async function resolveApplication(serverId: string, selector: string, type?: string) {
+  const needle = clean(selector, 160).toLowerCase();
+  if (!needle) throw new Error('An application ID or applicant name is required.');
+  const rows = await listApplications(serverId, '', clean(type, 40));
+  const exact = rows.filter((application: any) =>
+    String(application.id).toLowerCase() === needle
+    || String(application.userId).toLowerCase() === needle
+    || String(application.username).toLowerCase() === needle
+  );
+  const candidates = exact.length ? exact : rows.filter((application: any) =>
+    String(application.username).toLowerCase().includes(needle)
+  );
+  if (!candidates.length) throw new Error(`Application ${selector} was not found.`);
+  if (candidates.length > 1) throw new Error(`More than one application matches ${selector}. Use the application ID.`);
+  return candidates[0];
+}
+
 export async function postApplicationEmbed(serverId: string, channelId: string) {
   const botToken = clean(process.env.DISCORD_BOT_TOKEN, 5000);
   if (!botToken) throw new Error('Discord bot token is not configured.');
@@ -198,6 +228,26 @@ export async function executeDshBotAction(input: BotActionInput): Promise<Record
   if (input.action === 'dsh.shoutouts.active.read' || input.action === 'dsh.shoutouts.live.read') {
     const shoutouts = await listActiveShoutouts(serverId, input.action.endsWith('.live.read'));
     return { success: true, action: input.action, count: shoutouts.length, shoutouts };
+  }
+
+  if (input.action === 'dsh.shoutouts.post') {
+    const channel = await resolveDiscordChannel(serverId, clean(input.channelId || input.channel, 100));
+    const targetName = clean(input.target, 100).replace(/^@/, '');
+    if (!targetName) throw new Error('A Twitch username is required for the shoutout.');
+    return withIdempotencyReceipt(input, async () => ({
+      success: true as const,
+      channel,
+      targetName,
+      ...(await registerManualDiscordShoutout({
+        serverId,
+        channelId: channel.id,
+        requesterName: clean(input.requesterName, 100) || 'StreamWeaver bot action',
+        requesterDiscordId: actorUserId || null,
+        targetName,
+        targetDiscordUserId: null,
+        sourceMessageId: clean(input.idempotencyKey, 160) || null,
+      })),
+    }));
   }
 
   if (input.action === 'dsh.calendar.read' || input.action === 'dsh.calendar.captain.read') {
@@ -260,6 +310,33 @@ export async function executeDshBotAction(input: BotActionInput): Promise<Record
       ...(await postApplicationEmbed(serverId, channel.id)),
       channel,
     }));
+  }
+
+  if (input.action === 'dsh.applications.decide') {
+    if (!actorUserId || !isApplicationOwner(serverId, actorUserId)) {
+      throw new Error('Only the server owner can approve or reject applications.');
+    }
+    const decision = clean(input.decision, 20) as ApplicationDecision;
+    if (decision !== 'approved' && decision !== 'rejected') {
+      throw new Error('The application decision must be approved or rejected.');
+    }
+    const application = await resolveApplication(serverId, clean(input.application, 160), clean(input.type, 40));
+    return withIdempotencyReceipt(input, async () => {
+      const decided = await decideApplication({
+        serverId,
+        applicationId: application.id,
+        reviewerId: actorUserId,
+        status: decision,
+      });
+      const notification = await notifyApplicationDecision({
+        serverId,
+        applicationId: application.id,
+        ownerId: actorUserId,
+        status: decision,
+        expectedUserId: application.userId,
+      });
+      return { success: true as const, application: decided, notification };
+    });
   }
 
   throw new Error(`Unsupported DiscordStreamHub bot action: ${input.action}`);
