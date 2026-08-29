@@ -51,3 +51,32 @@ test('write and broadcast actions persist idempotency receipts', () => {
   assert.match(service, /withIdempotencyReceipt\(input/);
   assert.match(service, /duplicate: true/);
 });
+
+test('application decisions and manual shoutouts reuse canonical services', () => {
+  const service = source('src/lib/bot-action-service.ts');
+  const decisionRoute = source('src/app/api/applications/decision/route.ts');
+  const notifyRoute = source('src/app/api/applications/notify/route.ts');
+  assert.match(service, /decideApplication\(/);
+  assert.match(service, /notifyApplicationDecision\(/);
+  assert.match(service, /registerManualDiscordShoutout\(/);
+  assert.match(service, /isApplicationOwner\(serverId, actorUserId\)/);
+  assert.match(decisionRoute, /decideApplication\(/);
+  assert.match(notifyRoute, /notifyApplicationDecision\(/);
+});
+
+test('application decisions are owner-only and notify after the saved decision', () => {
+  const service = source('src/lib/bot-action-service.ts');
+  const ownerIndex = service.indexOf('isApplicationOwner(serverId, actorUserId)');
+  const decideIndex = service.indexOf('const decided = await decideApplication');
+  const notifyIndex = service.indexOf('const notification = await notifyApplicationDecision');
+  assert.ok(ownerIndex >= 0 && decideIndex > ownerIndex && notifyIndex > decideIndex);
+  assert.match(service, /'dsh\.applications\.decide'/);
+  assert.match(service, /'dsh\.shoutouts\.post'/);
+});
+
+test('application decision notifications are replay-safe', () => {
+  const service = source('src/lib/application-admin-actions.ts');
+  assert.match(service, /notificationStatus === 'delivered'/);
+  assert.match(service, /duplicate: true/);
+  assert.match(service, /notificationMessageId/);
+});

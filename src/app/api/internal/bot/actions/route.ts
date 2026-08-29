@@ -22,7 +22,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const status = /not found/i.test(message) ? 404 : /required|invalid|already claimed/i.test(message) ? 400 : 500;
+    const status = /only the server owner/i.test(message)
+      ? 403
+      : /not found/i.test(message)
+        ? 404
+        : /more than one/i.test(message)
+          ? 409
+          : /required|invalid|already claimed|must be/i.test(message)
+            ? 400
+            : 500;
     if (status >= 500) console.error(`[InternalBotAction] ${action} failed:`, error);
     return NextResponse.json({ error: message, action }, { status });
   }
