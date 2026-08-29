@@ -3,7 +3,7 @@ import { submitMission } from '@/lib/calendar-admin-actions';
 
 export async function POST(request: NextRequest) {
   try {
-    const { serverId, userId, missionName, missionDate, missionTime, missionDescription } = await request.json();
+    const { serverId, userId, missionName, missionDate, missionTime, missionTimeZone, missionDescription } = await request.json();
     
     const result = await submitMission({
       serverId,
@@ -12,6 +12,7 @@ export async function POST(request: NextRequest) {
       missionDescription,
       missionDate,
       missionTime,
+      missionTimeZone,
     });
 
     if (!result.success) {

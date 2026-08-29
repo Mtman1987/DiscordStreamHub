@@ -5,6 +5,7 @@ import {
   GatewayIntentBits,
   Message,
   Partials,
+  PermissionFlagsBits,
 } from 'discord.js';
 import { getDiscordIngressTimeoutMs } from '../src/lib/discord-ingress-timeout';
 import { mtFixItPublicReply } from '../src/lib/mtfixit-contract';
@@ -30,6 +31,14 @@ function shouldForward(message: Message) {
 }
 
 function buildPayload(message: Message) {
+  const memberPermissions = message.member?.permissions;
+  const isOwner = message.guild?.ownerId === message.author.id;
+  const isAdmin = Boolean(memberPermissions?.has(PermissionFlagsBits.Administrator));
+  const isMod = Boolean(
+    isAdmin
+    || memberPermissions?.has(PermissionFlagsBits.ManageGuild)
+    || memberPermissions?.has(PermissionFlagsBits.ManageMessages)
+  );
   return {
     userId: message.author.id,
     userName: message.member?.displayName || message.author.globalName || message.author.username,
@@ -44,6 +53,10 @@ function buildPayload(message: Message) {
     content: message.content,
     isDM: false,
     isDirectMessage: false,
+    isAdmin,
+    isMod,
+    isOwner,
+    memberPermissions: memberPermissions?.bitfield.toString() || '0',
     dispatch: true,
     source: 'dsh-discord-gateway',
     traceId: message.id,
