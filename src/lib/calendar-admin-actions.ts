@@ -17,6 +17,7 @@ type MissionPayload = {
   missionDescription: string;
   missionDate: string;
   missionTime?: string;
+  missionTimeZone?: string;
 };
 
 type CalendarActionResult =
@@ -35,7 +36,7 @@ function toDateAtNoonUTC(dateStr: string) {
   return new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
 }
 
-function buildLocalDateTime(dateStr: string, timeStr?: string) {
+function buildMissionDateTime(dateStr: string, timeStr?: string, timeZone?: string) {
   const [year, month, day] = dateStr.split('-').map(Number);
   if ([year, month, day].some((value) => Number.isNaN(value))) {
     return null;
@@ -50,7 +51,19 @@ function buildLocalDateTime(dateStr: string, timeStr?: string) {
     minutes = Number.isNaN(m) ? 0 : m;
   }
 
-  return new Date(year, month - 1, day, hours, minutes, 0, 0);
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+    return null;
+  }
+
+  const normalizedTimeZone = String(timeZone || '').trim().toUpperCase();
+  const useUtc = ['UTC', 'GMT', 'Z'].includes(normalizedTimeZone);
+  const result = useUtc
+    ? new Date(Date.UTC(year, month - 1, day, hours, minutes, 0, 0))
+    : new Date(year, month - 1, day, hours, minutes, 0, 0);
+  const validDate = useUtc
+    ? result.getUTCFullYear() === year && result.getUTCMonth() === month - 1 && result.getUTCDate() === day
+    : result.getFullYear() === year && result.getMonth() === month - 1 && result.getDate() === day;
+  return validDate ? result : null;
 }
 
 export async function submitCaptainLog(payload: CaptainLogPayload): Promise<CalendarActionResult> {
@@ -117,7 +130,7 @@ export async function submitCaptainLog(payload: CaptainLogPayload): Promise<Cale
 }
 
 export async function submitMission(payload: MissionPayload): Promise<CalendarActionResult> {
-  const { serverId, userId, missionName, missionDescription, missionDate, missionTime } = payload;
+  const { serverId, userId, missionName, missionDescription, missionDate, missionTime, missionTimeZone } = payload;
   if (!serverId || !userId || !missionName || !missionDescription || !missionDate) {
     return invalidResponse('Missing required fields');
   }
@@ -129,12 +142,12 @@ export async function submitMission(payload: MissionPayload): Promise<CalendarAc
 
   const userData = userSnap.data() || {};
 
-  const missionDateTime = buildLocalDateTime(missionDate, missionTime);
+  const missionDateTime = buildMissionDateTime(missionDate, missionTime, missionTimeZone);
   if (!missionDateTime || Number.isNaN(missionDateTime.getTime())) {
     return invalidResponse('Invalid mission date');
   }
 
-  const dayKey = format(missionDateTime, 'yyyy-MM-dd');
+  const dayKey = missionDate;
 
   await db.collection('servers').doc(serverId).collection('calendarEvents').add({
     eventName: missionName,
@@ -145,6 +158,7 @@ export async function submitMission(payload: MissionPayload): Promise<CalendarAc
     userAvatar: userData.avatarUrl || null,
     username: userData.username || 'Unknown pilot',
     dayKey,
+    timeZone: String(missionTimeZone || '').trim().toUpperCase() || null,
   });
 
   await refreshCalendarMessage(serverId);

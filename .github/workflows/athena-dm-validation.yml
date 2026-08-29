@@ -22,7 +22,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Run private routing tests
-        run: node --import tsx --test tests/discord-dm-spmt-routing.test.ts
+        run: node --import tsx --test tests/discord-dm-spmt-routing.test.ts tests/admin-calendar-internal-route.test.ts
       - name: Run Twitch ban blacklist tests
         run: node --import tsx --test tests/twitch-ban-blacklist.test.ts
       - name: Run linking channel recovery test
