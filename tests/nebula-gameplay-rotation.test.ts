@@ -5,6 +5,7 @@ import {
   NEBULA_GAMEPLAY_ROTATION_MS,
   getNebulaGameplaySlot,
   normalizeNebulaGameId,
+  resolveNebulaGameplayNow,
   selectNebulaGameplay,
 } from '../src/lib/nebula-gameplay-rotation';
 
@@ -15,6 +16,14 @@ test('Nebula gameplay advances exactly once per ten-minute slot', () => {
   assert.equal(selectNebulaGameplay(games, NEBULA_GAMEPLAY_ROTATION_MS), 'game-1');
   assert.equal(selectNebulaGameplay(games, NEBULA_GAMEPLAY_ROTATION_MS * 20), 'game-0');
   assert.equal(getNebulaGameplaySlot(NEBULA_GAMEPLAY_ROTATION_MS * 3), 3);
+});
+
+test('Nebula gameplay defaults to the current clock when slot is omitted', () => {
+  const currentTime = NEBULA_GAMEPLAY_ROTATION_MS * 42 + 1234;
+  assert.equal(resolveNebulaGameplayNow(null, currentTime), currentTime);
+  assert.equal(resolveNebulaGameplayNow('', currentTime), currentTime);
+  assert.equal(resolveNebulaGameplayNow('7', currentTime), NEBULA_GAMEPLAY_ROTATION_MS * 7);
+  assert.equal(resolveNebulaGameplayNow('invalid', currentTime), currentTime);
 });
 
 test('Nebula game ids are safe volume file names', () => {

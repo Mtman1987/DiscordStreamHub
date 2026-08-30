@@ -3,16 +3,14 @@ import {
   getNebulaGameplayFallbackUrl,
   getNebulaGameplayItems,
   getNebulaGameplaySlot,
+  resolveNebulaGameplayNow,
   selectNebulaGameplay,
 } from '@/lib/nebula-gameplay-rotation';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
-  const requestedSlot = Number(request.nextUrl.searchParams.get('slot'));
-  const now = Number.isFinite(requestedSlot) && requestedSlot >= 0
-    ? requestedSlot * 10 * 60 * 1000
-    : Date.now();
+  const now = resolveNebulaGameplayNow(request.nextUrl.searchParams.get('slot'));
   const items = await getNebulaGameplayItems();
   const active = selectNebulaGameplay(items, now);
 
