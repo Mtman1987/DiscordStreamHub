@@ -1,5 +1,5 @@
 import { existsSync } from 'fs';
-import { readdir, readFile, stat } from 'fs/promises';
+import { readdir, readFile, stat, unlink } from 'fs/promises';
 import { join } from 'path';
 import { getAppUrl, getChatTagApiBase, getStoragePath } from '@/lib/runtime-config';
 
@@ -51,6 +51,16 @@ export function selectNebulaGameplay<T>(items: T[], now = Date.now()): T | null 
 export function getNebulaGameplayFallbackUrl(): string {
   const base = getChatTagApiBase().replace(/\/$/, '');
   return `${base}/brand/nebula-arcade-games-showcase.gif?v=2`;
+}
+
+export async function deleteNebulaGameplayCapture(value: unknown): Promise<void> {
+  const id = normalizeNebulaGameId(value);
+  if (!id) return;
+  const directory = join(getStoragePath(), NEBULA_GAMEPLAY_DIRECTORY);
+  await Promise.all([
+    unlink(join(directory, `${id}.gif`)).catch(() => {}),
+    unlink(join(directory, `${id}.gif.meta.json`)).catch(() => {}),
+  ]);
 }
 
 export async function getNebulaGameplayItems(): Promise<NebulaGameplayItem[]> {
