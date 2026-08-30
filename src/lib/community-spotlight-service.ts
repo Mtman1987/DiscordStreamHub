@@ -5,10 +5,32 @@ import { getCurrentClipForUser } from './clip-rotation-service';
 import { getStreamByLogin } from './twitch-api-service';
 import { getServerBranding } from './server-branding';
 import { buildSpmtOnboardingButton } from './spmt-onboarding-contract';
+import { getCommunitySpotlightBannerUrl } from './banner-generation-service';
+import { getAppUrl } from './runtime-config';
 
 function isRepostableDiscordEditError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   return /Maximum number of edits to messages older than 1 hour reached|code["']?\s*:\s*30046|30046|404|MESSAGE_NOT_FOUND|Unknown Message/i.test(message);
+}
+
+function absoluteSpotlightBannerUrl(relativeUrl: string): string {
+  return new URL(relativeUrl, getAppUrl()).toString();
+}
+
+async function getReusableSpotlightBanner(): Promise<string | null> {
+  try {
+    return absoluteSpotlightBannerUrl(await getCommunitySpotlightBannerUrl());
+  } catch (error) {
+    console.warn('[CommunitySpotlight] Banner unavailable; continuing without it:', error);
+    return null;
+  }
+}
+
+function buildSpotlightBannerEmbed(bannerUrl: string) {
+  return {
+    image: { url: bannerUrl },
+    color: 0xFF334F,
+  };
 }
 
 async function replaceTrackedShoutoutMessage(
@@ -57,6 +79,7 @@ export async function manageCommunitySpotlight(serverId: string): Promise<void> 
     // Get stream info for new spotlight
     const newStream = await getStreamByLogin(newSpotlightMember.twitchLogin);
     if (!newStream) return;
+    const spotlightBannerUrl = await getReusableSpotlightBanner();
 
     const { editDiscordMessage } = await import('./discord-sync-service');
 
@@ -124,7 +147,12 @@ export async function manageCommunitySpotlight(serverId: string): Promise<void> 
         timestamp: new Date().toISOString()
       };
       
-      const payload = { embeds: [newEmbed] };
+      const payload = {
+        embeds: [
+          ...(spotlightBannerUrl ? [buildSpotlightBannerEmbed(spotlightBannerUrl)] : []),
+          newEmbed,
+        ],
+      };
       try {
         await editDiscordMessage(serverId, newShoutoutState.channelId, newShoutoutState.messageId, payload);
       } catch (error) {
@@ -150,7 +178,7 @@ export async function manageCommunitySpotlight(serverId: string): Promise<void> 
     
     // Update the pinned spotlight embed at bottom of channel
     try {
-      await updateSpotlightPinnedEmbed(serverId, newSpotlightMember, newStream, gifUrl);
+      await updateSpotlightPinnedEmbed(serverId, newSpotlightMember, newStream, gifUrl, spotlightBannerUrl);
     } catch (embedError) {
       console.error('[CommunitySpotlight] updateSpotlightPinnedEmbed failed:', embedError);
     }
@@ -161,10 +189,15 @@ export async function manageCommunitySpotlight(serverId: string): Promise<void> 
   }
 }
 
-async function updateSpotlightPinnedEmbed(serverId: string, member: any, stream: any, gifUrl: string | null): Promise<void> {
+async function updateSpotlightPinnedEmbed(
+  serverId: string,
+  member: any,
+  stream: any,
+  gifUrl: string | null,
+  spotlightBannerUrl: string | null,
+): Promise<void> {
   try {
     const { postDiscordMessage, deleteDiscordMessage } = await import('./discord-sync-service');
-    const branding = await getServerBranding(serverId);
     
     // Get community channel ID
     const groupChannelsDoc = await db.collection('servers').doc(serverId).collection('config').doc('groupChannels').get();
@@ -193,9 +226,12 @@ async function updateSpotlightPinnedEmbed(serverId: string, member: any, stream:
       ]
     };
     
-    // Post new pinned embed with button
+    // Post new pinned embed with the same reusable Community Spotlight banner.
     const messageId = await postDiscordMessage(serverId, channelId, { 
-      embeds: [embed],
+      embeds: [
+        ...(spotlightBannerUrl ? [buildSpotlightBannerEmbed(spotlightBannerUrl)] : []),
+        embed,
+      ],
       components: [
         {
           type: 1,
