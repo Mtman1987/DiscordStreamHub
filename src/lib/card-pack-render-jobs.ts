@@ -2,6 +2,7 @@ import { db } from '@/lib/db';
 import { getAppUrl } from '@/lib/runtime-config';
 
 const COLLECTION = 'cardPackRenderJobs';
+const RENDER_LEASE_MS = 5 * 60 * 1000;
 
 export type CardPackRenderStatus = 'pending' | 'rendering' | 'ready' | 'failed';
 
@@ -43,6 +44,12 @@ function publicGifUrl(fileName: string): string {
   return `${getAppUrl().replace(/\/$/, '')}/api/media/card-pack-reveals/${encodeURIComponent(fileName)}`;
 }
 
+function leaseExpired(job: CardPackRenderJob, now = Date.now()): boolean {
+  if (job.status !== 'rendering') return false;
+  const updatedAt = Date.parse(String(job.updatedAt || ''));
+  return !Number.isFinite(updatedAt) || now - updatedAt > RENDER_LEASE_MS;
+}
+
 export async function createCardPackRenderJob(input: {
   eventId: string;
   source?: string;
@@ -79,16 +86,26 @@ export async function getCardPackRenderJob(idValue: unknown): Promise<CardPackRe
 
 export async function claimNextCardPackRenderJob(): Promise<CardPackRenderJob | null> {
   const snapshot = await db.collection(COLLECTION).get();
+  const now = Date.now();
   const jobs = snapshot.docs
     .map((doc: any) => doc.data() as CardPackRenderJob)
-    .filter((job: CardPackRenderJob) => job.status === 'pending')
+    .filter((job: CardPackRenderJob) => job.status === 'pending' || leaseExpired(job, now))
     .sort((a: CardPackRenderJob, b: CardPackRenderJob) => a.createdAt.localeCompare(b.createdAt));
   const job = jobs[0];
   if (!job) return null;
+  const attempts = Number(job.attempts || 0);
+  if (attempts >= 3) {
+    await db.collection(COLLECTION).doc(job.id).set({
+      status: 'failed',
+      updatedAt: new Date().toISOString(),
+      error: job.error || 'render lease expired too many times',
+    }, { merge: true });
+    return null;
+  }
   const updated: CardPackRenderJob = {
     ...job,
     status: 'rendering',
-    attempts: Number(job.attempts || 0) + 1,
+    attempts: attempts + 1,
     updatedAt: new Date().toISOString(),
     error: '',
   };
