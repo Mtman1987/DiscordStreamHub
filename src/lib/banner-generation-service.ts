@@ -22,6 +22,7 @@ const BANNER_WIDTH = 960;
 const BANNER_HEIGHT = 100;
 const BANNER_FPS = 10;
 const BANNER_DURATION_SECONDS = 20;
+const COMMUNITY_SPOTLIGHT_BANNER_KEY = 'community-spotlight';
 
 function escapeHtml(value: string): string {
   return value
@@ -79,6 +80,18 @@ export async function generateCommanderBanner(): Promise<string> {
   const username = 'mtman1987';
   const template = await readFile(join(process.cwd(), 'public', 'banner-template.html'), 'utf8');
   return recordBannerToGif(fillBannerTemplate(template, username, 'commander'), username, 'commander');
+}
+
+export async function getCommunitySpotlightBannerUrl(): Promise<string> {
+  if (!isStoredBannerCurrent(STORAGE_PATH, COMMUNITY_SPOTLIGHT_BANNER_KEY, 'spotlight')) {
+    const template = await readFile(join(process.cwd(), 'public', 'banner-template.html'), 'utf8');
+    await recordBannerToGif(
+      fillBannerTemplate(template, COMMUNITY_SPOTLIGHT_BANNER_KEY, 'spotlight'),
+      COMMUNITY_SPOTLIGHT_BANNER_KEY,
+      'spotlight',
+    );
+  }
+  return `/api/media/banners/${COMMUNITY_SPOTLIGHT_BANNER_KEY}.gif?v=${BANNER_VERSION}`;
 }
 
 async function recordBannerToGif(
