@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
     }
     const manifest = await response.json();
     const expectedOrigin = new URL(chatTagBase).origin;
-    const games = (Array.isArray(manifest.games) ? manifest.games : [])
+    const games: ManifestGame[] = (Array.isArray(manifest.games) ? manifest.games : [])
       .map((game: ManifestGame) => ({
         id: normalizeNebulaGameId(game.id),
         name: String(game.name || game.id || '').slice(0, 100),
@@ -55,13 +55,13 @@ export async function GET(request: NextRequest) {
 
     const currentItems = await getNebulaGameplayItems();
     const current = new Map(currentItems.map((item) => [item.id, item]));
-    const staleIds = new Set(
+    const staleIds = new Set<string>(
       games
-        .filter((game: ManifestGame) => {
+        .filter((game) => {
           const saved = current.get(game.id);
           return Boolean(saved && saved.revision !== game.revision);
         })
-        .map((game: ManifestGame) => game.id),
+        .map((game) => game.id),
     );
 
     // A changed source must stop rotating immediately. Otherwise a bad/stale GIF
@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
     }
 
     const needed = games
-      .filter((game: ManifestGame) => current.get(game.id)?.revision !== game.revision)
+      .filter((game) => current.get(game.id)?.revision !== game.revision)
       .slice(0, NEBULA_CAPTURE_BATCH_SIZE);
     const readyGames = current.size;
     return NextResponse.json({
