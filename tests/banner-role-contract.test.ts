@@ -6,7 +6,9 @@ import path from 'node:path';
 import test from 'node:test';
 import {
   BANNER_VERSION,
+  BANNER_VARIANTS,
   isStoredBannerCurrent,
+  normalizeBannerVariant,
   resolveBannerVariant,
 } from '../src/lib/banner-policy.ts';
 
@@ -16,6 +18,8 @@ const template = fs.readFileSync(path.join(root, 'public/banner-template.html'),
 const requestService = fs.readFileSync(path.join(root, 'src/lib/live-banner-request-service.ts'), 'utf8');
 const manualService = fs.readFileSync(path.join(root, 'src/lib/manual-discord-shoutout-service.ts'), 'utf8');
 const uploadRoute = fs.readFileSync(path.join(root, 'src/app/api/clips/upload/route.ts'), 'utf8');
+const bannerGeneration = fs.readFileSync(path.join(root, 'src/lib/banner-generation-service.ts'), 'utf8');
+const communitySpotlight = fs.readFileSync(path.join(root, 'src/lib/community-spotlight-service.ts'), 'utf8');
 
 test('only the owner resolves to commander; crew and mountaineers stay separate', () => {
   assert.equal(resolveBannerVariant({ twitchLogin: 'mtman1987' }), 'commander');
@@ -96,6 +100,19 @@ test('unlinked Twitch users default to Mountaineer and uploads require current r
   assert.doesNotMatch(manualService, /!entry\.needsBanner\) return/);
   assert.match(uploadRoute, /stale banner generator version/);
   assert.match(uploadRoute, /\['commander', 'crew', 'mountaineer'\]/);
+});
+
+test('Community Spotlight has one reusable username-free crimson banner', () => {
+  assert.equal(normalizeBannerVariant('spotlight'), 'spotlight');
+  assert.equal(BANNER_VARIANTS.spotlight.showUsername, false);
+  assert.match(BANNER_VARIANTS.spotlight.labelHtml, /COMMUNITY SPOTLIGHT/);
+  assert.match(BANNER_VARIANTS.spotlight.message, /SIGNAL BOOST ACTIVE/);
+  assert.equal(BANNER_VARIANTS.spotlight.primaryColor, '#ff334f');
+  assert.match(bannerGeneration, /COMMUNITY_SPOTLIGHT_BANNER_KEY = 'community-spotlight'/);
+  assert.match(bannerGeneration, /isStoredBannerCurrent\(STORAGE_PATH, COMMUNITY_SPOTLIGHT_BANNER_KEY, 'spotlight'\)/);
+  assert.match(communitySpotlight, /getReusableSpotlightBanner/);
+  assert.match(communitySpotlight, /buildSpotlightBannerEmbed/);
+  assert.match(communitySpotlight, /spotlightBannerUrl \? \[buildSpotlightBannerEmbed/);
 });
 
 test('the volume migration purges legacy banners once and preserves regenerated files', () => {
