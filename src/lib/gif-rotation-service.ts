@@ -8,7 +8,7 @@ import { getAppUrl, getGifStorageChannelId, getStoragePath } from './runtime-con
 
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const GIF_STORAGE_CHANNEL = getGifStorageChannelId();
-const MAX_GIFS = 6;
+const MAX_GIFS = 10;
 
 export async function fetchNewGifOnLive(serverId: string, discordUserId: string, twitchLogin: string): Promise<void> {
   try {
@@ -79,7 +79,7 @@ async function fetchAndConvertClip(clipId: string): Promise<Buffer | null> {
       ffmpeg()
         .input(mp4Buffer)
         .inputFormat('mp4')
-        .outputOptions(['-vf', 'fps=10,scale=480:-1:flags=lanczos', '-t', '30'])
+        .outputOptions(['-vf', 'fps=10,scale=480:-1:flags=lanczos', '-t', '60', '-loop', '0'])
         .format('gif')
         .pipe(outputStream);
     });

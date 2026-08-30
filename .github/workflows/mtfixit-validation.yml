@@ -27,6 +27,8 @@ jobs:
         run: node --import tsx --test tests/signal-shoutout-contract.test.ts
       - name: Test role-aware banners
         run: npm run test:banners
+      - name: Test Nebula gameplay GIF rotation
+        run: npm run test:nebula-gameplay
       - name: Test dashboard and shared shell parity
         run: node --import tsx --test tests/dashboard-shell-parity.test.ts
       - name: Type check
