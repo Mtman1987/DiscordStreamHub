@@ -39,6 +39,13 @@ test('clip worker records 60-second gameplay and produces looping GIFs', () => {
   assert.match(worker, /api\/clips\/nebula\/needed/);
 });
 
+test('Nebula cache records only one missing or changed game per worker cycle', () => {
+  const neededRoute = readFileSync(new URL('../src/app/api/clips/nebula/needed/route.ts', import.meta.url), 'utf8');
+  assert.match(neededRoute, /NEBULA_CAPTURE_BATCH_SIZE = 1/);
+  assert.match(neededRoute, /current\.get\(game\.id\)\?\.revision !== game\.revision/);
+  assert.match(neededRoute, /capture-one-missing-or-changed-game-per-cycle/);
+});
+
 test('existing streamer storage uses one canonical ten-GIF limit', () => {
   const upload = readFileSync(new URL('../src/app/api/clips/upload/route.ts', import.meta.url), 'utf8');
   const conversion = readFileSync(new URL('../src/lib/gif-conversion-service.ts', import.meta.url), 'utf8');
