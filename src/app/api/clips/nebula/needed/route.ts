@@ -5,6 +5,8 @@ import { getNebulaGameplayItems, normalizeNebulaGameId } from '@/lib/nebula-game
 
 export const dynamic = 'force-dynamic';
 
+const NEBULA_CAPTURE_BATCH_SIZE = 5;
+
 type ManifestGame = {
   id: string;
   name: string;
@@ -44,7 +46,9 @@ export async function GET(request: NextRequest) {
       });
 
     const current = new Map((await getNebulaGameplayItems()).map((item) => [item.id, item]));
-    const needed = games.filter((game: ManifestGame) => current.get(game.id)?.revision !== game.revision).slice(0, 2);
+    const needed = games
+      .filter((game: ManifestGame) => current.get(game.id)?.revision !== game.revision)
+      .slice(0, NEBULA_CAPTURE_BATCH_SIZE);
     return NextResponse.json({ needed, totalGames: games.length, readyGames: current.size });
   } catch (error) {
     console.error('[NebulaGameplay] Manifest check failed:', error);
