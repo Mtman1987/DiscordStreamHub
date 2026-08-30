@@ -5,7 +5,11 @@ import { getNebulaGameplayItems, normalizeNebulaGameId } from '@/lib/nebula-game
 
 export const dynamic = 'force-dynamic';
 
-const NEBULA_CAPTURE_BATCH_SIZE = 5;
+// Capture exactly one uncached/changed game per worker cycle. With the current
+// 20-game catalog, the first 20 cycles fill the cache one game at a time. After
+// that this endpoint returns an empty queue until a developer adds a new game
+// or changes an existing game's source revision.
+const NEBULA_CAPTURE_BATCH_SIZE = 1;
 
 type ManifestGame = {
   id: string;
@@ -49,7 +53,13 @@ export async function GET(request: NextRequest) {
     const needed = games
       .filter((game: ManifestGame) => current.get(game.id)?.revision !== game.revision)
       .slice(0, NEBULA_CAPTURE_BATCH_SIZE);
-    return NextResponse.json({ needed, totalGames: games.length, readyGames: current.size });
+    return NextResponse.json({
+      needed,
+      totalGames: games.length,
+      readyGames: current.size,
+      pendingGames: Math.max(0, games.length - current.size),
+      cacheStrategy: 'capture-one-missing-or-changed-game-per-cycle',
+    });
   } catch (error) {
     console.error('[NebulaGameplay] Manifest check failed:', error);
     return NextResponse.json({ error: 'Nebula manifest unavailable' }, { status: 502 });
