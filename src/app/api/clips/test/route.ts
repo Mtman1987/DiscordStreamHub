@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
       clip.url,  // Use MP4 URL with our custom player
       clip.id,
       twitchLogin,
-      Math.min(clip.duration, 30),
+      Math.min(clip.duration, 60),
       'stream',
       { serverId: getHardcodedGuildId() }
     );

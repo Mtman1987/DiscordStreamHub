@@ -67,6 +67,7 @@ async function convertClipToGifInternal(
   const tempGif = join(tmpdir(), `${clipId}.gif`);
   const tempMp4 = join(tmpdir(), `${clipId}.mp4`);
   const fps = 12;
+  const safeDuration = Math.min(60, Math.max(1, Number(duration) || 60));
 
   try {
     console.log(`[GifConversion] Converting clip for ${streamerName}`);
@@ -131,8 +132,8 @@ async function convertClipToGifInternal(
     // Convert MP4 to GIF
     console.log(`[GifConversion] Converting to GIF...`);
     const palettePath = join(tmpdir(), `${clipId}_palette.png`);
-    await execAsync(`ffmpeg -y -i "${tempMp4}" -vf "fps=${fps},scale=480:-1:flags=lanczos,palettegen" "${palettePath}"`);
-    await execAsync(`ffmpeg -y -i "${tempMp4}" -i "${palettePath}" -filter_complex "fps=${fps},scale=480:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" -loop 0 "${tempGif}"`);
+    await execAsync(`ffmpeg -y -t ${safeDuration} -i "${tempMp4}" -vf "fps=${fps},scale=480:-1:flags=lanczos,palettegen" "${palettePath}"`);
+    await execAsync(`ffmpeg -y -t ${safeDuration} -i "${tempMp4}" -i "${palettePath}" -filter_complex "fps=${fps},scale=480:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" -loop 0 "${tempGif}"`);
     
     // Store the GIF
     const streamerDir = join(STORAGE_PATH, streamerName);
@@ -140,12 +141,12 @@ async function convertClipToGifInternal(
       await mkdir(streamerDir, { recursive: true });
     }
 
-    // Enforce 10 GIF limit BEFORE writing new file to prevent ENOSPC
+    // Enforce the 10-GIF limit BEFORE writing the next file to prevent ENOSPC.
     const { readdir: readdirCleanup, unlink: unlinkFile } = await import('fs/promises');
     const existingFiles = await readdirCleanup(streamerDir);
     const existingGifs = existingFiles.filter(f => f.endsWith('.gif')).sort();
-    if (existingGifs.length >= 5) {
-      const toDelete = existingGifs.slice(0, existingGifs.length - 4);
+    if (existingGifs.length >= 10) {
+      const toDelete = existingGifs.slice(0, existingGifs.length - 9);
       for (const file of toDelete) {
         await unlinkFile(join(streamerDir, file)).catch(() => {});
       }

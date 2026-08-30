@@ -67,6 +67,9 @@ const BANNER_WIDTH = 960;
 const BANNER_HEIGHT = 100;
 const BANNER_FPS = 10;
 const BANNER_DURATION_SECONDS = 20;
+const NEBULA_CAPTURE_WIDTH = 800;
+const NEBULA_CAPTURE_HEIGHT = 450;
+const NEBULA_CAPTURE_FPS = 10;
 const BANNER_VARIANTS = {
   commander: {
     labelHtml: 'COMMANDER MT',
@@ -532,7 +535,7 @@ async function recordLiveStream(twitchLogin) {
 
       try {
         const fps = 10;
-        const totalFrames = fps * 30; // 30 seconds
+      const totalFrames = fps * 60; // full 60-second fallback clip
         for (let f = 0; f < totalFrames; f++) {
           const frame = await page.screenshot({ type: 'png', clip: { x: 0, y: 0, width: 1280, height: 720 } });
           await fs.writeFile(path.join(frameDir, `frame_${String(f).padStart(5, '0')}.png`), frame);
@@ -586,6 +589,101 @@ async function pushGifToDSH(gifBuffer, streamerName) {
   const data = await res.json();
   console.log(`[ClipWorker] Pushed ${streamerName}: ${data.gifUrl}`);
   return data.gifUrl;
+}
+
+// ── Nebula Arcade gameplay capture ──
+async function uploadNebulaGameplay(gifBuffer, game) {
+  const form = new FormData();
+  form.append('gif', new Blob([gifBuffer], { type: 'image/gif' }), `${game.id}.gif`);
+  form.append('nebulaGameId', game.id);
+  form.append('nebulaGameName', game.name);
+  form.append('nebulaOrder', String(game.order));
+  form.append('nebulaRevision', game.revision);
+  form.append('nebulaCaptureSeconds', String(game.captureSeconds));
+  form.append('nebulaSourceUrl', game.captureUrl);
+
+  const response = await fetch(`${DSH_URL}/api/clips/upload`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${WORKER_SECRET}` },
+    body: form,
+  });
+  if (!response.ok) throw new Error(`Nebula upload failed: ${response.status} ${await response.text()}`);
+  return response.json();
+}
+
+async function recordNebulaGameplay(game) {
+  const safeId = String(game.id || '').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 64);
+  if (!safeId) throw new Error('Invalid Nebula game id');
+  const durationSeconds = Math.min(60, Math.max(1, Number(game.captureSeconds) || 60));
+  const captureId = `${safeId}_${Date.now()}`;
+  const frameDir = path.join(os.tmpdir(), `nebula_frames_${captureId}`);
+  const tempGif = path.join(os.tmpdir(), `nebula_${captureId}.gif`);
+  const palette = path.join(os.tmpdir(), `nebula_${captureId}_palette.png`);
+  let browser;
+
+  try {
+    console.log(`[ClipWorker] Recording ${durationSeconds}s of ${game.name} gameplay...`);
+    await fs.mkdir(frameDir, { recursive: true });
+    const puppeteer = require('puppeteer-core');
+    browser = await puppeteer.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--autoplay-policy=no-user-gesture-required'],
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
+    });
+    const page = await browser.newPage();
+    await page.setViewport({ width: NEBULA_CAPTURE_WIDTH, height: NEBULA_CAPTURE_HEIGHT, deviceScaleFactor: 1 });
+    await page.goto(game.captureUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+
+    const totalFrames = durationSeconds * NEBULA_CAPTURE_FPS;
+    const startedAt = Date.now();
+    for (let frame = 0; frame < totalFrames; frame++) {
+      const buffer = await page.screenshot({
+        type: 'jpeg',
+        quality: 72,
+        clip: { x: 0, y: 0, width: NEBULA_CAPTURE_WIDTH, height: NEBULA_CAPTURE_HEIGHT },
+      });
+      await fs.writeFile(path.join(frameDir, `frame_${String(frame).padStart(5, '0')}.jpg`), buffer);
+      const waitMs = startedAt + ((frame + 1) * 1000 / NEBULA_CAPTURE_FPS) - Date.now();
+      if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs));
+    }
+
+    const framePattern = path.join(frameDir, 'frame_%05d.jpg');
+    await execAsync(`ffmpeg -y -framerate ${NEBULA_CAPTURE_FPS} -i "${framePattern}" -vf "fps=${NEBULA_CAPTURE_FPS},scale=480:-1:flags=lanczos,palettegen=max_colors=128:stats_mode=diff" "${palette}"`);
+    await execAsync(`ffmpeg -y -framerate ${NEBULA_CAPTURE_FPS} -i "${framePattern}" -i "${palette}" -filter_complex "fps=${NEBULA_CAPTURE_FPS},scale=480:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle" -loop 0 "${tempGif}"`);
+    const gifBuffer = await fs.readFile(tempGif);
+    const uploaded = await uploadNebulaGameplay(gifBuffer, { ...game, id: safeId, captureSeconds: durationSeconds });
+    console.log(`[ClipWorker] Nebula gameplay ready: ${game.name} (${(gifBuffer.length / 1024 / 1024).toFixed(1)}MB) ${uploaded.gifUrl}`);
+  } finally {
+    if (browser) await browser.close().catch(() => {});
+    await fs.unlink(tempGif).catch(() => {});
+    await fs.unlink(palette).catch(() => {});
+    await fs.rm(frameDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+async function processNebulaGameplayBatch() {
+  try {
+    const response = await fetch(`${DSH_URL}/api/clips/nebula/needed`, {
+      headers: { Authorization: `Bearer ${WORKER_SECRET}` },
+    });
+    if (!response.ok) {
+      console.warn(`[ClipWorker] Nebula gameplay manifest unavailable: ${response.status}`);
+      return;
+    }
+    const body = await response.json();
+    const needed = Array.isArray(body.needed) ? body.needed : [];
+    console.log(`[ClipWorker] Nebula gameplay: ${body.readyGames || 0}/${body.totalGames || 0} ready, ${needed.length} queued this cycle`);
+    for (const game of needed) {
+      try {
+        await recordNebulaGameplay(game);
+      } catch (error) {
+        console.error(`[ClipWorker] Nebula gameplay capture failed for ${game.name || game.id}:`, error.message || error);
+      }
+    }
+  } catch (error) {
+    console.error('[ClipWorker] Nebula gameplay batch failed:', error.message || error);
+  }
 }
 
 // ── Main loop ──
@@ -708,6 +806,9 @@ async function runCycle() {
       await cleanStaleFolders();
       lastStaleCleanup = Date.now();
     }
+
+    // Reuse the same GIF worker and volume for Nebula Arcade's gameplay showcase.
+    await processNebulaGameplayBatch();
 
     const res = await fetch(`${DSH_URL}/api/clips/needed?serverId=${SERVER_ID}`, {
       headers: { Authorization: `Bearer ${WORKER_SECRET}` },

@@ -72,6 +72,7 @@ jobs:
           npm ci
           node --import tsx --test tests/discord-gateway-spmt-routing.test.ts tests/discord-dm-spmt-routing.test.ts tests/discord-ingress-timeout.test.ts
           npm run test:banners
+          npm run test:nebula-gameplay
           npm run typecheck
           DSH_BUILD_DB=1 npm run build
       - uses: superfly/flyctl-actions/setup-flyctl@master

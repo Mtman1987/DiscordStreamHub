@@ -47,7 +47,7 @@ export async function bulkFetchClips(serverId: string): Promise<void> {
       
       let successCount = 0;
       for (const clip of clips) {
-        if (successCount >= 6) break;
+        if (successCount >= 10) break;
         
         const gifUrl = await convertClipToGif(
           clip.url,
@@ -143,7 +143,7 @@ export async function fetchNewClipOnLive(serverId: string, userId: string, twitc
           clip.url,
           clip.id,
           twitchLogin,
-          Math.min(clip.duration, 30),
+          Math.min(clip.duration, 60),
           'stream',
           { serverId }
         );
@@ -172,7 +172,7 @@ export async function fetchNewClipOnLive(serverId: string, userId: string, twitc
             clip.url,
             clip.id,
             twitchLogin,
-            Math.min(clip.duration, 30),
+            Math.min(clip.duration, 60),
             'stream',
             { serverId }
           );
@@ -297,11 +297,11 @@ async function recordLiveStream(twitchLogin: string): Promise<number> {
       const palettePath = joinPath(tmpdir(), `palette_${twitchLogin}_${i}_${Date.now()}.png`);
 
       try {
-        console.log(`[LiveRecord] Recording 30s clip ${i + 1}/2 for ${twitchLogin}...`);
+        console.log(`[LiveRecord] Recording 60s clip ${i + 1}/2 for ${twitchLogin}...`);
         await mkdir(frameDir, { recursive: true });
 
         const fps = 10;
-        const totalFrames = fps * 30;
+        const totalFrames = fps * 60;
         const interval = 1000 / fps;
 
         for (let f = 0; f < totalFrames; f++) {
@@ -316,8 +316,8 @@ async function recordLiveStream(twitchLogin: string): Promise<number> {
 
         // Enforce 10 GIF limit
         const existing = (await readdirAsync(streamerDir)).filter(f => f.endsWith('.gif')).sort();
-        if (existing.length >= 5) {
-          for (const old of existing.slice(0, existing.length - 4)) {
+        if (existing.length >= 10) {
+          for (const old of existing.slice(0, existing.length - 9)) {
             await unlink(joinPath(streamerDir, old)).catch(() => {});
           }
         }

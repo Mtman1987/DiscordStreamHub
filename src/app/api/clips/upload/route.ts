@@ -7,7 +7,7 @@ import { getClipWorkerSecret } from '@/lib/runtime-secrets';
 import { BANNER_VERSION, normalizeBannerVariant } from '@/lib/banner-policy';
 
 const STORAGE_PATH = getStoragePath();
-const MAX_GIFS_PER_STREAMER = 5;
+const MAX_GIFS_PER_STREAMER = 10;
 
 function normalizeStreamerName(value: string): string {
   return String(value || '').trim().toLowerCase();
@@ -62,9 +62,41 @@ export async function POST(request: NextRequest) {
     const bannerName = formData.get('bannerName') as string | null;
     const bannerVariant = formData.get('bannerVariant') as string | null;
     const bannerVersion = formData.get('bannerVersion') as string | null;
+    const nebulaGameId = formData.get('nebulaGameId') as string | null;
+    const nebulaGameName = formData.get('nebulaGameName') as string | null;
+    const nebulaOrder = formData.get('nebulaOrder') as string | null;
+    const nebulaRevision = formData.get('nebulaRevision') as string | null;
+    const nebulaCaptureSeconds = formData.get('nebulaCaptureSeconds') as string | null;
+    const nebulaSourceUrl = formData.get('nebulaSourceUrl') as string | null;
 
-    if (!file || (!streamer && !bannerName)) {
-      return NextResponse.json({ error: 'gif and streamer/bannerName required' }, { status: 400 });
+    if (!file || (!streamer && !bannerName && !nebulaGameId)) {
+      return NextResponse.json({ error: 'gif and streamer/bannerName/nebulaGameId required' }, { status: 400 });
+    }
+
+    if (nebulaGameId) {
+      const { normalizeNebulaGameId, NEBULA_GAMEPLAY_DIRECTORY } = await import('@/lib/nebula-gameplay-rotation');
+      const normalizedGameId = normalizeNebulaGameId(nebulaGameId);
+      if (!normalizedGameId || !nebulaRevision) {
+        return NextResponse.json({ error: 'invalid Nebula gameplay metadata' }, { status: 400 });
+      }
+      const gameplayDir = join(STORAGE_PATH, NEBULA_GAMEPLAY_DIRECTORY);
+      if (!existsSync(gameplayDir)) await mkdir(gameplayDir, { recursive: true });
+      const buffer = Buffer.from(await file.arrayBuffer());
+      const gifPath = join(gameplayDir, `${normalizedGameId}.gif`);
+      const metaPath = join(gameplayDir, `${normalizedGameId}.gif.meta.json`);
+      await writeFile(gifPath, buffer);
+      await writeFile(metaPath, JSON.stringify({
+        id: normalizedGameId,
+        name: String(nebulaGameName || normalizedGameId).slice(0, 100),
+        order: Math.max(0, Number(nebulaOrder || 0)),
+        revision: String(nebulaRevision).slice(0, 100),
+        captureSeconds: Math.min(60, Math.max(1, Number(nebulaCaptureSeconds || 60))),
+        capturedAt: new Date().toISOString(),
+        sourceUrl: String(nebulaSourceUrl || '').slice(0, 1000),
+      }, null, 2));
+      const gifUrl = `/api/media/${NEBULA_GAMEPLAY_DIRECTORY}/${normalizedGameId}.gif`;
+      console.log(`[ClipUpload] Saved Nebula gameplay ${normalizedGameId}.gif (${(buffer.length / 1024).toFixed(0)}KB)`);
+      return NextResponse.json({ success: true, gifUrl, gameId: normalizedGameId });
     }
 
     if (bannerName) {
@@ -109,7 +141,7 @@ export async function POST(request: NextRequest) {
       await mkdir(streamerDir, { recursive: true });
     }
 
-    // Enforce GIF limit — keep max 5, delete oldest
+    // Enforce the canonical 10-GIF rotation limit, deleting oldest first.
     const existing = (await readdir(streamerDir)).filter(f => f.endsWith('.gif')).sort();
     if (existing.length >= MAX_GIFS_PER_STREAMER) {
       const toDelete = existing.slice(0, existing.length - (MAX_GIFS_PER_STREAMER - 1));
