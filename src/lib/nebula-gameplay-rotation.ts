@@ -35,6 +35,14 @@ export function getNebulaGameplaySlot(now = Date.now()): number {
   return Math.floor(now / NEBULA_GAMEPLAY_ROTATION_MS);
 }
 
+export function resolveNebulaGameplayNow(requestedSlot: string | null, now = Date.now()): number {
+  if (requestedSlot === null || requestedSlot.trim() === '') return now;
+  const slot = Number(requestedSlot);
+  return Number.isFinite(slot) && slot >= 0
+    ? slot * NEBULA_GAMEPLAY_ROTATION_MS
+    : now;
+}
+
 export function selectNebulaGameplay<T>(items: T[], now = Date.now()): T | null {
   if (!items.length) return null;
   return items[getNebulaGameplaySlot(now) % items.length] || null;
