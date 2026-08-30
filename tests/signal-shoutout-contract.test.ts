@@ -21,3 +21,20 @@ test('Signal card keeps the existing media/live lifecycle but changes presentati
   assert.match(patch, /SpaceMountain Signal/);
   assert.match(patch, /entry\.signalText/);
 });
+
+test('Signal shoutouts expose a trash control that removes the saved rotation record', () => {
+  assert.match(patch, /label: 'Remove Signal'/);
+  assert.match(patch, /signal_shoutout_delete:/);
+  assert.match(patch, /removeSignalDiscordShoutout/);
+  assert.match(patch, /suppressedAt/);
+  assert.match(patch, /if \(entry\.suppressedAt\) continue/);
+  assert.match(patch, /currentRecord\.data\(\)\?\.suppressedAt/);
+});
+
+test('Signal trash authorization allows the original requester or Discord moderators', () => {
+  assert.match(patch, /requesterDiscordId === actorDiscordId/);
+  assert.match(patch, /input\.isModerator/);
+  assert.match(patch, /MANAGE_MESSAGES/);
+  assert.match(patch, /MANAGE_GUILD/);
+  assert.match(patch, /Only the person who sent this Signal or a moderator can remove it/);
+});
