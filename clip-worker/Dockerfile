@@ -15,14 +15,15 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Only need puppeteer for live recording fallback
+# Only need puppeteer for live recording fallback and card-pack rendering.
 RUN npm install puppeteer-core
 
 COPY worker.js .
+COPY card-pack-render-worker.js .
 
 ENV NODE_ENV=production
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 EXPOSE 8080
 
-CMD ["node", "worker.js"]
+CMD ["/bin/sh", "-c", "node card-pack-render-worker.js & exec node worker.js"]
