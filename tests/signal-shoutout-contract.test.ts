@@ -7,6 +7,7 @@ const root = path.resolve(process.cwd());
 const patch = fs.readFileSync(path.join(root, 'scripts/patch-signal-shoutout.mjs'), 'utf8');
 const control = fs.readFileSync(path.join(root, 'src/lib/signal-shoutout-control.ts'), 'utf8');
 const page = fs.readFileSync(path.join(root, 'src/app/signal/remove/page.tsx'), 'utf8');
+const client = fs.readFileSync(path.join(root, 'src/app/signal/remove/signal-remove-client.tsx'), 'utf8');
 
 test('Signal reuses the manual shoutout lifecycle with a distinct kind', () => {
   assert.match(patch, /kind = body\.kind === 'signal' \? 'signal' : 'manual'/);
@@ -30,7 +31,8 @@ test('Signal shoutout trash control is an inline embed link rather than an exter
   assert.doesNotMatch(patch, /signal_shoutout_delete:/);
   assert.match(control, /value: `\[🗑️\]/);
   assert.match(control, /SIGNAL_CONTROL_PATH = '\/signal\/remove'/);
-  assert.match(page, /Tap the trash can to confirm/);
+  assert.match(page, /SignalRemoveClient/);
+  assert.match(client, /Tap the trash can to confirm/);
 });
 
 test('Signal web control suppresses the saved rotation before deleting the Discord message', () => {
