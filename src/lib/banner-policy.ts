@@ -5,7 +5,7 @@ import { normalizeGroupValue } from './group-utils.ts';
 export const BANNER_VERSION = '2026-08-28-role-aware-1';
 const COMMANDER_TWITCH_LOGINS = new Set(['mtman1987', 'spacemountainlive']);
 
-export type BannerVariant = 'commander' | 'crew' | 'mountaineer';
+export type BannerVariant = 'commander' | 'crew' | 'mountaineer' | 'spotlight';
 
 export type BannerIdentity = {
   twitchLogin: string;
@@ -44,6 +44,13 @@ export const BANNER_VARIANTS: Record<BannerVariant, {
     secondaryColor: '#a3f7c7',
     showUsername: true,
   },
+  spotlight: {
+    labelHtml: 'COMMUNITY SPOTLIGHT',
+    message: 'SIGNAL BOOST ACTIVE &bull; FEATURED CREATOR LIVE',
+    primaryColor: '#ff334f',
+    secondaryColor: '#ff9aa9',
+    showUsername: false,
+  },
 };
 
 function normalized(value: unknown): string {
@@ -52,7 +59,7 @@ function normalized(value: unknown): string {
 
 export function normalizeBannerVariant(value: unknown): BannerVariant {
   const candidate = normalized(value);
-  if (candidate === 'commander' || candidate === 'crew') return candidate;
+  if (candidate === 'commander' || candidate === 'crew' || candidate === 'spotlight') return candidate;
   return 'mountaineer';
 }
 
