@@ -29,6 +29,8 @@ jobs:
         run: npm run test:banners
       - name: Test Nebula gameplay GIF rotation
         run: npm run test:nebula-gameplay
+      - name: Test Discord ingress supervision
+        run: node --import tsx --test tests/discord-ingress-supervision.test.ts
       - name: Test dashboard and shared shell parity
         run: node --import tsx --test tests/dashboard-shell-parity.test.ts
       - name: Type check
