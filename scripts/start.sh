@@ -49,16 +49,25 @@ else
 fi
 
 # 4. Discord public text ingress. This is the replacement for Kite's Gateway
-# listener/fanout and also owns the bot presence shown in Discord.
+# listener/fanout and also owns the bot presence shown in Discord. Keep this
+# child supervised: if Discord or Node drops the process after Fly has marked
+# the web machine healthy, the main Next process stays alive and Fly otherwise
+# has no reason to restart the dead listener.
 if [ "$DISABLE_STARTUP_SERVICES" = "true" ]; then
   echo "[Startup] Startup services disabled; skipping Discord ingress bot"
 elif [ -n "$DISCORD_BOT_TOKEN" ]; then
   (
     echo "[Startup] Waiting to start Discord ingress bot..."
     sleep 20
-    DSH_DISCORD_INGRESS_URL="http://127.0.0.1:3000" \
-      DSH_DISCORD_PRESENCE="${DSH_DISCORD_PRESENCE:-Powered by Space Mountain}" \
-      npm run discord-ingress-bot
+    while true; do
+      echo "[Startup] Starting Discord ingress bot..."
+      DSH_DISCORD_INGRESS_URL="http://127.0.0.1:3000" \
+        DSH_DISCORD_PRESENCE="${DSH_DISCORD_PRESENCE:-Powered by Space Mountain}" \
+        npm run discord-ingress-bot
+      CODE=$?
+      echo "[Startup] Discord ingress bot exited with code $CODE; restarting in 10s..."
+      sleep 10
+    done
   ) &
 else
   echo "[Startup] Discord ingress bot disabled because DISCORD_BOT_TOKEN is not set"
