@@ -3,17 +3,16 @@ import { awardPoints } from './points-service';
 import { db } from '@/data/server-init';
 import { getValidBotAccessToken } from './twitch-oauth-service';
 import { getHardcodedAdminTwitchId, getStreamweaverUrl } from './runtime-config';
-import { isExplicitAthenaInvocation } from './athena-visitor-gate';
+import { isOwnerAthenaInvocation, isVisitorAthenaInvocation } from './athena-visitor-gate';
 import { blacklistChatTagChannel, fetchTagData } from './chat-tag-service';
 import { sendOwnerDiscordDm } from './owner-dm-service';
 import { buildTwitchBanOwnerDm, isTwitchBanNotice, type TwitchBanProfileSnapshot } from './twitch-ban-blacklist';
 
 const ATHENA_OWNER_WINDOW_MS = 10 * 60 * 1000;
 
-type AthenaChannelAccess = {
+type AthenaVisitorWindow = {
+  channel: string;
   ownerWindowUntil: number;
-  broadcasterAuthorized: boolean;
-  deniedUserIds: Set<string>;
 };
 
 class TwitchChatService {
@@ -23,7 +22,8 @@ class TwitchChatService {
   private allowedLogins: Set<string> = new Set();
   private channelBroadcasterIds: Map<string, string> = new Map();
   private athenaHomeChannel: string | null = null;
-  private athenaChannelAccess: Map<string, AthenaChannelAccess> = new Map();
+  private athenaBotUsername = 'athenabot87';
+  private activeAthenaVisitorWindow: AthenaVisitorWindow | null = null;
   private status: 'idle' | 'starting' | 'connected' | 'waiting-for-live-channels' | 'disabled' | 'error' = 'idle';
   private joinedChannels: Set<string> = new Set();
   private lastError: string | null = null;
@@ -56,6 +56,7 @@ class TwitchChatService {
     }
 
     const { botUsername } = botConfig.data()!;
+    this.athenaBotUsername = normalizeChannel(botUsername) || 'athenabot87';
     const validAccessToken = await getValidBotAccessToken(serverId);
     if (!validAccessToken) {
       console.warn('[TwitchChat] Bot OAuth could not be refreshed — chat monitoring disabled. Re-authorize bot in settings.');
@@ -99,7 +100,9 @@ class TwitchChatService {
       const normalized = normalizeChannel(channel);
       if (normalized) {
         this.joinedChannels.delete(normalized);
-        this.athenaChannelAccess.delete(normalized);
+        if (this.activeAthenaVisitorWindow?.channel === normalized) {
+          this.activeAthenaVisitorWindow = null;
+        }
       }
     });
     this.client.on('disconnected', (reason) => {
@@ -107,6 +110,7 @@ class TwitchChatService {
       this.lastError = `Disconnected: ${reason}`;
       this.client = null;
       this.joinedChannels.clear();
+      this.activeAthenaVisitorWindow = null;
       console.warn(`[TwitchChat] Disconnected: ${reason}`);
     });
 
@@ -205,7 +209,6 @@ class TwitchChatService {
       login,
       displayName,
       message,
-      isSpmtMember,
     });
   }
 
@@ -309,7 +312,9 @@ class TwitchChatService {
             await this.handleBannedChannel(normalized, message);
             continue;
           }
-          throw error;
+          this.lastError = `Failed to join #${normalized}: ${message}`;
+          console.error(`[TwitchChat] Failed to join live Space Mountain channel #${normalized}:`, error);
+          continue;
         }
       }
     }
@@ -318,7 +323,9 @@ class TwitchChatService {
       if (!liveChannels.includes(channel)) {
         await this.client.part(channel);
         this.joinedChannels.delete(channel);
-        this.athenaChannelAccess.delete(channel);
+        if (this.activeAthenaVisitorWindow?.channel === channel) {
+          this.activeAthenaVisitorWindow = null;
+        }
         console.log(`[TwitchChat] Parted offline Space Mountain channel #${channel}`);
       }
     }
@@ -331,7 +338,7 @@ class TwitchChatService {
     }
     this.status = 'idle';
     this.joinedChannels.clear();
-    this.athenaChannelAccess.clear();
+    this.activeAthenaVisitorWindow = null;
   }
 
   getStatus() {
@@ -351,10 +358,18 @@ class TwitchChatService {
       lastAutoBlacklistedChannel: this.lastAutoBlacklistedChannel,
       lastAutoBlacklistedAt: this.lastAutoBlacklistedAt,
       athenaHomeChannel: this.athenaHomeChannel,
-      activeAthenaVisitorChannels: Array.from(this.athenaChannelAccess.entries())
-        .filter(([, access]) => access.broadcasterAuthorized || access.ownerWindowUntil > Date.now())
-        .map(([channel]) => channel)
-        .sort(),
+      activeAthenaVisitorChannels:
+        this.activeAthenaVisitorWindow && this.activeAthenaVisitorWindow.ownerWindowUntil > Date.now()
+          ? [this.activeAthenaVisitorWindow.channel]
+          : [],
+      activeAthenaVisitorChannel:
+        this.activeAthenaVisitorWindow && this.activeAthenaVisitorWindow.ownerWindowUntil > Date.now()
+          ? this.activeAthenaVisitorWindow.channel
+          : null,
+      athenaOwnerWindowUntil:
+        this.activeAthenaVisitorWindow && this.activeAthenaVisitorWindow.ownerWindowUntil > Date.now()
+          ? new Date(this.activeAthenaVisitorWindow.ownerWindowUntil).toISOString()
+          : null,
     };
   }
 
@@ -363,68 +378,42 @@ class TwitchChatService {
     login: string;
     displayName: string;
     message: string;
-    isSpmtMember: boolean;
   }): Promise<void> {
-    // Streamweaver already owns Athena in her normal tenant channel.
+    // StreamWeaver already owns Athena in her normal tenant channel.
     if (channel === this.athenaHomeChannel) return;
-
-    const broadcasterId = this.channelBroadcasterIds.get(channel);
-    const isBroadcaster = Boolean(broadcasterId && input.twitchUserId === broadcasterId);
-    const normalizedMessage = input.message.trim().toLowerCase();
-
-    if (normalizedMessage === '!spmt') {
-      if (!isBroadcaster) return;
-      const access = this.getAthenaAccess(channel);
-      access.broadcasterAuthorized = true;
-      access.deniedUserIds.clear();
-      await this.sayInChannel(
-        channel,
-        `Athena is available for the rest of this stream at ${input.displayName || input.login}'s request.`,
-      );
-      console.log(`[TwitchChat] Broadcaster authorized Athena for #${channel}`);
-      return;
-    }
-
-    if (!isExplicitAthenaInvocation(input.message)) return;
 
     const adminTwitchId = String(getHardcodedAdminTwitchId() || '').trim();
     const isOwner = Boolean(adminTwitchId && input.twitchUserId === adminTwitchId);
-    const access = this.getAthenaAccess(channel);
     const now = Date.now();
 
     if (isOwner) {
-      access.ownerWindowUntil = now + ATHENA_OWNER_WINDOW_MS;
-      access.deniedUserIds.clear();
-    }
+      if (!isOwnerAthenaInvocation(input.message, this.athenaBotUsername)) return;
 
-    const ownerWindowOpen = access.ownerWindowUntil > now;
-    const mayRespond = isOwner
-      || access.broadcasterAuthorized
-      || (ownerWindowOpen && input.isSpmtMember);
-    if (!mayRespond) {
-      if (ownerWindowOpen && !input.isSpmtMember && !access.deniedUserIds.has(input.twitchUserId)) {
-        access.deniedUserIds.add(input.twitchUserId);
-        await this.sayInChannel(
-          channel,
-          `Sorry—while visiting ${channel}'s chat, I can only answer Space Mountain members without the streamer's express permission.`,
-        );
-      }
+      // The owner's latest invocation moves the one shared visitor window to
+      // this channel. A later owner invocation in another channel replaces it.
+      this.activeAthenaVisitorWindow = {
+        channel,
+        ownerWindowUntil: now + ATHENA_OWNER_WINDOW_MS,
+      };
+      await this.forwardAthenaMessage(channel, input);
       return;
     }
 
-    await this.forwardAthenaMessage(channel, input);
-  }
+    // Everyone except the owner must use the bot's complete Twitch username.
+    if (!isVisitorAthenaInvocation(input.message, this.athenaBotUsername)) return;
 
-  private getAthenaAccess(channel: string): AthenaChannelAccess {
-    const existing = this.athenaChannelAccess.get(channel);
-    if (existing) return existing;
-    const created: AthenaChannelAccess = {
-      ownerWindowUntil: 0,
-      broadcasterAuthorized: false,
-      deniedUserIds: new Set(),
-    };
-    this.athenaChannelAccess.set(channel, created);
-    return created;
+    const activeWindow = this.activeAthenaVisitorWindow;
+    if (
+      !activeWindow ||
+      activeWindow.channel !== channel ||
+      activeWindow.ownerWindowUntil <= now
+    ) {
+      return;
+    }
+
+    // A Twitch message proves the caller is present in the active chat, so any
+    // viewer there may call Athena during the owner's ten-minute window.
+    await this.forwardAthenaMessage(channel, input);
   }
 
   private async sayInChannel(channel: string, message: string): Promise<void> {
@@ -524,7 +513,9 @@ class TwitchChatService {
     }, { merge: true });
 
     this.joinedChannels.delete(channel);
-    this.athenaChannelAccess.delete(channel);
+    if (this.activeAthenaVisitorWindow?.channel === channel) {
+      this.activeAthenaVisitorWindow = null;
+    }
     this.allowedLogins.delete(channel);
     const broadcasterId = this.channelBroadcasterIds.get(channel);
     if (broadcasterId) this.allowedUserIds.delete(broadcasterId);
