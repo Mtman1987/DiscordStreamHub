@@ -79,7 +79,7 @@ async function renderLoopGif(masterPath: string, workDir: string) {
   }
 
   let gif = Buffer.alloc(0);
-  let paletteColors = GIF_PALETTE_LEVELS[0];
+  let paletteColors: number = GIF_PALETTE_LEVELS[0];
   for (const colors of GIF_PALETTE_LEVELS) {
     paletteColors = colors;
     gif = await encodeGif(framePattern, palettePath, gifPath, colors);
