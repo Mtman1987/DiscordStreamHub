@@ -63,6 +63,27 @@ jobs:
       FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
     steps:
       - uses: actions/checkout@v5
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Check Fly token
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "FLY_API_TOKEN is not set"
+            exit 1
+          fi
+      - name: Ensure DSH data volume has emergency headroom
+        run: |
+          VOLUMES_JSON="$(flyctl volumes list -a discord-stream-hub-new --json --access-token "$FLY_API_TOKEN")"
+          VOLUME_ID="$(printf '%s' "$VOLUMES_JSON" | jq -r '.[] | select((.Name // .name) == "discord_stream_data") | (.ID // .id)' | head -n 1)"
+          VOLUME_SIZE="$(printf '%s' "$VOLUMES_JSON" | jq -r '.[] | select((.Name // .name) == "discord_stream_data") | (.SizeGb // .size_gb // .SizeGB // .sizeGb // 0)' | head -n 1)"
+          if [ -z "$VOLUME_ID" ] || [ "$VOLUME_ID" = "null" ]; then
+            echo "discord_stream_data volume was not found"
+            exit 1
+          fi
+          VOLUME_SIZE="${VOLUME_SIZE:-0}"
+          echo "DSH volume $VOLUME_ID is ${VOLUME_SIZE}GB"
+          if [ "$VOLUME_SIZE" -lt 20 ]; then
+            flyctl volumes extend "$VOLUME_ID" -s 20 -a discord-stream-hub-new -y --access-token "$FLY_API_TOKEN"
+          fi
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -75,13 +96,6 @@ jobs:
           npm run test:nebula-gameplay
           npm run typecheck
           DSH_BUILD_DB=1 npm run build
-      - uses: superfly/flyctl-actions/setup-flyctl@master
-      - name: Check Fly token
-        run: |
-          if [ -z "$FLY_API_TOKEN" ]; then
-            echo "FLY_API_TOKEN is not set"
-            exit 1
-          fi
       - name: Deploy web app
         run: flyctl deploy --remote-only --config fly.toml --access-token "$FLY_API_TOKEN"
 

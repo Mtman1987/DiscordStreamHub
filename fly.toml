@@ -18,7 +18,10 @@ primary_region = 'iad'
 [[mounts]]
   source = 'discord_stream_data'
   destination = '/data'
-  initial_size = '10gb'
+  initial_size = '20gb'
+  auto_extend_size_threshold = 75
+  auto_extend_size_increment = '10GB'
+  auto_extend_size_limit = '50GB'
 
 [http_service]
   internal_port = 3000

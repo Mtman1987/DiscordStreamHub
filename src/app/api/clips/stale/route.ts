@@ -18,6 +18,7 @@ const SKIP_FOLDERS = new Set([
   'embeds',
   'leaderboard',
   'leaderboard-images',
+  'nebula-arcade',
   'twitch',
 ]);
 

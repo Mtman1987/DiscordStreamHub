@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getChatTagApiBase, getDiscordClientId, getHearMeOutUrl, getStreamweaverUrl } from '@/lib/runtime-config';
+import { getChatTagServiceSecret } from '@/lib/runtime-secrets';
 import { normalizePublicSpmtCommand, type PublicSpmtCommand } from '@/lib/discord-spmt-command';
 import { parseMtFixItCommand } from '@/lib/mtfixit-contract';
 import { postSignalSeekerPanel } from '@/lib/signal-seeker-service';
@@ -118,10 +119,14 @@ export async function POST(request: NextRequest) {
   const chatTagUrl = `${getChatTagApiBase().replace(/\/$/, '')}/api/discord/chat`;
   const streamweaverUrl = `${getStreamweaverUrl().replace(/\/$/, '')}/api/discord/chat`;
   const hearMeOutUrl = `${getHearMeOutUrl().replace(/\/$/, '')}/api/discord/chat`;
+  const chatTagServiceSecret = getChatTagServiceSecret();
+  const chatTagHeaders = chatTagServiceSecret
+    ? { ...commonHeaders, 'x-bot-secret': chatTagServiceSecret }
+    : commonHeaders;
 
   const jobs: Array<Promise<any>> = [
     postJson(dshUrl, body, commonHeaders, 12_000).then((result) => ({ destination: 'dsh', ...result })),
-    postJson(chatTagUrl, body, commonHeaders, 8_000).then((result) => ({ destination: 'chat-tag', ...result })),
+    postJson(chatTagUrl, body, chatTagHeaders, 8_000).then((result) => ({ destination: 'chat-tag', ...result })),
   ];
 
   if (spmtCommand?.forwardMessage && !spmtCommand.controls) {
