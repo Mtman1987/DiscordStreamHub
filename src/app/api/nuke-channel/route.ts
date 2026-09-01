@@ -3,7 +3,8 @@ import { getHardcodedGuildId } from '@/lib/runtime-config';
 import { DSH_SPMT_COOKIE, resolveSpmtSession } from '@/lib/spmt-session';
 
 const DISCORD_API = 'https://discord.com/api/v10';
-const DISCORD_EPOCH = 1420070400000n;
+const DISCORD_EPOCH = 1420070400000;
+const DISCORD_SNOWFLAKE_SEQUENCE_SIZE = 2 ** 22;
 const BULK_DELETE_MAX_AGE_MS = 13.8 * 24 * 60 * 60 * 1000;
 
 type NukeMode = 'bot' | 'all' | 'until';
@@ -22,11 +23,9 @@ function isSnowflake(value: unknown): value is string {
 }
 
 function snowflakeTimestamp(id: string): number {
-  try {
-    return Number((BigInt(id) >> 22n) + DISCORD_EPOCH);
-  } catch {
-    return 0;
-  }
+  const numericId = Number(id);
+  if (!Number.isFinite(numericId) || numericId <= 0) return 0;
+  return Math.floor(numericId / DISCORD_SNOWFLAKE_SEQUENCE_SIZE) + DISCORD_EPOCH;
 }
 
 function isBulkDeleteEligible(id: string): boolean {
