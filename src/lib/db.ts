@@ -26,12 +26,14 @@ class DatabaseCompatibilityLayer {
     }
   }
 
-  // Map old db.set() calls to new sqlite-service
+  // Map old db.set() calls to new sqlite-service. Writes must propagate errors;
+  // callers rely on await/set success to mean the state actually persisted.
   set(collectionPath: string, docId: string, data: any, options?: { merge?: boolean }): void {
     try {
       sqliteService.setDoc(`${collectionPath}/${docId}`, data, options?.merge || false);
     } catch (error) {
       console.error(`[DB Compat] set(${collectionPath}, ${docId}) failed:`, error);
+      throw error;
     }
   }
 
@@ -41,6 +43,7 @@ class DatabaseCompatibilityLayer {
       sqliteService.updateDoc(`${collectionPath}/${docId}`, data);
     } catch (error) {
       console.error(`[DB Compat] update(${collectionPath}, ${docId}) failed:`, error);
+      throw error;
     }
   }
 
@@ -50,6 +53,7 @@ class DatabaseCompatibilityLayer {
       sqliteService.deleteDoc(`${collectionPath}/${docId}`);
     } catch (error) {
       console.error(`[DB Compat] delete(${collectionPath}, ${docId}) failed:`, error);
+      throw error;
     }
   }
 
@@ -64,26 +68,26 @@ class DatabaseCompatibilityLayer {
 
   // Map old db.query() calls to new sqlite-service
   query(
-    collectionPath: string, 
+    collectionPath: string,
     filters?: Array<{ field: string; op: string; value: any }>,
     orderBy?: string,
     limit?: number
   ): any[] {
     try {
       const options: any = {};
-      
+
       if (filters && filters.length > 0) {
         const filter = filters[0]; // Take first filter for simplicity
         options.whereField = filter.field;
         options.whereOp = filter.op;
         options.whereValue = filter.value;
       }
-      
+
       if (orderBy) options.orderBy = orderBy;
       if (limit) options.limit = limit;
 
       const result = sqliteService.getCollection(collectionPath, options);
-      
+
       // Return in old format: array of objects with id and data properties
       return result.docs.map(doc => ({
         id: doc.id,
@@ -103,6 +107,7 @@ class DatabaseCompatibilityLayer {
         const actualId = docId || `doc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         const docPath = `${collectionPath}/${actualId}`;
         const docRef: any = {
+          id: actualId,
           path: docPath,
           _path: docPath,
           get: async () => {
@@ -111,19 +116,20 @@ class DatabaseCompatibilityLayer {
               return {
                 exists: result.exists,
                 data: () => result.data,
-                id: docId,
+                id: actualId,
                 ref: docRef
               };
             } catch (error) {
-              console.error(`[DB Compat] collection(${collectionPath}).doc(${docId}).get() failed:`, error);
-              return { exists: false, data: () => null, ref: docRef };
+              console.error(`[DB Compat] collection(${collectionPath}).doc(${actualId}).get() failed:`, error);
+              return { exists: false, data: () => null, id: actualId, ref: docRef };
             }
           },
           set: async (data: any, options?: { merge?: boolean }) => {
             try {
               sqliteService.setDoc(docPath, data, options?.merge || false);
             } catch (error) {
-              console.error(`[DB Compat] collection(${collectionPath}).doc(${docId}).set() failed:`, error);
+              console.error(`[DB Compat] collection(${collectionPath}).doc(${actualId}).set() failed:`, error);
+              throw error;
             }
           },
           update: async (data: any) => {
@@ -136,14 +142,16 @@ class DatabaseCompatibilityLayer {
                 sqliteService.setDoc(docPath, data, false);
               }
             } catch (error) {
-              console.error(`[DB Compat] collection(${collectionPath}).doc(${docId}).update() failed:`, error);
+              console.error(`[DB Compat] collection(${collectionPath}).doc(${actualId}).update() failed:`, error);
+              throw error;
             }
           },
           delete: async () => {
             try {
               sqliteService.deleteDoc(docPath);
             } catch (error) {
-              console.error(`[DB Compat] collection(${collectionPath}).doc(${docId}).delete() failed:`, error);
+              console.error(`[DB Compat] collection(${collectionPath}).doc(${actualId}).delete() failed:`, error);
+              throw error;
             }
           },
           collection: (subCollectionPath: string) => {
@@ -291,7 +299,7 @@ class DatabaseCompatibilityLayer {
   // Map old db.batch() calls to new sqlite-service
   batch() {
     const operations: Array<{ type: string; path: string; data: any; options?: any }> = [];
-    
+
     return {
       set: (ref: any, data: any, options?: { merge?: boolean }) => {
         const path = typeof ref === 'string' ? ref : (ref?.path || ref?._path || '');
