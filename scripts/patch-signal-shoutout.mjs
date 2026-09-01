@@ -55,7 +55,7 @@ patch('src/lib/manual-discord-shoutout-service.ts', (source) => {
     );
   }
 
-  if (!source.includes('kind: input.kind || \'manual\'')) {
+  if (!source.includes("kind: input.kind || 'manual'")) {
     source = source.replace(
       '    sourceMessageId: input.sourceMessageId || null,\n    createdAt:',
       "    sourceMessageId: input.sourceMessageId || null,\n    kind: input.kind || 'manual',\n    signalText: input.signalText || null,\n    suppressedAt: null,\n    createdAt:"
@@ -146,5 +146,17 @@ patch('src/lib/manual-discord-shoutout-service.ts', (source) => {
     );
   }
 
+  return source;
+});
+
+patch('src/app/api/discord/interactions/route.ts', (source) => {
+  const oldReply = "        return ephemeral(claim.alreadyClaimed\n          ? '📡 **SIGNAL LOCKED** — this egg is already secured to your SPMT identity.'\n          : '🥚 **SIGNAL EGG ACQUIRED** — secured to your SPMT identity through Discord. No app sign-in required. Your reward is `!signal <message>`: on Twitch it sends your message plus your live shoutout to Space Mountain Discord; in Discord it sends your styled Signal message.');";
+  const newReply = "        const repeatSignalHints = [\n          '🚀 **HUNT BREADCRUMB** — The carrier is yours already, but another anomaly looks like it wants to **launch**. Around SPMT, curious explorers sometimes find controls where everyone else only sees decoration.',\n          '🕳️ **HUNT BREADCRUMB** — The carrier is yours already, but another anomaly does not transmit at all — it **bends**. If Commlink ever feels like gravity stopped following the rules, investigate it.',\n        ];\n        const repeatSignalHint = repeatSignalHints[Math.floor(Math.random() * repeatSignalHints.length)];\n        return ephemeral(claim.alreadyClaimed\n          ? `📡 **SIGNAL LOCKED** — this egg is already secured to your SPMT identity.\\n\\n${repeatSignalHint}`\n          : '🥚 **SIGNAL EGG ACQUIRED** — secured to your SPMT identity through Discord. No app sign-in required. Your reward is `!signal <message>`: on Twitch it sends your message plus your live shoutout to Space Mountain Discord; in Discord it sends your styled Signal message.');";
+
+  if (source.includes(oldReply)) {
+    source = source.replace(oldReply, newReply);
+  } else if (!source.includes('HUNT BREADCRUMB') || !source.includes('repeatSignalHints')) {
+    throw new Error('Signal repeat breadcrumb response marker missing');
+  }
   return source;
 });
