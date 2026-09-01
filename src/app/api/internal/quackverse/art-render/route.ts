@@ -13,11 +13,15 @@ export const runtime = 'nodejs';
 const execFileAsync = promisify(execFile);
 const MASTER_WIDTH = 2048;
 const MASTER_HEIGHT = 1280;
-const GIF_WIDTH = 1280;
-const GIF_HEIGHT = 800;
-const GIF_FPS = 12;
-const GIF_SECONDS = 4;
-const GIF_FRAMES = GIF_FPS * GIF_SECONDS;
+const GIF_WIDTH = 640;
+const GIF_HEIGHT = 400;
+const GIF_FPS = 10;
+const GIF_FORWARD_SECONDS = 5;
+const GIF_FORWARD_FRAMES = GIF_FPS * GIF_FORWARD_SECONDS;
+const GIF_FRAMES = GIF_FORWARD_FRAMES * 2;
+const GIF_SECONDS = GIF_FRAMES / GIF_FPS;
+const MAX_RENDER_BYTES = 50 * 1024 * 1024;
+const GIF_PALETTE_LEVELS = [128, 96, 80, 64] as const;
 
 function decodeSource(body: any): Buffer {
   const raw = String(body?.imageBase64 || body?.image || '').trim();
@@ -26,12 +30,25 @@ function decodeSource(body: any): Buffer {
   const encoded = match ? match[1] : raw;
   const bytes = Buffer.from(encoded, 'base64');
   if (!bytes.length) throw new Error('Source image is empty');
-  if (bytes.length > 20 * 1024 * 1024) throw new Error('Source image exceeds 20MB');
+  if (bytes.length > MAX_RENDER_BYTES) throw new Error('Source image exceeds 50MB');
   return bytes;
 }
 
 async function runFfmpeg(args: string[]) {
   await execFileAsync('ffmpeg', args, { maxBuffer: 8 * 1024 * 1024 });
+}
+
+async function encodeGif(framePattern: string, palettePath: string, gifPath: string, colors: number) {
+  await runFfmpeg([
+    '-y', '-framerate', String(GIF_FPS), '-start_number', '0', '-i', framePattern,
+    '-vf', `palettegen=max_colors=${colors}:stats_mode=diff`, palettePath,
+  ]);
+  await runFfmpeg([
+    '-y', '-framerate', String(GIF_FPS), '-start_number', '0', '-i', framePattern, '-i', palettePath,
+    '-filter_complex', 'paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle',
+    '-loop', '0', '-gifflags', '+transdiff', gifPath,
+  ]);
+  return readFile(gifPath);
 }
 
 async function renderLoopGif(masterPath: string, workDir: string) {
@@ -41,31 +58,40 @@ async function renderLoopGif(masterPath: string, workDir: string) {
   await mkdir(frameDir, { recursive: true });
 
   const framePattern = join(frameDir, 'frame_%03d.png');
-  const motionFrames = GIF_FRAMES - 1;
-  const denominator = Math.max(1, motionFrames - 1);
-  const zoom = `1+0.018*pow(sin(PI*on/${denominator}),2)`;
-  const x = `(iw-iw/zoom)/2+2*sin(2*PI*on/${denominator})`;
-  const y = `(ih-ih/zoom)/2+4*sin(2*PI*on/${denominator})`;
+  const denominator = Math.max(1, GIF_FORWARD_FRAMES - 1);
+  const zoom = `1+0.018*on/${denominator}`;
+  const x = `(iw-iw/zoom)/2+2*sin(PI*on/${denominator})`;
+  const y = `(ih-ih/zoom)/2+4*sin(PI*on/${denominator})`;
 
   await runFfmpeg([
     '-y', '-loop', '1', '-i', masterPath,
-    '-vf', `zoompan=z='${zoom}':x='${x}':y='${y}':d=${motionFrames}:s=${GIF_WIDTH}x${GIF_HEIGHT}:fps=${GIF_FPS},eq=brightness='0.012*pow(sin(PI*n/${denominator}),2)':saturation='1+0.015*pow(sin(PI*n/${denominator}),2)':eval=frame`,
-    '-frames:v', String(motionFrames), '-start_number', '0', framePattern,
+    '-vf', `zoompan=z='${zoom}':x='${x}':y='${y}':d=${GIF_FORWARD_FRAMES}:s=${GIF_WIDTH}x${GIF_HEIGHT}:fps=${GIF_FPS},eq=brightness='0.012*on/${denominator}':saturation='1+0.015*on/${denominator}':eval=frame`,
+    '-frames:v', String(GIF_FORWARD_FRAMES), '-start_number', '0', framePattern,
   ]);
 
-  await copyFile(join(frameDir, 'frame_000.png'), join(frameDir, `frame_${String(GIF_FRAMES - 1).padStart(3, '0')}.png`));
+  for (let reverseIndex = 0; reverseIndex < GIF_FORWARD_FRAMES; reverseIndex += 1) {
+    const sourceIndex = GIF_FORWARD_FRAMES - 1 - reverseIndex;
+    const targetIndex = GIF_FORWARD_FRAMES + reverseIndex;
+    await copyFile(
+      join(frameDir, `frame_${String(sourceIndex).padStart(3, '0')}.png`),
+      join(frameDir, `frame_${String(targetIndex).padStart(3, '0')}.png`),
+    );
+  }
 
-  await runFfmpeg([
-    '-y', '-framerate', String(GIF_FPS), '-start_number', '0', '-i', framePattern,
-    '-vf', 'palettegen=max_colors=160:stats_mode=diff', palettePath,
-  ]);
-  await runFfmpeg([
-    '-y', '-framerate', String(GIF_FPS), '-start_number', '0', '-i', framePattern, '-i', palettePath,
-    '-filter_complex', 'paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle',
-    '-loop', '0', '-gifflags', '+transdiff', gifPath,
-  ]);
+  let gif = Buffer.alloc(0);
+  let paletteColors = GIF_PALETTE_LEVELS[0];
+  for (const colors of GIF_PALETTE_LEVELS) {
+    paletteColors = colors;
+    gif = await encodeGif(framePattern, palettePath, gifPath, colors);
+    if (gif.length <= MAX_RENDER_BYTES) break;
+    console.warn(`[QuackverseArtRender] ${colors}-color GIF is ${(gif.length / 1024 / 1024).toFixed(2)}MB; retrying with a smaller palette.`);
+  }
 
-  return readFile(gifPath);
+  if (gif.length > MAX_RENDER_BYTES) {
+    throw new Error(`Hover GIF renderer output exceeded 50MB after optimization (${(gif.length / 1024 / 1024).toFixed(2)}MB)`);
+  }
+
+  return { gif, paletteColors };
 }
 
 export async function POST(request: NextRequest) {
@@ -86,15 +112,16 @@ export async function POST(request: NextRequest) {
 
     const masterPath = join(workDir, 'enhanced.webp');
     await writeFile(masterPath, master);
-    const hover = await renderLoopGif(masterPath, workDir);
+    const { gif: hover, paletteColors } = await renderLoopGif(masterPath, workDir);
 
     return NextResponse.json({
       success: true,
-      renderer: 'dsh-sharp-ffmpeg',
+      renderer: 'dsh-sharp-ffmpeg-pingpong',
       static: { mimeType: 'image/webp', width: MASTER_WIDTH, height: MASTER_HEIGHT, base64: master.toString('base64') },
       hover: {
         mimeType: 'image/gif', width: GIF_WIDTH, height: GIF_HEIGHT, fps: GIF_FPS,
-        durationSeconds: GIF_SECONDS, frameCount: GIF_FRAMES, firstAndLastFrameMatch: true,
+        durationSeconds: GIF_SECONDS, sourceMotionSeconds: GIF_FORWARD_SECONDS,
+        frameCount: GIF_FRAMES, paletteColors, firstAndLastFrameMatch: true,
         base64: hover.toString('base64'),
       },
     });
