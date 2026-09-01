@@ -94,7 +94,14 @@ export async function getNebulaGameplayItems(): Promise<NebulaGameplayItem[]> {
         modifiedAt: fileStat.mtimeMs,
         mediaUrl: `${appUrl}/api/media/${NEBULA_GAMEPLAY_DIRECTORY}/${encodeURIComponent(fileName)}?v=${Math.floor(fileStat.mtimeMs)}`,
       });
-    } catch (error) {
+    } catch (error: any) {
+      // A GIF without metadata is an interrupted publish and can never be a
+      // valid rotation item. Remove it once instead of logging it forever.
+      if (error?.code === 'ENOENT') {
+        await unlink(filePath).catch(() => {});
+        console.warn(`[NebulaGameplay] Removed orphaned capture ${fileName}`);
+        continue;
+      }
       console.warn(`[NebulaGameplay] Ignoring incomplete capture ${fileName}:`, error);
     }
   }
