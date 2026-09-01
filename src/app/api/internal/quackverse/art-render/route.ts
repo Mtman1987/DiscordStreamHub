@@ -50,17 +50,17 @@ async function renderLoopGif(masterPath: string, workDir: string) {
   await runFfmpeg([
     '-y', '-loop', '1', '-i', masterPath,
     '-vf', `zoompan=z='${zoom}':x='${x}':y='${y}':d=${motionFrames}:s=${GIF_WIDTH}x${GIF_HEIGHT}:fps=${GIF_FPS},eq=brightness='0.012*pow(sin(PI*n/${denominator}),2)':saturation='1+0.015*pow(sin(PI*n/${denominator}),2)':eval=frame`,
-    '-frames:v', String(motionFrames), framePattern,
+    '-frames:v', String(motionFrames), '-start_number', '0', framePattern,
   ]);
 
   await copyFile(join(frameDir, 'frame_000.png'), join(frameDir, `frame_${String(GIF_FRAMES - 1).padStart(3, '0')}.png`));
 
   await runFfmpeg([
-    '-y', '-framerate', String(GIF_FPS), '-i', framePattern,
+    '-y', '-framerate', String(GIF_FPS), '-start_number', '0', '-i', framePattern,
     '-vf', 'palettegen=max_colors=160:stats_mode=diff', palettePath,
   ]);
   await runFfmpeg([
-    '-y', '-framerate', String(GIF_FPS), '-i', framePattern, '-i', palettePath,
+    '-y', '-framerate', String(GIF_FPS), '-start_number', '0', '-i', framePattern, '-i', palettePath,
     '-filter_complex', 'paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle',
     '-loop', '0', '-gifflags', '+transdiff', gifPath,
   ]);
