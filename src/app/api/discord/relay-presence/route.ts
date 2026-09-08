@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getRelayPresence, recordRelayVoicePresence } from '@/lib/relay-presence';
+import { getRelayPresence, getRelayPresenceByName, recordRelayVoicePresence } from '@/lib/relay-presence';
 import { getServiceToServiceSecrets, hasAuthorizedBearerToken } from '@/lib/runtime-secrets';
 
 export const dynamic = 'force-dynamic';
@@ -34,8 +34,11 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   if (!serviceAuthorized(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const userId = String(request.nextUrl.searchParams.get('userId') || '').trim();
+  const username = String(request.nextUrl.searchParams.get('username') || '').trim();
   const guildId = String(request.nextUrl.searchParams.get('guildId') || '').trim();
-  if (!userId) return NextResponse.json({ error: 'userId is required' }, { status: 400 });
-  const presence = getRelayPresence(userId, guildId || undefined);
+  if (!userId && !username) return NextResponse.json({ error: 'userId or username is required' }, { status: 400 });
+  const presence = userId
+    ? getRelayPresence(userId, guildId || undefined)
+    : getRelayPresenceByName(username, guildId || undefined);
   return NextResponse.json(presence || { found: false, inVoice: false, recentlyChatting: false, preferredKind: null, preferredChannelId: null });
 }
