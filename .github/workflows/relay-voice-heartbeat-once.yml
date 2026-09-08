@@ -1,0 +1,31 @@
+name: Relay voice heartbeat once
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/relay-voice-heartbeat-once.yml
+permissions:
+  contents: write
+jobs:
+  patch-and-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: python3 scripts/patch-relay-voice-heartbeat.py
+      - name: Validate Discord routing
+        run: npm run test:discord-routing
+      - name: Commit heartbeat
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add scripts/discord-ingress-bot.ts
+          git diff --cached --check
+          git commit -m "Keep active Discord voice relay presence fresh"
+          git push origin HEAD:main
