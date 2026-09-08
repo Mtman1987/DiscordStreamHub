@@ -19,8 +19,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: python3 scripts/patch-relay-voice-heartbeat.py
-      - name: Validate Discord routing
-        run: npm run test:discord-routing
+      - name: Validate Discord routing and types
+        run: |
+          node --import tsx --test tests/discord-gateway-spmt-routing.test.ts tests/discord-dm-spmt-routing.test.ts tests/discord-ingress-timeout.test.ts
+          npm run typecheck
       - name: Commit heartbeat
         run: |
           git config user.name github-actions[bot]
