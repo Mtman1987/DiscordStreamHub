@@ -4,6 +4,7 @@ import { getChatTagServiceSecret } from '@/lib/runtime-secrets';
 import { normalizePublicSpmtCommand, type PublicSpmtCommand } from '@/lib/discord-spmt-command';
 import { parseMtFixItCommand } from '@/lib/mtfixit-contract';
 import { postSignalSeekerPanel } from '@/lib/signal-seeker-service';
+import { recordRelayChatActivity } from '@/lib/relay-presence';
 
 export const dynamic = 'force-dynamic';
 
@@ -64,6 +65,7 @@ export async function POST(request: NextRequest) {
   const channelId = String(data?.channelId || '');
   const guildId = String(data?.guildId || data?.serverId || '');
   const messageId = String(data?.messageId || '');
+  const userId = String(data?.userId || data?.author?.id || '').trim();
   const isBotAuthor = Boolean(data?.author?.bot || data?.user?.bot || data?.member?.user?.bot);
   const isDirectMessage = Boolean(data?.isDM || data?.isDirectMessage || data?.is_direct_message);
   const normalized = message.trim().toLowerCase();
@@ -90,6 +92,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, skipped: 'not-public-human-message' });
   }
 
+  if (userId) {
+    recordRelayChatActivity({
+      userId,
+      guildId,
+      username: data?.author?.username || data?.userName,
+      displayName: data?.displayName || data?.userName,
+      channelId,
+      channelName: data?.channelName,
+      voiceChannelId: data?.voiceChannelId,
+      voiceChannelName: data?.voiceChannelName,
+      observedAt: new Date().toISOString(),
+    });
+  }
+
   if (isSignalSeekerCommand) {
     try {
       const panel = await postSignalSeekerPanel({ guildId, channelId });
@@ -104,8 +120,6 @@ export async function POST(request: NextRequest) {
   const origin = request.nextUrl.origin.replace(/\/$/, '');
   const commonHeaders = { 'x-chat-origin': 'dsh-discord-gateway', 'x-discord-trace-id': traceId };
 
-  // MtFixIt is a DSH-owned operational command. Route it exactly once to the
-  // dedicated lifecycle endpoint and do not fan it out to StreamWeaver/ChatTag.
   if (isMtFixItCommand) {
     const delivery = await postJson(`${origin}/api/discord/mtfixit`, body, {
       ...commonHeaders,
