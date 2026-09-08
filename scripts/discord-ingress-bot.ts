@@ -6,6 +6,7 @@ import {
   Message,
   Partials,
   PermissionFlagsBits,
+  VoiceState,
 } from 'discord.js';
 import { getDiscordIngressTimeoutMs } from '../src/lib/discord-ingress-timeout';
 import { mtFixItPublicReply } from '../src/lib/mtfixit-contract';
@@ -39,6 +40,7 @@ function buildPayload(message: Message) {
     || memberPermissions?.has(PermissionFlagsBits.ManageGuild)
     || memberPermissions?.has(PermissionFlagsBits.ManageMessages)
   );
+  const voiceChannel = message.member?.voice?.channel;
   return {
     userId: message.author.id,
     userName: message.member?.displayName || message.author.globalName || message.author.username,
@@ -48,6 +50,8 @@ function buildPayload(message: Message) {
     serverId: message.guildId,
     channelId: message.channelId,
     channelName: 'name' in message.channel ? message.channel.name : '',
+    voiceChannelId: voiceChannel?.id || '',
+    voiceChannelName: voiceChannel?.name || '',
     messageId: message.id,
     message: message.content,
     content: message.content,
@@ -91,6 +95,26 @@ async function forwardMessage(message: Message) {
   } finally { clearTimeout(timeout); }
 }
 
+async function publishVoicePresence(state: VoiceState) {
+  if (!state.guild || !state.id || state.member?.user?.bot) return;
+  if (!DISCORD_BOT_TOKEN) throw new Error('DISCORD_BOT_TOKEN is required');
+  const response = await fetch(`${DSH_INGRESS_URL}/api/discord/relay-presence`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-discord-bot-token': DISCORD_BOT_TOKEN },
+    body: JSON.stringify({
+      userId: state.id,
+      guildId: state.guild.id,
+      username: state.member?.user?.username || '',
+      displayName: state.member?.displayName || state.member?.user?.globalName || state.member?.user?.username || '',
+      channelId: state.channelId || '',
+      channelName: state.channel?.name || '',
+      observedAt: new Date().toISOString(),
+    }),
+    signal: AbortSignal.timeout(8_000),
+  });
+  if (!response.ok) throw new Error(`Relay presence ${response.status}: ${await response.text().catch(() => '')}`);
+}
+
 async function handleMtFixItDecision(interaction: any) {
   if (!interaction?.isButton?.()) return false;
   const match = String(interaction.customId || '').match(MTFIXIT_DECISION);
@@ -123,7 +147,7 @@ async function handleMtFixItDecision(interaction: any) {
 async function main() {
   if (!DISCORD_BOT_TOKEN) throw new Error('DISCORD_BOT_TOKEN is required');
   const client = new Client({
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.DirectMessages, GatewayIntentBits.MessageContent],
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.DirectMessages, GatewayIntentBits.GuildVoiceStates, GatewayIntentBits.MessageContent],
     partials: [Partials.Channel, Partials.Message],
   });
   client.once('clientReady', (readyClient) => {
@@ -131,6 +155,11 @@ async function main() {
     console.log(`[DiscordIngress] READY as ${readyClient.user.tag}`);
     console.log(`[DiscordIngress] Presence: ${PRESENCE_TEXT}`);
     console.log(`[DiscordIngress] DSH endpoint: ${DSH_INGRESS_URL}/api/discord/gateway-ingress`);
+    for (const guild of readyClient.guilds.cache.values()) {
+      for (const state of guild.voiceStates.cache.values()) {
+        if (state.channelId) publishVoicePresence(state).catch((error) => console.warn(`[DiscordIngress] Voice presence seed failed ${guild.id}/${state.id}:`, error));
+      }
+    }
     void resumePendingMtFixItDeliveries('discord', async (record, outcome) => {
       await sendDiscordMtFixItMessage(record.channelId, mtFixItPublicReply(outcome));
     }).then((count) => {
@@ -138,6 +167,9 @@ async function main() {
     }).catch((error) => console.error('[DiscordIngress] Failed to resume MtFixIt deliveries:', error));
   });
   client.on('messageCreate', (message) => { forwardMessage(message).catch((error) => console.error(`[DiscordIngress] Failed ${message.id}:`, error)); });
+  client.on('voiceStateUpdate', (_oldState, newState) => {
+    publishVoicePresence(newState).catch((error) => console.warn(`[DiscordIngress] Voice presence update failed ${newState.guild.id}/${newState.id}:`, error));
+  });
   client.on('interactionCreate', (interaction) => {
     handleMtFixItDecision(interaction).catch(async (error) => {
       console.error('[DiscordIngress] MtFixIt interaction failed:', error);
