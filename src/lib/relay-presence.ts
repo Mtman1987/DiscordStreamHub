@@ -31,6 +31,10 @@ function clean(value: unknown, max = 200): string {
   return String(value || '').trim().slice(0, max);
 }
 
+function normalizedName(value: unknown): string {
+  return clean(value, 120).replace(/^@/, '').toLowerCase();
+}
+
 function timestamp(value?: unknown): string {
   const raw = clean(value, 80);
   if (raw && Number.isFinite(Date.parse(raw))) return new Date(raw).toISOString();
@@ -46,6 +50,24 @@ function readRow(guildId: string, userId: string): RelayPresenceRow | null {
   return existing.exists && existing.data && typeof existing.data === 'object'
     ? existing.data as RelayPresenceRow
     : null;
+}
+
+function snapshot(row: RelayPresenceRow | undefined, nowMs: number): RelayPresenceSnapshot | null {
+  if (!row) return null;
+  const voiceAge = row.voiceObservedAt ? nowMs - Date.parse(row.voiceObservedAt) : Number.POSITIVE_INFINITY;
+  const chatAge = row.lastChatAt ? nowMs - Date.parse(row.lastChatAt) : Number.POSITIVE_INFINITY;
+  const inVoice = Boolean(row.voiceChannelId && voiceAge >= 0 && voiceAge <= RELAY_VOICE_FRESH_MS);
+  const recentlyChatting = Boolean(row.lastChatChannelId && chatAge >= 0 && chatAge <= RELAY_CHAT_FRESH_MS);
+  const preferredKind = inVoice ? 'voice' : recentlyChatting ? 'chat' : null;
+  return {
+    ...row,
+    found: true,
+    inVoice,
+    recentlyChatting,
+    preferredKind,
+    preferredChannelId: inVoice ? row.voiceChannelId || null : recentlyChatting ? row.lastChatChannelId || null : null,
+    preferredChannelName: inVoice ? row.voiceChannelName || null : recentlyChatting ? row.lastChatChannelName || null : null,
+  };
 }
 
 export function recordRelayChatActivity(input: {
@@ -120,23 +142,21 @@ export function getRelayPresence(userIdInput: string, guildIdInput?: string, now
   const userId = clean(userIdInput, 80);
   const guildId = clean(guildIdInput, 80);
   if (!userId) return null;
-  const rows = sqliteService.getCollection(COLLECTION).docs
-    .filter((row: any) => String(row.userId || '') === userId && (!guildId || String(row.guildId || '') === guildId))
-    .sort((a: any, b: any) => Date.parse(String(b.updatedAt || 0)) - Date.parse(String(a.updatedAt || 0)));
-  const row = rows[0] as RelayPresenceRow | undefined;
-  if (!row) return null;
-  const voiceAge = row.voiceObservedAt ? nowMs - Date.parse(row.voiceObservedAt) : Number.POSITIVE_INFINITY;
-  const chatAge = row.lastChatAt ? nowMs - Date.parse(row.lastChatAt) : Number.POSITIVE_INFINITY;
-  const inVoice = Boolean(row.voiceChannelId && voiceAge >= 0 && voiceAge <= RELAY_VOICE_FRESH_MS);
-  const recentlyChatting = Boolean(row.lastChatChannelId && chatAge >= 0 && chatAge <= RELAY_CHAT_FRESH_MS);
-  const preferredKind = inVoice ? 'voice' : recentlyChatting ? 'chat' : null;
-  return {
-    ...row,
-    found: true,
-    inVoice,
-    recentlyChatting,
-    preferredKind,
-    preferredChannelId: inVoice ? row.voiceChannelId || null : recentlyChatting ? row.lastChatChannelId || null : null,
-    preferredChannelName: inVoice ? row.voiceChannelName || null : recentlyChatting ? row.lastChatChannelName || null : null,
-  };
+  const row = sqliteService.getCollection(COLLECTION).docs
+    .filter((entry: any) => String(entry.userId || '') === userId && (!guildId || String(entry.guildId || '') === guildId))
+    .sort((a: any, b: any) => Date.parse(String(b.updatedAt || 0)) - Date.parse(String(a.updatedAt || 0)))[0] as RelayPresenceRow | undefined;
+  return snapshot(row, nowMs);
+}
+
+export function getRelayPresenceByName(nameInput: string, guildIdInput?: string, nowMs = Date.now()): RelayPresenceSnapshot | null {
+  const name = normalizedName(nameInput);
+  const guildId = clean(guildIdInput, 80);
+  if (!name) return null;
+  const row = sqliteService.getCollection(COLLECTION).docs
+    .filter((entry: any) => {
+      if (guildId && String(entry.guildId || '') !== guildId) return false;
+      return normalizedName(entry.username) === name || normalizedName(entry.displayName) === name;
+    })
+    .sort((a: any, b: any) => Date.parse(String(b.updatedAt || 0)) - Date.parse(String(a.updatedAt || 0)))[0] as RelayPresenceRow | undefined;
+  return snapshot(row, nowMs);
 }
