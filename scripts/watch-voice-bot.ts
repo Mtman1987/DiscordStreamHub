@@ -275,18 +275,7 @@ async function handleApplicationDm(message: Message) {
     return true;
   }
 
-  const question = message.content.toLowerCase();
-  let answer = '';
-  if (/pay|paid|money|hour|time commitment/.test(question)) answer = 'SPMT participation is generally flexible and unpaid unless the Owner approves a separate written arrangement; give only time you can reliably commit.';
-  else if (/perk|benefit|get/.test(question)) answer = 'Perks depend on the role and may include coordination access, ecosystem resources, recognition, and approved cross-community or SDK opportunities.';
-  else if (/responsib|expect|dutie/.test(question)) answer = 'Use least privilege, protect private information, document decisions, follow published rules, escalate safely, and represent SPMT honestly.';
-  else if (/vote|approval|how long|when/.test(question)) answer = 'Crew votes are advisory. The Owner makes the final decision; timing depends on review availability and whether follow-up information is needed.';
-  else if (/agreement|sign|oauth|authoriz/.test(question)) answer = 'After approval, SPMT OAuth verifies your linked identity. You must then separately review and click “Accept Community Terms”; OAuth alone is not acceptance.';
-  else if (/apply|form|modal/.test(question)) answer = 'Type `!apply mod`, `!apply partner`, or `!apply dev`. Discord will return a button that securely opens the application form.';
-  if (answer) {
-    await message.reply(`${answer}\n\nFor a role-specific policy decision, ask Mt or the Co-Owner. ${SPMT_DOCS_URL}`);
-    return true;
-  }
+  // Normal DMs are conversation/ticket traffic, not implicit help queries.
   return false;
 }
 
