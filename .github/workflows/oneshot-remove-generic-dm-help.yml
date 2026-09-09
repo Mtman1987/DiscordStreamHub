@@ -1,0 +1,45 @@
+name: One-shot remove generic DM help
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/oneshot-remove-generic-dm-help.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Remove free-text DM policy helper
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('scripts/watch-voice-bot.ts')
+          text = path.read_text(encoding='utf-8')
+          start = text.index("  const question = message.content.toLowerCase();")
+          end_marker = "  return false;\n}\n\nfunction canModerate"
+          end = text.index(end_marker, start)
+          replacement = "  // Normal DMs are conversation/ticket traffic, not implicit help queries.\n  return false;\n}\n\nfunction canModerate"
+          text = text[:start] + replacement + text[end + len(end_marker):]
+          path.write_text(text, encoding='utf-8')
+
+          updated = path.read_text(encoding='utf-8')
+          assert 'Perks depend on the role and may include coordination access' not in updated
+          assert 'const question = message.content.toLowerCase();' not in updated
+          assert 'const applyMatch = message.content.trim().match' in updated
+
+      - name: Commit DM routing fix
+        run: |
+          git config user.name "spmt-fix-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add scripts/watch-voice-bot.ts
+          git commit -m "fix: remove generic DM help interception"
+          git push origin HEAD:main
