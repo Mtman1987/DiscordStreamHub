@@ -57,9 +57,16 @@ export async function setSignalSeekerMembership(input: {
   action: 'join' | 'leave' | 'toggle';
 }): Promise<{ roleId: string; status: 'joined' | 'left' }> {
   const roleId = await ensureSignalSeekerRole(input.guildId);
-  const member = await discord(`/guilds/${input.guildId}/members/${input.discordUserId}`);
+  const [member, roles] = await Promise.all([
+    discord(`/guilds/${input.guildId}/members/${input.discordUserId}`),
+    discord(`/guilds/${input.guildId}/roles`),
+  ]);
+  const titleConfig = await db.collection('servers').doc(input.guildId).collection('config').doc('voidwalker').get();
+  const winnerRole = (Array.isArray(roles) ? roles : []).find((role: any) =>
+    String(role.id) === String(titleConfig.data()?.roleId || '') || String(role.name).toLowerCase() === 'voidwalker');
+  const isWinner = winnerRole && Array.isArray(member?.roles) && member.roles.map(String).includes(String(winnerRole.id));
   const hasRole = Array.isArray(member?.roles) && member.roles.map(String).includes(roleId);
-  const shouldJoin = input.action === 'join' || (input.action === 'toggle' && !hasRole);
+  const shouldJoin = !isWinner && (input.action === 'join' || (input.action === 'toggle' && !hasRole));
   await discord(`/guilds/${input.guildId}/members/${input.discordUserId}/roles/${roleId}`, {
     method: shouldJoin ? 'PUT' : 'DELETE',
   });

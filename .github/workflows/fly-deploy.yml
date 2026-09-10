@@ -95,6 +95,7 @@ jobs:
           node --import tsx --test tests/settings-integrity.test.ts
           npm run test:banners
           npm run test:nebula-gameplay
+          npm run test:voidwalker
           npm run typecheck
           DSH_BUILD_DB=1 npm run build
       - name: Deploy web app

@@ -23,7 +23,8 @@
     "test:contracts": "node --import tsx --test tests/tenant-contracts.test.ts tests/spmt-onboarding-contract.test.ts tests/signal-carrier-roster.test.ts tests/linking-channel-recovery.test.ts",
     "test:banners": "node --experimental-strip-types --test tests/banner-role-contract.test.ts",
     "test:nebula-gameplay": "node --import tsx --test tests/nebula-gameplay-rotation.test.ts",
-    "test:applications": "node --experimental-strip-types --test tests/application-flow.test.ts"
+    "test:applications": "node --experimental-strip-types --test tests/application-flow.test.ts",
+    "test:voidwalker": "node --import tsx --test tests/voidwalker-role.test.ts"
   },
   "dependencies": {
     "@cfworker/json-schema": "^4.1.1",

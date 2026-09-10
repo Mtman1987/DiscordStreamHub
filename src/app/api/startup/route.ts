@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { cleanupOrphanedDiscordEmbeds } from '@/lib/discord-orphan-cleanup-service';
 import { startTwitchPolling } from '@/lib/twitch-polling-service';
 import { getHardcodedGuildId } from '@/lib/runtime-config';
+import { startVoidwalkerRewardWorker, voidwalkerRewardWorkerStatus } from '@/lib/voidwalker-reward-worker';
 
 const HARDCODED_SERVER_ID = getHardcodedGuildId();
 let startupWorkQueued = false;
@@ -51,7 +52,8 @@ export async function POST(request: NextRequest) {
 export async function GET() {
   return NextResponse.json({
     message: 'Startup endpoint ready',
-    startupServicesDisabled: startupServicesDisabled()
+    startupServicesDisabled: startupServicesDisabled(),
+    voidwalkerRewards: voidwalkerRewardWorkerStatus()
   });
 }
 
@@ -68,6 +70,7 @@ function runStartupCleanup(): void {
 }
 
 function queueStartupWork(): void {
+  startVoidwalkerRewardWorker();
   setTimeout(() => {
     // Start the configured guild directly. The DB flag can be false after manual
     // stops or stale state, but this app should always resume shoutouts on boot.
