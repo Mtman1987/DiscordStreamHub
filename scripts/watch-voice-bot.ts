@@ -185,8 +185,10 @@ async function notifyForwardingMessageDeleted(message: Message | PartialMessage)
   }
 }
 
-function sessionIdFor(guildId: string, channelId: string) {
-  return `${guildId || 'local'}-${channelId || 'watch'}`.replace(/[^a-zA-Z0-9_-]/g, '-');
+function sessionIdFor(_guildId: string, _channelId: string) {
+  // Discord is another entrance to the one shared movie session. A guild/channel
+  // ID creates a private session and incorrectly sends bot requests to web login.
+  return 'discord-watch-room';
 }
 
 async function createActivityInvite(voiceChannelId: string) {

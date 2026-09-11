@@ -1,10 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { DSH_SPMT_COOKIE, resolveSpmtSession } from '@/lib/spmt-session';
+import { db } from '@/lib/db';
+import { getHardcodedAdminDiscordId } from '@/lib/runtime-config';
+import { getServiceToServiceSecrets, hasAuthorizedBearerToken } from '@/lib/runtime-secrets';
+import { getDiscordMemberAccess } from '@/lib/discord-member-access';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
-  const token = request.cookies.get(DSH_SPMT_COOKIE)?.value || '';
+  const authorization = request.headers.get('authorization');
+  const body = await request.json().catch(() => ({} as Record<string, unknown>));
+  const requestedUserId = String(body.userId || body.discordUserId || '').trim();
+  const requestedServerId = String(body.serverId || body.guildId || '').trim();
+
+  // StreamWeaver already carries our shared service credential. Resolve the
+  // Discord actor from DSH's records instead of requiring a human browser cookie.
+  if (hasAuthorizedBearerToken(authorization, getServiceToServiceSecrets())) {
+    if (!/^\d{17,20}$/.test(requestedUserId) || !/^\d{17,20}$/.test(requestedServerId)) {
+      return NextResponse.json({ error: 'Discord userId and serverId are required' }, { status: 400 });
+    }
+    const access = getDiscordMemberAccess({
+      userId: requestedUserId,
+      ownerDiscordId: getHardcodedAdminDiscordId(),
+      server: db.get('servers', requestedServerId) || {},
+      member: db.get(`servers/${requestedServerId}/users`, requestedUserId) || {},
+    });
+    return NextResponse.json({ success: true, serverId: requestedServerId, userId: requestedUserId, ...access });
+  }
+
+  const token = request.cookies.get(DSH_SPMT_COOKIE)?.value || authorization?.match(/^Bearer\s+(.+)$/i)?.[1]?.trim() || '';
   if (!token) return NextResponse.json({ error: 'SPMT session required' }, { status: 401 });
 
   try {
@@ -13,8 +37,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'SPMT administrator access required' }, { status: 403 });
     }
 
-    const body = await request.json().catch(() => ({} as Record<string, unknown>));
-    const requestedUserId = String(body.userId || body.discordUserId || '').trim();
     const sessionUserId = String(resolved.session.discordUserId || '').trim();
     if (requestedUserId && sessionUserId && requestedUserId !== sessionUserId) {
       return NextResponse.json({ error: 'Cannot query administrator access for another user' }, { status: 403 });
