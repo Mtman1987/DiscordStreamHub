@@ -19,6 +19,8 @@ import {
 } from '@/lib/spmt-onboarding-service';
 import { SPMT_ONBOARDING_CUSTOM_ID } from '@/lib/spmt-onboarding-contract';
 import { setSignalSeekerMembership } from '@/lib/signal-seeker-service';
+import { signalHuntClue, signalDropExpired } from '@/lib/signal-hunt';
+import { expireSignalDrop } from '@/lib/signal-drop-cleanup';
 import {
   APPLICATION_DEFINITIONS,
   APPLICATION_FLOW_VERSION,
@@ -409,7 +411,7 @@ export async function POST(request: NextRequest) {
         try {
           const membership = await setSignalSeekerMembership({ guildId, discordUserId, action });
           return ephemeral(membership.status === 'joined'
-            ? '🥚 **You are now a Signal Seeker.** I will ping the role when a new Signal appears. Use `!signal` anytime to open these controls again.'
+            ? '🥚 **You are now a Signal Seeker.** Signal alerts arrive in Nebula Arcade. Set that channel to Only @mentions to receive your role alerts. Each Signal stays for one hour; intercept it again for clues. Use `!signal` anytime to open these controls again.'
             : 'You left the Signal Seekers. Use `!signal` anytime if you want to rejoin the hunt.');
         } catch (error) {
           console.error('[SignalSeekers] Role update failed:', error);
@@ -418,54 +420,68 @@ export async function POST(request: NextRequest) {
       }
 
       if (customId.startsWith('signal_intercept:')) {
-        const dropId = customId.slice('signal_intercept:'.length);
-        const actor = body.member?.user || body.user || {};
-        const discordUserId = String(actor.id || '').trim();
-        const dropRef = db.collection('signalDrops').doc(dropId);
-        const dropDoc = await dropRef.get();
-        const drop = dropDoc.data() || {};
-        if (!discordUserId || !dropDoc.exists || String(drop.guildId || '') !== String(body.guild_id || '')) {
-          return ephemeral('⚠️ That Signal carrier is no longer valid.');
-        }
-        const expiresAt = Date.parse(String(drop.expiresAt || ''));
-        if (Number.isFinite(expiresAt) && Date.now() >= expiresAt) {
-          await deleteDiscordMessage(String(drop.channelId || body.channel_id || ''), String(drop.messageId || body.message?.id || ''));
-          return ephemeral('📡 That Signal faded after 10 minutes. Wait for the next transmission.');
-        }
-        const identity = await grandfatherDiscordIdentity({
-          discordId: discordUserId,
-          discordUsername: String(actor.username || discordUserId),
-          displayName: String(body.member?.nick || actor.global_name || actor.username || discordUserId),
-          avatarUrl: discordAvatarUrl(actor),
-          issueSession: false,
-        });
-        if (!identity?.user?.id) return ephemeral('⚠️ SPMT could not secure this Signal. Try intercepting it again.');
-        const claim = await claimDiscordSignalEgg({
-          discordUserId,
-          guildId: String(body.guild_id || ''),
-          channelId: String(body.channel_id || drop.channelId || ''),
-          messageId: String(body.message?.id || drop.messageId || ''),
-        });
-        await dropRef.set({
-          claims: Number(drop.claims || 0) + (claim.claimed ? 1 : 0),
-          lastClaimedAt: new Date().toISOString(),
-          lastClaimedDiscordUserId: discordUserId,
-        }, { merge: true });
-        const ownerId = String(process.env.STREAMWEAVER_OWNER_DISCORD_ID || '767875979561009173').trim();
-        const botToken = String(process.env.DISCORD_BOT_TOKEN || '').trim();
-        if (ownerId && botToken) {
-          const dm = await fetch('https://discord.com/api/v10/users/@me/channels', {
-            method: 'POST', headers: { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ recipient_id: ownerId }),
-          }).then((response) => response.ok ? response.json() : null).catch(() => null);
-          if (dm?.id) await fetch(`https://discord.com/api/v10/channels/${dm.id}/messages`, {
-            method: 'POST', headers: { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ content: `👁️ Signal intercepted\nUser: ${actor.global_name || actor.username || discordUserId} (${discordUserId})\nChannel: <#${drop.channelId}>\nResult: ${claim.alreadyClaimed ? 'already owned' : 'Signal Egg acquired'}` }),
-          }).catch(() => null);
-        }
-        return ephemeral(claim.alreadyClaimed
-          ? '📡 **SIGNAL LOCKED** — this egg is already secured to your SPMT identity.'
-          : '🥚 **SIGNAL EGG ACQUIRED** — secured to your SPMT identity through Discord. No app sign-in required. Your reward is `!signal <message>`: on Twitch it sends your message plus your live shoutout to Space Mountain Discord; in Discord it sends your styled Signal message.');
+        const intercept = async (): Promise<string> => {
+          const dropId = customId.slice('signal_intercept:'.length);
+          const actor = body.member?.user || body.user || {};
+          const discordUserId = String(actor.id || '').trim();
+          const dropRef = db.collection('signalDrops').doc(dropId);
+          const dropDoc = await dropRef.get();
+          const drop = dropDoc.data() || {};
+          if (!discordUserId || !dropDoc.exists || String(drop.guildId || '') !== String(body.guild_id || '')) {
+            return '⚠️ That Signal carrier is no longer valid.';
+          }
+          if (signalDropExpired(drop.expiresAt)) {
+            void expireSignalDrop(dropId).catch((error) => console.warn('[SignalDrop] Expiry retry needed:', error));
+            return '📡 That Signal has expired. Watch Nebula Arcade for the next one-hour hunt window.';
+          }
+          const identity = await grandfatherDiscordIdentity({
+            discordId: discordUserId,
+            discordUsername: String(actor.username || discordUserId),
+            displayName: String(body.member?.nick || actor.global_name || actor.username || discordUserId),
+            avatarUrl: discordAvatarUrl(actor),
+            issueSession: false,
+          });
+          if (!identity?.user?.id) return '⚠️ SPMT could not secure this Signal. Try intercepting it again.';
+          const claim = await claimDiscordSignalEgg({
+            discordUserId,
+            guildId: String(body.guild_id || ''),
+            channelId: String(body.channel_id || drop.channelId || ''),
+            messageId: String(body.message?.id || drop.messageId || ''),
+          });
+          await dropRef.set({
+            claims: Number(drop.claims || 0) + (claim.claimed ? 1 : 0),
+            lastClaimedAt: new Date().toISOString(),
+            lastClaimedDiscordUserId: discordUserId,
+          }, { merge: true });
+          const hintRef = db.collection('signalHuntHints').doc(`${body.guild_id}:${discordUserId}`);
+          const hintDoc = await hintRef.get();
+          const clicks = Math.max(0, Number(hintDoc.data()?.clicks || 0));
+          const clue = signalHuntClue(clicks);
+          await hintRef.set({ clicks: clicks + 1, lastDropId: dropId, updatedAt: new Date().toISOString() }, { merge: true });
+          const ownerId = String(process.env.STREAMWEAVER_OWNER_DISCORD_ID || '767875979561009173').trim();
+          const botToken = String(process.env.DISCORD_BOT_TOKEN || '').trim();
+          if (ownerId && botToken) void (async () => {
+            const dm = await fetch('https://discord.com/api/v10/users/@me/channels', {
+              method: 'POST', headers: { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ recipient_id: ownerId }),
+            }).then((response) => response.ok ? response.json() : null).catch(() => null);
+            if (dm?.id) await fetch(`https://discord.com/api/v10/channels/${dm.id}/messages`, {
+              method: 'POST', headers: { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ content: `👁️ Signal intercepted\nUser: ${actor.global_name || actor.username || discordUserId} (${discordUserId})\nChannel: <#${drop.channelId}>\nResult: ${claim.alreadyClaimed ? 'already owned' : 'Signal Egg acquired'}` }),
+            }).catch(() => null);
+          })().catch((error) => console.warn('[SignalIntercept] Owner receipt failed:', error));
+          const result = claim.alreadyClaimed
+            ? '📡 **SIGNAL LOCKED** — this egg is already secured to your SPMT identity.'
+            : '🥚 **SIGNAL EGG ACQUIRED** — secured to your SPMT identity through Discord. No app sign-in required. Your reward is `!signal <message>`: on Twitch it sends your message plus your live shoutout to Space Mountain Discord; in Discord it sends your styled Signal message.';
+          return `${result}\n\n**HUNT CLUE**\n${clue}\n\nIntercept again for another clue. This Signal ends <t:${Math.floor(Date.parse(drop.expiresAt) / 1000)}:R>.`;
+        };
+        void intercept()
+          .then((content) => updateDeferredInteraction(body.application_id || getDiscordClientId(), body.token, content))
+          .catch((error) => {
+            console.error('[SignalIntercept] Failed:', error);
+            return updateDeferredInteraction(body.application_id || getDiscordClientId(), body.token, '⚠️ The receiver could not finish. Your existing discoveries are safe; please intercept again.');
+          });
+        return NextResponse.json({ type: 5, data: { flags: 64 } });
       }
 
       if (customId.startsWith('sw_pokemon_trade_')) {
