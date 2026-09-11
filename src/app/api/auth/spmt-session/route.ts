@@ -13,7 +13,7 @@ const SPMT_REQUEST_TIMEOUT_MS = 5000;
 const cookieOptions = {
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',
-  sameSite: 'lax' as const,
+  sameSite: (process.env.NODE_ENV === 'production' ? 'none' : 'lax') as 'none' | 'lax',
   path: '/',
   maxAge: 60 * 60 * 24 * 30,
 };
