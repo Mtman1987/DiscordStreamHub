@@ -11,9 +11,31 @@ permissions:
   pull-requests: read
 
 jobs:
+  changes:
+    name: Select affected services
+    runs-on: ubuntu-latest
+    outputs:
+      web: ${{ steps.scope.outputs.web }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 2
+      - id: scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          if [ "$EVENT_NAME" != push ] || ! git cat-file -e "$BEFORE_SHA^{commit}" 2>/dev/null; then
+            echo 'web=true' >> "$GITHUB_OUTPUT"
+          elif git diff --name-only "$BEFORE_SHA" "$GITHUB_SHA" | grep -Ev '^(clip-worker/|tests/clip-worker-gif-budget.test.cjs$|\.github/workflows/fly-deploy.yml$)'; then
+            echo 'web=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'web=false' >> "$GITHUB_OUTPUT"
+          fi
   branch-housekeeping:
     name: Retain newest merged branch backup
-    if: github.event_name != 'pull_request'
+    needs: changes
+    if: github.event_name != 'pull_request' && needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Delete older branches already contained in main
@@ -55,7 +77,8 @@ jobs:
               }
             }
   deploy-web:
-    needs: branch-housekeeping
+    needs: [branch-housekeeping, changes]
+    if: needs.changes.outputs.web == 'true'
     name: Deploy discord-stream-hub-new
     runs-on: ubuntu-latest
     concurrency: fly-deploy-discord-stream-hub
@@ -102,7 +125,7 @@ jobs:
         run: flyctl deploy --remote-only --config fly.toml --access-token "$FLY_API_TOKEN"
 
   deploy-clip-worker:
-    needs: branch-housekeeping
+    needs: changes
     name: Deploy dsh-clip-worker
     runs-on: ubuntu-latest
     concurrency: fly-deploy-dsh-clip-worker
@@ -117,6 +140,11 @@ jobs:
             echo "FLY_API_TOKEN is not set"
             exit 1
           fi
+      - name: Validate clip upload limits
+        run: |
+          node --test tests/clip-worker-gif-budget.test.cjs
+          node --check clip-worker/worker.js
       - name: Deploy clip worker
+        # Worker-only patches do not rebuild the web app or resize its volume.
         working-directory: clip-worker
         run: flyctl deploy --remote-only --config fly.toml --access-token "$FLY_API_TOKEN"

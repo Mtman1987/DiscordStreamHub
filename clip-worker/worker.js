@@ -22,6 +22,7 @@ const { existsSync, mkdirSync } = fsSync;
 const os = require('os');
 const path = require('path');
 const http = require('http');
+const { prepareGifForUpload } = require('./gif-upload-budget.js');
 
 const execAsync = promisify(exec);
 
@@ -296,6 +297,7 @@ async function renderBannerGifFromHtml(html, bannerName) {
 }
 
 async function pushBannerToDSH(gifBuffer, bannerName, variant) {
+  gifBuffer = await prepareGifForUpload(gifBuffer);
   const form = new FormData();
   form.append('gif', new Blob([gifBuffer], { type: 'image/gif' }), `${bannerName}.gif`);
   form.append('bannerName', bannerName);
@@ -571,6 +573,7 @@ async function recordLiveStream(twitchLogin) {
 
 // ── Push GIF to DSH ──
 async function pushGifToDSH(gifBuffer, streamerName) {
+  gifBuffer = await prepareGifForUpload(gifBuffer);
   const form = new FormData();
   form.append('gif', new Blob([gifBuffer], { type: 'image/gif' }), `${Date.now()}.gif`);
   form.append('streamer', streamerName);
@@ -593,6 +596,7 @@ async function pushGifToDSH(gifBuffer, streamerName) {
 
 // ── Nebula Arcade gameplay capture ──
 async function uploadNebulaGameplay(gifBuffer, game) {
+  gifBuffer = await prepareGifForUpload(gifBuffer);
   const form = new FormData();
   form.append('gif', new Blob([gifBuffer], { type: 'image/gif' }), `${game.id}.gif`);
   form.append('nebulaGameId', game.id);
@@ -823,7 +827,11 @@ async function runCycle() {
     console.log(`[ClipWorker] ${needed.length} streamers need clips`);
 
     for (const streamer of needed) {
-      await processStreamer(streamer);
+      try {
+        await processStreamer(streamer);
+      } catch (error) {
+        console.error(`[ClipWorker] Streamer processing failed for ${streamer.twitchLogin}:`, error.message || error);
+      }
     }
 
     console.log(`[ClipWorker] ── Cycle complete ──`);

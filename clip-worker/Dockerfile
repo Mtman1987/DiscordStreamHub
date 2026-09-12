@@ -19,6 +19,7 @@ WORKDIR /app
 RUN npm install puppeteer-core
 
 COPY worker.js .
+COPY gif-upload-budget.js .
 COPY card-pack-render-worker.js .
 
 ENV NODE_ENV=production
