@@ -49,6 +49,11 @@ export async function GET() {
       spotlight: spotlightData && spotlightUser ? {
         userId: spotlightUser.id,
         twitchLogin: spotlightUser.twitchLogin,
+        gifUrl: spotlightData.gifUrl || spotlightData.cardGifUrl || null,
+        avatarUrl: spotlightData.avatarUrl || spotlightUser.avatarUrl || null,
+        streamTitle: spotlightData.streamTitle || null,
+        gameTitle: spotlightData.gameTitle || null,
+        viewerCount: spotlightData.viewerCount ?? null,
         group: spotlightUser.group || spotlightData.group || null,
         currentIndex: spotlightData.currentIndex ?? null,
         updatedAt: spotlightData.updatedAt || spotlightData.lastUpdatedAt || null,
