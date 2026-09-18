@@ -327,3 +327,20 @@
   animation-duration: 460s;
   animation-delay: -2s;
 }
+
+
+/* Headless browser-source routes must never inherit the normal app chrome. */
+body.headless-document {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  overflow: hidden !important;
+}
+body.headless-document::before,
+body.headless-document::after,
+body.headless-document > .star-field,
+body.headless-document > .star-field-2,
+body.headless-document > .star-field-3 {
+  display: none !important;
+  background: none !important;
+}
