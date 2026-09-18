@@ -43,13 +43,16 @@ export async function GET() {
       serverId: SERVER_ID,
       count: users.length,
       users,
-      spotlight: spotlightData ? {
-        userId: spotlightData.userId || spotlightUser?.id || null,
-        twitchLogin: spotlightData.twitchLogin || spotlightUser?.twitchLogin || null,
-        group: spotlightUser?.group || spotlightData.group || null,
+      // Never expose a stale/offline spotlight record to the browser-source
+      // player. A full-screen Twitch embed for an offline channel paints an
+      // opaque black surface over the rest of the Community Lounge.
+      spotlight: spotlightData && spotlightUser ? {
+        userId: spotlightUser.id,
+        twitchLogin: spotlightUser.twitchLogin,
+        group: spotlightUser.group || spotlightData.group || null,
         currentIndex: spotlightData.currentIndex ?? null,
         updatedAt: spotlightData.updatedAt || spotlightData.lastUpdatedAt || null,
-        user: spotlightUser || null,
+        user: spotlightUser,
       } : null,
     }, {
       headers: {
