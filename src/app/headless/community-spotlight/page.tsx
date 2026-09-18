@@ -19,6 +19,15 @@ declare global {
 
 const TWITCH_SDK = 'https://player.twitch.tv/js/embed/v1.js';
 
+function HeadlessChromeReset() {
+  return (
+    <style>{`
+      html, body { background: transparent !important; }
+      .star-field, .star-field-2, .star-field-3 { display: none !important; }
+    `}</style>
+  );
+}
+
 function uniqueParents(values: string[]) {
   return [...new Set(values.map((value) => value.trim().toLowerCase()).filter(Boolean))];
 }
@@ -115,11 +124,21 @@ export default function CommunitySpotlightHeadlessPage() {
     };
   }, [login, parents, sdkReady, volume]);
 
-  if (!login) return <main className="h-screen w-screen bg-transparent" aria-hidden="true" />;
+  if (!login) {
+    return (
+      <>
+        <HeadlessChromeReset />
+        <main className="h-screen w-screen bg-transparent" aria-hidden="true" />
+      </>
+    );
+  }
 
   return (
-    <main className="h-screen w-screen overflow-hidden bg-black">
-      <div ref={mountRef} className="h-full w-full" data-community-spotlight={login} />
-    </main>
+    <>
+      <HeadlessChromeReset />
+      <main className="h-screen w-screen overflow-hidden bg-black">
+        <div ref={mountRef} className="h-full w-full" data-community-spotlight={login} />
+      </main>
+    </>
   );
 }
