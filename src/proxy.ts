@@ -111,7 +111,14 @@ async function handleDiscordMtFixIt(request: NextRequest) {
   }
 }
 
+function headlessResponse(request: NextRequest) {
+  const headers = new Headers(request.headers);
+  headers.set('x-dsh-headless-document', '1');
+  return NextResponse.next({ request: { headers } });
+}
+
 export async function proxy(request: NextRequest) {
+  if (request.nextUrl.pathname.startsWith('/headless/')) return headlessResponse(request);
   const dmMeResponse = await handleDiscordDmMe(request);
   if (dmMeResponse) return dmMeResponse;
 
@@ -129,5 +136,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/api/((?!clips/upload).*)'],
+  matcher: ['/api/((?!clips/upload).*)', '/headless/:path*'],
 };
