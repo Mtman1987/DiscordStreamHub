@@ -43,6 +43,7 @@ export default function CommunitySpotlightHeadlessPage() {
   const [sdkReady, setSdkReady] = useState(Boolean(typeof window !== 'undefined' && window.Twitch?.Player));
   const [volume, setVolume] = useState(0.58);
   const [parents, setParents] = useState<string[]>([]);
+  const [playerVisible, setPlayerVisible] = useState(false);
 
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
@@ -90,6 +91,7 @@ export default function CommunitySpotlightHeadlessPage() {
       playerRef.current?.destroy?.();
     } catch {}
     playerRef.current = null;
+    setPlayerVisible(false);
     if (!sdkReady || !login || !mountRef.current || !window.Twitch?.Player) return;
 
     mountRef.current.replaceChildren();
@@ -105,20 +107,42 @@ export default function CommunitySpotlightHeadlessPage() {
       height: '100%',
       parent: parents,
       autoplay: true,
-      muted: false,
+      // Start muted so browsers are allowed to begin playback without a user
+      // gesture. We attempt to restore program audio only after playback starts.
+      muted: true,
     });
     playerRef.current = player;
     const onReady = () => {
       try {
         player.setVolume(volume);
-        player.setMuted(false);
         player.play();
       } catch {}
     };
+    const onPlaying = () => {
+      setPlayerVisible(true);
+      try {
+        player.setVolume(volume);
+        player.setMuted(false);
+      } catch {}
+    };
+    const onHidden = () => setPlayerVisible(false);
+
     player.addEventListener(window.Twitch.Player.READY, onReady);
+    player.addEventListener(window.Twitch.Player.PLAYING, onPlaying);
+    player.addEventListener(window.Twitch.Player.OFFLINE, onHidden);
+    if (window.Twitch.Player.PLAYBACK_BLOCKED) {
+      player.addEventListener(window.Twitch.Player.PLAYBACK_BLOCKED, onHidden);
+    }
 
     return () => {
       try { player.removeEventListener?.(window.Twitch.Player.READY, onReady); } catch {}
+      try { player.removeEventListener?.(window.Twitch.Player.PLAYING, onPlaying); } catch {}
+      try { player.removeEventListener?.(window.Twitch.Player.OFFLINE, onHidden); } catch {}
+      try {
+        if (window.Twitch.Player.PLAYBACK_BLOCKED) {
+          player.removeEventListener?.(window.Twitch.Player.PLAYBACK_BLOCKED, onHidden);
+        }
+      } catch {}
       try { player.destroy?.(); } catch {}
       if (playerRef.current === player) playerRef.current = null;
     };
@@ -136,8 +160,13 @@ export default function CommunitySpotlightHeadlessPage() {
   return (
     <>
       <HeadlessChromeReset />
-      <main className="h-screen w-screen overflow-hidden bg-black">
-        <div ref={mountRef} className="h-full w-full" data-community-spotlight={login} />
+      <main className="h-screen w-screen overflow-hidden bg-transparent">
+        <div
+          ref={mountRef}
+          className="h-full w-full"
+          data-community-spotlight={login}
+          style={{ opacity: playerVisible ? 1 : 0, transition: 'opacity 180ms ease' }}
+        />
       </main>
     </>
   );
