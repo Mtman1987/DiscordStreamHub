@@ -1,7 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useEffect, useRef, useState } from 'react';
 
 type SpotlightPayload = {
   twitchLogin?: string | null;
@@ -29,17 +28,18 @@ function spotlightLogin(body: CommunitySpotlightResponse) {
 }
 
 export default function CommunitySpotlightHeadlessPage() {
-  const search = useSearchParams();
   const mountRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<any>(null);
   const [login, setLogin] = useState('');
   const [sdkReady, setSdkReady] = useState(Boolean(typeof window !== 'undefined' && window.Twitch?.Player));
+  const [volume, setVolume] = useState(0.58);
+  const [parents, setParents] = useState<string[]>([]);
 
-  const volume = Math.max(0, Math.min(1, Number(search.get('volume') || 0.58)));
-  const parents = useMemo(() => uniqueParents([
-    typeof window !== 'undefined' ? window.location.hostname : '',
-    ...search.getAll('parent'),
-  ]), [search]);
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.search);
+    setVolume(Math.max(0, Math.min(1, Number(query.get('volume') || 0.58))));
+    setParents(uniqueParents([window.location.hostname, ...query.getAll('parent')]));
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
