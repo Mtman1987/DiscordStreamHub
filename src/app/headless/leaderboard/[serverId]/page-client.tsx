@@ -25,6 +25,7 @@ function LeaderboardComponent({ branding, mode = 'image', cycleSeconds = 0, show
   const serverId = params.serverId as string;
   const [leaderboard, setLeaderboard] = useState<FormattedLeaderboardEntry[]>([]);
   const [scheduledVisible, setScheduledVisible] = useState(true);
+  const [imageVersion, setImageVersion] = useState(0);
 
   useEffect(() => {
     if (!cycleSeconds) {
@@ -38,6 +39,13 @@ function LeaderboardComponent({ branding, mode = 'image', cycleSeconds = 0, show
     const timer = window.setInterval(update, 1000);
     return () => window.clearInterval(timer);
   }, [cycleSeconds, showSeconds]);
+
+  useEffect(() => {
+    if (mode !== 'overlay' || !scheduledVisible) return;
+    setImageVersion(Date.now());
+    const timer = window.setInterval(() => setImageVersion(Date.now()), 30 * 60 * 1000);
+    return () => window.clearInterval(timer);
+  }, [mode, scheduledVisible]);
 
   useEffect(() => {
     let cancelled = false;
@@ -58,16 +66,32 @@ function LeaderboardComponent({ branding, mode = 'image', cycleSeconds = 0, show
     };
   }, [serverId]);
 
-  // Browser-source overlays must not paint a full-canvas card while the data
+  if (mode === 'overlay') {
+    if (!scheduledVisible) return <main className="h-screen w-screen bg-transparent" aria-hidden="true" />;
+    return (
+      <main className="h-screen w-screen overflow-hidden bg-transparent">
+        {imageVersion > 0 && (
+          // The PNG is the same renderer used by the Discord embed pipeline.
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={`/api/headless/leaderboard/image/${encodeURIComponent(serverId)}?v=${imageVersion}`}
+            alt="Community leaderboard"
+            className="h-full w-full object-contain"
+          />
+        )}
+      </main>
+    );
+  }
+
+  // Browser-source image mode must not paint a full-canvas card while the data
   // is loading or empty. Keep the scheduled layer transparent until there is
   // real leaderboard content to display.
   if (!scheduledVisible || leaderboard.length === 0) {
     return <main className="h-screen w-screen bg-transparent" aria-hidden="true" />;
   }
 
-  const overlayMode = mode === 'overlay';
   return (
-    <main className={`leaderboard relative overflow-hidden bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 text-white ${overlayMode ? 'h-screen w-screen px-[6vw] py-[4vh]' : 'w-[1200px] px-20 py-10'}`}>
+    <main className="leaderboard relative overflow-hidden bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 text-white w-[1200px] px-20 py-10">
       <div className="stars pointer-events-none absolute inset-0 opacity-50" />
 
       <section className="relative z-10">
