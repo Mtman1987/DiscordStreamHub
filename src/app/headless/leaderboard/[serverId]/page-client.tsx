@@ -71,7 +71,12 @@ function LeaderboardComponent({ branding, mode = 'image', cycleSeconds = 0, show
     }));
   }, [rawLeaderboard, allUsers]);
 
-  if (!scheduledVisible) return <main className="h-screen w-screen bg-transparent" aria-hidden="true" />;
+  // Browser-source overlays must not paint a full-canvas card while the data
+  // is loading or empty. Keep the scheduled layer transparent until there is
+  // real leaderboard content to display.
+  if (!scheduledVisible || leaderboard.length === 0) {
+    return <main className="h-screen w-screen bg-transparent" aria-hidden="true" />;
+  }
 
   const overlayMode = mode === 'overlay';
   return (
