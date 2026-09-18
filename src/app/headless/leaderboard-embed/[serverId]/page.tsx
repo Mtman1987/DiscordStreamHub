@@ -20,11 +20,10 @@ export default function LeaderboardEmbedPage() {
         <img
           src={src}
           alt="Community leaderboard"
-          className="block h-full w-full object-contain"
+          className="block h-full w-full object-fill"
           onError={() => setSrc('')}
         />
       )}
     </main>
   );
 }
-
