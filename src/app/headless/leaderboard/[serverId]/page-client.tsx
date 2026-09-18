@@ -1,10 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { DataComponentsProvider, useCollection, useDataStore } from '@/data';
-import { collection, limit, orderBy, query } from '@/lib/data-shim';
-import type { LeaderboardEntry, UserProfile } from '@/lib/types';
 import type { ServerBranding } from '@/lib/tenant-utils';
 
 const FALLBACK_AVATAR = 'https://spacemountain.live/assets/space-logo-main.png';
@@ -26,7 +23,6 @@ function rankLabel(rank: number): string {
 function LeaderboardComponent({ branding, mode = 'image', cycleSeconds = 0, showSeconds = 20 }: { branding: ServerBranding; mode?: 'image' | 'overlay'; cycleSeconds?: number; showSeconds?: number }) {
   const params = useParams();
   const serverId = params.serverId as string;
-  const store = useDataStore();
   const [leaderboard, setLeaderboard] = useState<FormattedLeaderboardEntry[]>([]);
   const [scheduledVisible, setScheduledVisible] = useState(true);
 
@@ -43,33 +39,24 @@ function LeaderboardComponent({ branding, mode = 'image', cycleSeconds = 0, show
     return () => window.clearInterval(timer);
   }, [cycleSeconds, showSeconds]);
 
-  const leaderboardQuery = useMemo(() => {
-    if (!store || !serverId) return null;
-    return query(collection(store, 'servers', serverId, 'leaderboard'), orderBy('points', 'desc'), limit(10));
-  }, [store, serverId]);
-
-  const { data: rawLeaderboard } = useCollection<LeaderboardEntry>(leaderboardQuery);
-  const { data: allUsers } = useCollection<UserProfile>(collection(store, 'servers', serverId, 'users'));
-
   useEffect(() => {
-    if (!rawLeaderboard || !allUsers) return;
-
-    const usersById = new Map<string, UserProfile>();
-    for (const user of allUsers) {
-      usersById.set(String(user.id), user);
-      if (user.discordUserId) usersById.set(String(user.discordUserId), user);
-    }
-
-    setLeaderboard(rawLeaderboard.map((entry, index) => {
-      const user = usersById.get(String(entry.userProfileId));
-      return {
-        username: user?.username || String(entry.userProfileId),
-        points: Number(entry.points || 0),
-        rank: index + 1,
-        avatarUrl: user?.avatarUrl || FALLBACK_AVATAR,
-      };
-    }));
-  }, [rawLeaderboard, allUsers]);
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const response = await fetch(`/api/headless/leaderboard/${encodeURIComponent(serverId)}`, { cache: 'no-store' });
+        const payload = await response.json();
+        if (!cancelled) setLeaderboard(Array.isArray(payload?.entries) ? payload.entries : []);
+      } catch {
+        if (!cancelled) setLeaderboard([]);
+      }
+    };
+    if (serverId) void load();
+    const timer = window.setInterval(load, 30_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [serverId]);
 
   // Browser-source overlays must not paint a full-canvas card while the data
   // is loading or empty. Keep the scheduled layer transparent until there is
@@ -157,9 +144,5 @@ export default function HeadlessLeaderboardClientPage({
   cycleSeconds?: number;
   showSeconds?: number;
 }) {
-  return (
-    <DataComponentsProvider>
-      <LeaderboardComponent branding={branding} mode={mode} cycleSeconds={cycleSeconds} showSeconds={showSeconds} />
-    </DataComponentsProvider>
-  );
+  return <LeaderboardComponent branding={branding} mode={mode} cycleSeconds={cycleSeconds} showSeconds={showSeconds} />;
 }
