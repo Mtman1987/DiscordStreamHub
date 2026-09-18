@@ -18,16 +18,24 @@ export async function GET(
     ]);
 
     const usersById = new Map<string, Record<string, any>>();
-    for (const doc of usersSnapshot.docs) usersById.set(String(doc.id), doc.data() || {});
+    for (const doc of usersSnapshot.docs) {
+      const user = doc.data() || {};
+      // Leaderboard records can use the app profile ID, Discord ID, or
+      // linked Twitch ID. Index all identities already stored in DSH.
+      const identities = [doc.id, user.id, user.discordUserId, user.twitchId, user.twitchUserId]
+        .filter(Boolean)
+        .map(String);
+      for (const identity of identities) usersById.set(identity, user);
+    }
 
     const entries = leaderboardSnapshot.docs.map((doc: any, index: number) => {
       const entry = doc.data() || {};
       const user = usersById.get(String(entry.userProfileId || doc.id)) || {};
       return {
-        username: user.username || user.displayName || String(entry.userProfileId || doc.id),
+        username: user.twitchDisplayName || user.twitchLogin || user.displayName || user.username || String(entry.userProfileId || doc.id),
         points: Number(entry.points || 0),
         rank: index + 1,
-        avatarUrl: user.avatarUrl || 'https://spacemountain.live/assets/space-logo-main.png',
+        avatarUrl: user.twitchProfileImageUrl || user.avatarUrl || 'https://spacemountain.live/assets/space-logo-main.png',
       };
     });
 
@@ -41,4 +49,3 @@ export async function GET(
 export async function HEAD() {
   return new NextResponse(null, { status: 204 });
 }
-
