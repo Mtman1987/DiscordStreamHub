@@ -8,6 +8,8 @@ import { buildSpmtOnboardingButton } from './spmt-onboarding-contract';
 import { getCommunitySpotlightBannerUrl } from './banner-generation-service';
 import { getAppUrl } from './runtime-config';
 
+const SYSTEM_TWITCH_LOGINS = new Set(['spacemountainlive']);
+
 function isRepostableDiscordEditError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   return /Maximum number of edits to messages older than 1 hour reached|code["']?\s*:\s*30046|30046|404|MESSAGE_NOT_FOUND|Unknown Message/i.test(message);
@@ -275,10 +277,11 @@ async function getLiveCommunityMembers(serverId: string) {
       .collection('shoutoutState').doc('current').get();
     
     const isLive = shoutoutState.exists && shoutoutState.data()?.isLive;
-    if (isLive && data.twitchLogin) {
+    const twitchLogin = String(data.twitchLogin || '').trim().toLowerCase();
+    if (isLive && twitchLogin && !SYSTEM_TWITCH_LOGINS.has(twitchLogin)) {
       members.push({
         discordUserId: doc.id,
-        twitchLogin: data.twitchLogin,
+        twitchLogin,
         group: data.group || 'Community'
       });
     }
