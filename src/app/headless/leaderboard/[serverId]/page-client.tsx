@@ -23,11 +23,25 @@ function rankLabel(rank: number): string {
   return `#${rank}`;
 }
 
-function LeaderboardComponent({ branding }: { branding: ServerBranding }) {
+function LeaderboardComponent({ branding, mode = 'image', cycleSeconds = 0, showSeconds = 20 }: { branding: ServerBranding; mode?: 'image' | 'overlay'; cycleSeconds?: number; showSeconds?: number }) {
   const params = useParams();
   const serverId = params.serverId as string;
   const store = useDataStore();
   const [leaderboard, setLeaderboard] = useState<FormattedLeaderboardEntry[]>([]);
+  const [scheduledVisible, setScheduledVisible] = useState(true);
+
+  useEffect(() => {
+    if (!cycleSeconds) {
+      setScheduledVisible(true);
+      return;
+    }
+    const cycle = Math.max(1, Math.trunc(cycleSeconds));
+    const show = Math.min(cycle, Math.max(1, Math.trunc(showSeconds)));
+    const update = () => setScheduledVisible((Math.floor(Date.now() / 1000) % cycle) < show);
+    update();
+    const timer = window.setInterval(update, 1000);
+    return () => window.clearInterval(timer);
+  }, [cycleSeconds, showSeconds]);
 
   const leaderboardQuery = useMemo(() => {
     if (!store || !serverId) return null;
@@ -57,8 +71,11 @@ function LeaderboardComponent({ branding }: { branding: ServerBranding }) {
     }));
   }, [rawLeaderboard, allUsers]);
 
+  if (!scheduledVisible) return <main className="h-screen w-screen bg-transparent" aria-hidden="true" />;
+
+  const overlayMode = mode === 'overlay';
   return (
-    <main className="leaderboard relative w-[1200px] overflow-hidden bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 px-20 py-10 text-white">
+    <main className={`leaderboard relative overflow-hidden bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 text-white ${overlayMode ? 'h-screen w-screen px-[6vw] py-[4vh]' : 'w-[1200px] px-20 py-10'}`}>
       <div className="stars pointer-events-none absolute inset-0 opacity-50" />
 
       <section className="relative z-10">
@@ -124,10 +141,20 @@ function LeaderboardComponent({ branding }: { branding: ServerBranding }) {
   );
 }
 
-export default function HeadlessLeaderboardClientPage({ branding }: { branding: ServerBranding }) {
+export default function HeadlessLeaderboardClientPage({
+  branding,
+  mode = 'image',
+  cycleSeconds = 0,
+  showSeconds = 20,
+}: {
+  branding: ServerBranding;
+  mode?: 'image' | 'overlay';
+  cycleSeconds?: number;
+  showSeconds?: number;
+}) {
   return (
     <DataComponentsProvider>
-      <LeaderboardComponent branding={branding} />
+      <LeaderboardComponent branding={branding} mode={mode} cycleSeconds={cycleSeconds} showSeconds={showSeconds} />
     </DataComponentsProvider>
   );
 }

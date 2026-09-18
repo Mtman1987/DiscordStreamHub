@@ -15,9 +15,18 @@ export default async function HeadlessLeaderboardPage({
 }) {
   const [{ serverId }, query] = await Promise.all([params, searchParams]);
 
-  return <HeadlessLeaderboardClientPage branding={{
-    serverName: firstValue(query.serverName) || serverId || 'Space Mountain',
-    communityMemberName: firstValue(query.memberName) || 'Mountaineer',
-    communityMemberNamePlural: firstValue(query.memberNamePlural) || 'Mountaineers',
-  }} />;
+  const mode = firstValue(query.mode) === 'overlay' ? 'overlay' : 'image';
+  const cycleSeconds = Math.max(0, Number(firstValue(query.cycle)) || 0);
+  const showSeconds = Math.max(1, Number(firstValue(query.show)) || 20);
+
+  return <HeadlessLeaderboardClientPage
+    branding={{
+      serverName: firstValue(query.serverName) || serverId || 'Space Mountain',
+      communityMemberName: firstValue(query.memberName) || 'Mountaineer',
+      communityMemberNamePlural: firstValue(query.memberNamePlural) || 'Mountaineers',
+    }}
+    mode={mode}
+    cycleSeconds={cycleSeconds}
+    showSeconds={showSeconds}
+  />;
 }
