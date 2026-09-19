@@ -63,6 +63,14 @@ export default function CommunitySpotlightHeadlessPage() {
 
   const twitchLogin = String(spotlight?.twitchLogin || spotlight?.user?.twitchLogin || '').trim();
   const twitchParent = typeof window !== 'undefined' ? window.location.hostname : 'discord-stream-hub-new.fly.dev';
+  const twitchParents = Array.from(new Set([
+    twitchParent,
+    'spmt.live',
+    'www.spmt.live',
+    'spacemountain.live',
+    'www.spacemountain.live',
+  ])).filter(Boolean);
+  const twitchParentQuery = twitchParents.map((parent) => `&parent=${encodeURIComponent(parent)}`).join('');
 
   if (!spotlight || !twitchLogin) {
     return (
@@ -78,7 +86,7 @@ export default function CommunitySpotlightHeadlessPage() {
       <HeadlessChromeReset />
       <main className="relative h-screen w-screen overflow-hidden bg-transparent">
         <iframe
-          src={`https://player.twitch.tv/?channel=${encodeURIComponent(twitchLogin)}&parent=${encodeURIComponent(twitchParent)}&autoplay=true&muted=true&controls=false`}
+          src={`https://player.twitch.tv/?channel=${encodeURIComponent(twitchLogin)}${twitchParentQuery}&autoplay=true&muted=true&controls=false`}
           title={`${twitchLogin} live on Twitch`}
           className="absolute inset-0 h-full w-full border-0 bg-transparent"
           allow="autoplay; fullscreen"
