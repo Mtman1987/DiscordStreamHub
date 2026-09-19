@@ -61,9 +61,10 @@ export default function CommunitySpotlightHeadlessPage() {
     };
   }, []);
 
-  const mediaUrl = String(spotlight?.gifUrl || '').trim();
+  const twitchLogin = String(spotlight?.twitchLogin || spotlight?.user?.twitchLogin || '').trim();
+  const twitchParent = typeof window !== 'undefined' ? window.location.hostname : 'discord-stream-hub-new.fly.dev';
 
-  if (!spotlight || !mediaUrl) {
+  if (!spotlight || !twitchLogin) {
     return (
       <>
         <HeadlessChromeReset />
@@ -76,12 +77,12 @@ export default function CommunitySpotlightHeadlessPage() {
     <>
       <HeadlessChromeReset />
       <main className="relative h-screen w-screen overflow-hidden bg-transparent">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={mediaUrl}
-          alt=""
-          className="absolute inset-0 h-full w-full object-cover"
-          draggable={false}
+        <iframe
+          src={`https://player.twitch.tv/?channel=${encodeURIComponent(twitchLogin)}&parent=${encodeURIComponent(twitchParent)}&autoplay=true&muted=true&controls=false`}
+          title={`${twitchLogin} live on Twitch`}
+          className="absolute inset-0 h-full w-full border-0 bg-transparent"
+          allow="autoplay; fullscreen"
+          allowFullScreen
         />
       </main>
     </>
