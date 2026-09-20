@@ -91,23 +91,22 @@ function LeaderboardComponent({ branding, mode = 'image', cycleSeconds = 0, show
   }
 
   return (
-    <main className="leaderboard relative overflow-hidden bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 text-white w-[1200px] px-20 py-10">
+    <main data-server={branding.serverName} className="leaderboard relative w-[720px] overflow-hidden bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 px-7 py-6 text-white">
       <div className="stars pointer-events-none absolute inset-0 opacity-50" />
 
       <section className="relative z-10">
-        <header className="mb-7 text-center">
-          <h1 className="mb-2 text-5xl font-bold">SPACE MOUNTAIN LEADERBOARD</h1>
-          <p className="text-xl font-semibold text-yellow-300">TOP {branding.communityMemberNamePlural.toUpperCase()}</p>
+        <header className="mb-4 text-center">
+          <h1 className="text-4xl font-black tracking-wide text-white">SPACE MOUNTAIN TOP 5</h1>
         </header>
 
-        <div className="mx-auto flex max-w-5xl flex-col gap-3">
-          {leaderboard.map((entry) => (
+        <div className="mx-auto flex flex-col gap-4">
+          {leaderboard.slice(0, 5).map((entry) => (
             <article
               key={`${entry.rank}:${entry.username}`}
-              className="leaderboard-entry flex min-h-[86px] items-center justify-between rounded-xl border border-blue-300/50 bg-slate-950/80 px-5 py-3 shadow-lg shadow-cyan-500/10"
+              className="leaderboard-entry flex min-h-[118px] items-center justify-between rounded-2xl border-2 border-cyan-300/70 bg-slate-950/90 px-5 py-3 shadow-lg shadow-cyan-500/20"
             >
               <div className="flex min-w-0 items-center gap-4">
-                <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-2 text-2xl font-extrabold ${
+                <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 text-2xl font-black ${
                   entry.rank === 1 ? 'border-yellow-300 bg-yellow-400/20 text-yellow-200' :
                   entry.rank === 2 ? 'border-slate-300 bg-slate-300/20 text-slate-100' :
                   entry.rank === 3 ? 'border-orange-300 bg-orange-400/20 text-orange-200' :
@@ -120,9 +119,9 @@ function LeaderboardComponent({ branding, mode = 'image', cycleSeconds = 0, show
                 <img
                   src={entry.avatarUrl}
                   alt={`${entry.username} avatar`}
-                  width={64}
-                  height={64}
-                  className="h-16 w-16 shrink-0 rounded-full border-2 border-blue-200/40 bg-slate-900 object-cover"
+                  width={88}
+                  height={88}
+                  className="h-[88px] w-[88px] shrink-0 rounded-full border-4 border-cyan-100/70 bg-slate-900 object-cover shadow-lg shadow-cyan-300/20"
                   onError={(event) => {
                     const image = event.currentTarget;
                     if (image.src !== FALLBACK_AVATAR) image.src = FALLBACK_AVATAR;
@@ -130,22 +129,18 @@ function LeaderboardComponent({ branding, mode = 'image', cycleSeconds = 0, show
                 />
 
                 <div className="min-w-0">
-                  <div className="truncate text-2xl font-bold">{entry.username}</div>
-                  <div className="text-lg text-blue-200">{branding.communityMemberName}</div>
+                  <div className="truncate text-4xl font-black tracking-tight text-cyan-50 drop-shadow-lg">{entry.username}</div>
                 </div>
               </div>
 
               <div className="shrink-0 text-right">
-                <div className="text-3xl font-bold text-yellow-300">{entry.points.toLocaleString()}</div>
-                <div className="text-lg text-blue-200">Points</div>
+                <div className="text-3xl font-black text-yellow-200 drop-shadow-lg">{entry.points.toLocaleString()}</div>
+                <div className="text-xl font-extrabold uppercase tracking-wide text-yellow-100">pts</div>
               </div>
             </article>
           ))}
         </div>
 
-        <footer className="mt-7 text-center text-xl text-white">
-          Join {branding.serverName} to climb the ranks!
-        </footer>
       </section>
 
       <style jsx>{`
