@@ -161,7 +161,7 @@ async function awardCanonicalDshXp(input: {
     const isTwitchMessage = input.eventType === 'chat_activity' && input.source === 'twitch';
     const isTwitchBits = input.eventType === 'bits' && input.source === 'twitch';
     const mappedEventType = DSH_XP_EVENT_MAP[input.eventType];
-    if ((!mappedEventType && !isTwitchMessage && !isTwitchBits) || input.pointsAwarded <= 0 || input.source === 'manual') return;
+    if (input.pointsAwarded <= 0 || input.source === 'manual') return;
 
     const identity = await resolveSpmtUserForPoints(input);
     const spmtUserId = identity?.user?.id;
@@ -174,19 +174,21 @@ async function awardCanonicalDshXp(input: {
       pointsEventType: input.eventType,
       ...(input.metadata || {}),
     };
-    const customTwitchEventType = isTwitchMessage
+    const customEventType = isTwitchMessage
       ? 'dsh-twitch-message'
       : isTwitchBits
       ? 'dsh-twitch-bits'
-      : null;
-    const award = customTwitchEventType
+      : mappedEventType
+      ? null
+      : `dsh-${input.source || 'unknown'}-${input.eventType}`;
+    const award = customEventType
       ? {
           userId: spmtUserId,
           sourceApp: 'discord-stream-hub',
-          eventType: customTwitchEventType,
+          eventType: customEventType,
           idempotencyKey: buildXpIdempotencyKey({
             sourceApp: 'discord-stream-hub',
-            eventType: customTwitchEventType,
+            eventType: customEventType,
             upstreamEventId: input.eventLogId,
             userId: spmtUserId,
           }),
@@ -223,6 +225,15 @@ export async function awardPoints({
 
   // SPMT is the only leaderboard/XP authority. No DSH leaderboard document or
   // leaderboard event is created here.
+  const upstreamEventId = String(
+    metadata?.eventId ||
+    metadata?.messageId ||
+    metadata?.id ||
+    metadata?.twitchEventId ||
+    metadata?.discordMessageId ||
+    randomUUID(),
+  );
+
   await awardCanonicalDshXp({
     serverId,
     userId,
@@ -230,7 +241,7 @@ export async function awardPoints({
     pointsAwarded: pointsToAward,
     source,
     metadata,
-    eventLogId: randomUUID(),
+    eventLogId: upstreamEventId,
   });
 
   return {
