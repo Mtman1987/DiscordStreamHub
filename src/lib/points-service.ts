@@ -1,8 +1,6 @@
-import { Timestamp, db } from '@/data/server-init';
+import { randomUUID } from 'node:crypto';
 import type { LeaderboardSettings } from '@/lib/types';
-import { getHardcodedGuildId } from '@/lib/runtime-config';
-import { awardSpmtXp, grandfatherDiscordIdentity, grandfatherTwitchIdentity } from '@/lib/spmt-client';
-import { resolveTwitchPointsIdentity } from '@/lib/spmt-points-identity';
+import { awardSpmtXp, getSpmtXpLeaderboard, getSpmtXpWallet, grandfatherDiscordIdentity, grandfatherTwitchIdentity } from '@/lib/spmt-client';
 import { buildXpIdempotencyKey, mappedXpAwardV1, type XpMappedEventTypeV1 } from '@spmt/sdk';
 
 export type PointsEventType =
@@ -107,23 +105,11 @@ function calculatePointsFromSettings(
 }
 
 async function fetchLeaderboardSettings(
-  serverId: string,
+  _serverId: string,
 ): Promise<LeaderboardSettings> {
-  const settingsRef = db
-    .collection('servers')
-    .doc(serverId)
-    .collection('config')
-    .doc('leaderboardSettings');
-
-  const snapshot = await settingsRef.get();
-  if (!snapshot.exists) {
-    return DEFAULT_SETTINGS;
-  }
-
-  return {
-    ...DEFAULT_SETTINGS,
-    ...(snapshot.data() as Partial<LeaderboardSettings>),
-  };
+  // Canonical XP no longer reads DSH/Firestore leaderboard configuration.
+  // Keep the existing point schedule in code until it moves into SPMT config.
+  return DEFAULT_SETTINGS;
 }
 
 export async function resolveSpmtUserForPoints(input: {
@@ -138,42 +124,25 @@ export async function resolveSpmtUserForPoints(input: {
 
   if (input.source === 'discord') {
     return grandfatherDiscordIdentity({
-      discordId: input.userId,
-      discordUsername: username || input.userId,
-      displayName: displayName || username || input.userId,
+      discordId: String(input.userId),
+      discordUsername: username || String(input.userId),
+      displayName: displayName || username || String(input.userId),
       avatarUrl: typeof metadata.avatarUrl === 'string' ? metadata.avatarUrl : undefined,
       issueSession: false,
     });
   }
 
   if (input.source === 'twitch') {
-    const linkedUserDoc = await db.collection('servers').doc(input.serverId).collection('users').doc(input.userId).get().catch(() => null);
-    const linked = linkedUserDoc?.exists ? linkedUserDoc.data() || {} : {};
-    const identity = resolveTwitchPointsIdentity({
-      sourceUserId: input.userId,
-      fallbackUsername: username,
-      metadata,
-      linkedUser: linked,
-      linkedUserExists: Boolean(linkedUserDoc?.exists),
+    const twitchId = String(metadata.twitchId || input.userId || '').trim();
+    const twitchUsername = String(metadata.twitchLogin || metadata.username || username || '').trim().toLowerCase();
+    if (!/^\d+$/.test(twitchId) || !twitchUsername) return null;
+
+    return grandfatherTwitchIdentity({
+      twitchId,
+      twitchUsername,
+      displayName: displayName || twitchUsername,
+      issueSession: false,
     });
-
-    if (identity?.provider === 'twitch') {
-      return grandfatherTwitchIdentity({
-        twitchId: identity.providerUserId,
-        twitchUsername: identity.providerUsername,
-        displayName: displayName || identity.providerUsername,
-        issueSession: false,
-      });
-    }
-
-    if (identity?.provider === 'discord') {
-      return grandfatherDiscordIdentity({
-        discordId: identity.providerUserId,
-        discordUsername: identity.providerUsername,
-        displayName: displayName || username || input.userId,
-        issueSession: false,
-      });
-    }
   }
 
   return null;
@@ -245,105 +214,23 @@ export async function awardPoints({
   source,
   metadata,
 }: AwardPointsInput): Promise<AwardPointsResult> {
-  // Legacy DSH leaderboard rows predate canonical SPMT identity and were keyed
-  // by whichever provider ID produced the event. For Twitch events, resolve the
-  // verified linked DSH user document first so Discord + Twitch activity lands
-  // on one human row. Never reconcile by mutable usernames/display names.
-  let canonicalLocalUserId = String(userId || '').trim();
-  let canonicalMetadata = metadata || {};
-  if (source === 'twitch' && canonicalLocalUserId) {
-    const linkedUsers = await db
-      .collection('servers')
-      .doc(serverId)
-      .collection('users')
-      .where('twitchId', '==', canonicalLocalUserId)
-      .limit(2)
-      .get()
-      .catch(() => null);
-
-    if (linkedUsers && linkedUsers.size === 1) {
-      const linkedDoc = linkedUsers.docs[0];
-      const linked = linkedDoc.data() || {};
-      canonicalLocalUserId = String(linkedDoc.id);
-      canonicalMetadata = {
-        ...canonicalMetadata,
-        twitchId: String(userId),
-        twitchLogin:
-          String((canonicalMetadata as any).twitchLogin || linked.twitchLogin || (canonicalMetadata as any).username || '').trim(),
-      };
-    } else if (linkedUsers && linkedUsers.size > 1) {
-      console.error('[DSH] Refusing ambiguous Twitch points identity', {
-        serverId,
-        twitchId: canonicalLocalUserId,
-        matches: linkedUsers.docs.map((doc: any) => doc.id),
-      });
-      return {
-        pointsAwarded: 0,
-        settingsSnapshot: await fetchLeaderboardSettings(serverId),
-      };
-    }
-  }
-
-  userId = canonicalLocalUserId;
-  metadata = canonicalMetadata;
   const settings = await fetchLeaderboardSettings(serverId);
-  const pointsToAward = calculatePointsFromSettings(
-    eventType,
-    quantity,
-    settings,
-  );
+  const pointsToAward = calculatePointsFromSettings(eventType, quantity, settings);
 
-  if (pointsToAward === 0) {
-    return {
-      pointsAwarded: 0,
-      settingsSnapshot: settings,
-    };
+  if (pointsToAward <= 0) {
+    return { pointsAwarded: 0, settingsSnapshot: settings };
   }
 
-  const isAdminEvent = eventType === 'admin_calendar_event' || eventType === 'admin_captains_log' || eventType === 'admin_message';
-  const collectionName = isAdminEvent ? 'adminLeaderboard' : 'leaderboard';
-
-  const leaderboardRef = db
-    .collection('servers')
-    .doc(serverId)
-    .collection(collectionName)
-    .doc(userId);
-
-  const currentDoc = await leaderboardRef.get();
-  const currentPoints = (currentDoc.exists ? currentDoc.data()?.points : 0) || 0;
-  const newPoints = typeof currentPoints === 'number' ? currentPoints + pointsToAward : pointsToAward;
-
-  const payload = {
-    userProfileId: userId,
-    points: newPoints,
-    lastUpdated: new Date().toISOString(),
-    lastEventType: eventType,
-    lastEventSource: source ?? 'unknown',
-    lastEventMetadata: metadata ?? null,
-  };
-
-  await leaderboardRef.set(payload, { merge: true });
-
-  const logRef = db
-    .collection('servers')
-    .doc(serverId)
-    .collection(isAdminEvent ? 'adminLeaderboardEvents' : 'leaderboardEvents')
-    .doc();
-
-  await logRef.set({
-    ...payload,
-    pointsAwarded: pointsToAward,
-    createdAt: Timestamp.now(),
-  });
-
-  void awardCanonicalDshXp({
+  // SPMT is the only leaderboard/XP authority. No DSH leaderboard document or
+  // leaderboard event is created here.
+  await awardCanonicalDshXp({
     serverId,
     userId,
     eventType,
     pointsAwarded: pointsToAward,
     source,
     metadata,
-    eventLogId: logRef.id,
+    eventLogId: randomUUID(),
   });
 
   return {
@@ -354,151 +241,131 @@ export async function awardPoints({
 
 export class PointsService {
   private static instance: PointsService;
-  
+
   static getInstance(): PointsService {
-    if (!PointsService.instance) {
-      PointsService.instance = new PointsService();
-    }
+    if (!PointsService.instance) PointsService.instance = new PointsService();
     return PointsService.instance;
   }
 
-  async addPoints(userId: string, username: string, displayName: string, points: number, serverId?: string): Promise<{ points: number }> {
-    const actualServerId = serverId || getHardcodedGuildId() || 'default';
-
-    const leaderboardRef = db.collection('servers').doc(actualServerId).collection('leaderboard').doc(userId);
-    const currentDoc = await leaderboardRef.get();
-    const currentPoints = (currentDoc.exists ? currentDoc.data()?.points : 0) || 0;
-    const newPoints = currentPoints + points;
-
-    await leaderboardRef.set({
-      userProfileId: userId,
-      points: newPoints,
-      lastUpdated: new Date().toISOString(),
-      lastEventType: 'admin_message',
-      lastEventSource: 'manual',
-      lastEventMetadata: { username, displayName },
-    }, { merge: true });
-
-    return { points: newPoints };
+  private async resolveDiscordUser(userId: string, username: string, displayName: string) {
+    return resolveSpmtUserForPoints({
+      serverId: '',
+      userId,
+      source: 'discord',
+      metadata: { username, displayName },
+    });
   }
 
-  async setPoints(userId: string, username: string, displayName: string, points: number, serverId?: string): Promise<{ points: number }> {
-    const actualServerId = serverId || getHardcodedGuildId() || 'default';
-    const leaderboardRef = db.collection('servers').doc(actualServerId).collection('leaderboard').doc(userId);
-    const clampedPoints = Math.max(0, Math.trunc(Number(points || 0)));
+  async addPoints(userId: string, username: string, displayName: string, points: number, _serverId?: string): Promise<{ points: number }> {
+    const identity = await this.resolveDiscordUser(userId, username, displayName);
+    const spmtUserId = String(identity?.user?.id || '');
+    if (!spmtUserId) throw new Error('Unable to resolve canonical SPMT identity');
 
-    await leaderboardRef.set({
-      userProfileId: userId,
-      points: clampedPoints,
-      lastUpdated: new Date().toISOString(),
-      lastEventType: 'admin_message',
-      lastEventSource: 'manual',
-      lastEventMetadata: { username, displayName },
-    }, { merge: true });
-
-    return { points: clampedPoints };
-  }
-
-  async getUserRank(userId: string, serverId?: string): Promise<{ rank: number; points: number } | null> {
-    const actualServerId = serverId || getHardcodedGuildId() || 'default';
-    const userRef = db.collection('servers').doc(actualServerId).collection('leaderboard').doc(userId);
-    const userDoc = await userRef.get();
-
-    if (!userDoc.exists) {
-      return null;
+    const delta = Math.trunc(Number(points || 0));
+    if (delta) {
+      await awardSpmtXp({
+        userId: spmtUserId,
+        sourceApp: 'discord-stream-hub',
+        eventType: 'dsh-manual-points',
+        idempotencyKey: randomUUID(),
+        delta,
+        metadata: { discordUserId: userId, username, displayName },
+      });
     }
-
-    const userPoints = Number(userDoc.data()?.points || 0);
-    const leaderboardSnapshot = await db
-      .collection('servers')
-      .doc(actualServerId)
-      .collection('leaderboard')
-      .orderBy('points', 'desc')
-      .get();
-
-    const rank = leaderboardSnapshot.docs.findIndex((doc: { id: string }) => doc.id === userId) + 1;
-    return { rank: rank > 0 ? rank : leaderboardSnapshot.docs.length + 1, points: userPoints };
+    const wallet = await getSpmtXpWallet(spmtUserId);
+    return { points: Number(wallet?.spendableXp || 0) };
   }
 
-  async getUserPoints(userId: string, serverId?: string): Promise<{ username?: string; displayName?: string; points: number } | null> {
-    const actualServerId = serverId || getHardcodedGuildId() || 'default';
-    const userRef = db.collection('servers').doc(actualServerId).collection('leaderboard').doc(userId);
-    const userDoc = await userRef.get();
+  async setPoints(userId: string, username: string, displayName: string, points: number, _serverId?: string): Promise<{ points: number }> {
+    const identity = await this.resolveDiscordUser(userId, username, displayName);
+    const spmtUserId = String(identity?.user?.id || '');
+    if (!spmtUserId) throw new Error('Unable to resolve canonical SPMT identity');
 
-    if (!userDoc.exists) {
-      return null;
+    const wallet = await getSpmtXpWallet(spmtUserId);
+    const current = Number(wallet?.spendableXp || 0);
+    const target = Math.max(0, Math.trunc(Number(points || 0)));
+    const delta = target - current;
+    if (delta) {
+      await awardSpmtXp({
+        userId: spmtUserId,
+        sourceApp: 'discord-stream-hub',
+        eventType: 'dsh-set-points',
+        idempotencyKey: randomUUID(),
+        delta,
+        metadata: { discordUserId: userId, username, displayName, target },
+      });
     }
+    const updated = await getSpmtXpWallet(spmtUserId);
+    return { points: Number(updated?.spendableXp ?? target) };
+  }
 
-    const data = userDoc.data() || {};
+  async getUserRank(userId: string, _serverId?: string): Promise<{ rank: number; points: number } | null> {
+    const identity = await resolveSpmtUserForPoints({
+      serverId: '',
+      userId,
+      source: 'discord',
+      metadata: { username: userId, displayName: userId },
+    });
+    const spmtUserId = String(identity?.user?.id || '');
+    if (!spmtUserId) return null;
+    const wallet = await getSpmtXpWallet(spmtUserId);
+    return wallet ? { rank: wallet.rank, points: wallet.lifetimeXp } : null;
+  }
+
+  async getUserPoints(userId: string, _serverId?: string): Promise<{ username?: string; displayName?: string; points: number } | null> {
+    const identity = await resolveSpmtUserForPoints({
+      serverId: '',
+      userId,
+      source: 'discord',
+      metadata: { username: userId, displayName: userId },
+    });
+    const spmtUserId = String(identity?.user?.id || '');
+    if (!spmtUserId) return null;
+    const wallet = await getSpmtXpWallet(spmtUserId);
+    if (!wallet) return null;
     return {
-      username: data.lastEventMetadata?.username as string | undefined,
-      displayName: data.lastEventMetadata?.displayName as string | undefined,
-      points: Number(data.points || 0),
+      username: identity?.user?.username,
+      displayName: identity?.user?.username,
+      points: wallet.spendableXp,
     };
   }
 
-  async getLeaderboard(limit: number = 50, serverId?: string): Promise<any[]> {
-    const actualServerId = serverId || getHardcodedGuildId() || 'default';
-    
-    const leaderboardRef = db
-      .collection('servers')
-      .doc(actualServerId)
-      .collection('leaderboard')
-      .orderBy('points', 'desc')
-      .limit(limit);
-
-    const snapshot = await leaderboardRef.get();
-    return snapshot.docs.map((doc: { id: string; data: () => Record<string, unknown> }) => ({ id: doc.id, ...doc.data() }));
+  async getLeaderboard(limit: number = 50, _serverId?: string): Promise<any[]> {
+    return getSpmtXpLeaderboard(limit);
   }
 
-  async addPointsToAll(points: number, serverId?: string): Promise<{ count: number }> {
-    const actualServerId = serverId || getHardcodedGuildId() || 'default';
+  async addPointsToAll(points: number, _serverId?: string): Promise<{ count: number }> {
     const delta = Math.trunc(Number(points || 0));
     if (!delta) return { count: 0 };
-
-    const snapshot = await db
-      .collection('servers')
-      .doc(actualServerId)
-      .collection('leaderboard')
-      .get();
-
-    let count = 0;
-    for (const doc of snapshot.docs) {
-      const data = doc.data() || {};
-      const currentPoints = Number(data.points || 0);
-      const nextPoints = Math.max(0, currentPoints + delta);
-      await doc.ref.set({
-        points: nextPoints,
-        lastUpdated: new Date().toISOString(),
-        lastEventType: 'admin_message',
-        lastEventSource: 'manual',
-      }, { merge: true });
-      count += 1;
+    const entries = await getSpmtXpLeaderboard(100);
+    for (const entry of entries) {
+      await awardSpmtXp({
+        userId: entry.userId,
+        sourceApp: 'discord-stream-hub',
+        eventType: 'dsh-manual-points-all',
+        idempotencyKey: randomUUID(),
+        delta,
+        metadata: { bulk: true },
+      });
     }
-
-    return { count };
+    return { count: entries.length };
   }
 
-  async setPointsToAll(points: number, serverId?: string): Promise<{ count: number }> {
-    const actualServerId = serverId || getHardcodedGuildId() || 'default';
-    const normalizedPoints = Math.max(0, Math.trunc(Number(points || 0)));
-    const snapshot = await db
-      .collection('servers')
-      .doc(actualServerId)
-      .collection('leaderboard')
-      .get();
-
-    let count = 0;
-    for (const doc of snapshot.docs) {
-      await doc.ref.set({
-        points: normalizedPoints,
-        lastUpdated: new Date().toISOString(),
-        lastEventType: 'admin_message',
-        lastEventSource: 'manual',
-      }, { merge: true });
-      count += 1;
+  async setPointsToAll(points: number, _serverId?: string): Promise<{ count: number }> {
+    const target = Math.max(0, Math.trunc(Number(points || 0)));
+    const entries = await getSpmtXpLeaderboard(100);
+    for (const entry of entries) {
+      const delta = target - Number(entry.spendableXp || 0);
+      if (!delta) continue;
+      await awardSpmtXp({
+        userId: entry.userId,
+        sourceApp: 'discord-stream-hub',
+        eventType: 'dsh-set-points-all',
+        idempotencyKey: randomUUID(),
+        delta,
+        metadata: { bulk: true, target },
+      });
     }
-
-    return { count };
+    return { count: entries.length };
   }
 }
