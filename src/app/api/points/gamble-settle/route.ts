@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PointsService } from '@/lib/points-service';
 import { getHardcodedGuildId } from '@/lib/runtime-config';
 import { getDshPointsSecret } from '@/lib/runtime-secrets';
 import { settleSpmtGamble } from '@/lib/spmt-client';
@@ -70,24 +69,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // SPMT unavailable or no linked identity: keep the legacy leaderboard authoritative.
-    const pointsService = PointsService.getInstance();
-    const current = Number((await pointsService.getUserPoints(userId, actualServerId))?.points || 0);
-    const next = Math.max(0, current - wagerAmount + payoutAmount);
-    await pointsService.setPoints(userId, username || userId, displayName || username || userId, next, actualServerId);
-    const rank = await pointsService.getUserRank(userId, actualServerId);
-
-    return NextResponse.json({
-      settled: true,
-      duplicate: false,
-      points: next,
-      currentPoints: next,
-      lifetimePoints: next,
-      rank: rank?.rank ?? null,
-      refill: 0,
-      matchedGrowth: 0,
-      source: 'legacy',
-    });
+    return NextResponse.json({ error: 'Canonical SPMT XP unavailable' }, { status: 503 });
   } catch (error) {
     console.error('Error settling gamble points:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
