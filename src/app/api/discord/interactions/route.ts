@@ -13,6 +13,7 @@ import {
   getStreamweaverUrl,
 } from '@/lib/runtime-config';
 import { claimDiscordSignalEgg, grandfatherDiscordIdentity } from '@/lib/spmt-client';
+import { resolveSpmtPointsWallet } from '@/lib/spmt-wallet';
 import { getChatTagServiceSecret, getDshClientSecret } from '@/lib/runtime-secrets';
 import {
   createSpmtOnboardingAuthorization,
@@ -1196,29 +1197,24 @@ export async function POST(request: NextRequest) {
           ? customId.replace('check_rank_', '')
           : body.guild_id;
         const userId = body.member?.user?.id || body.user?.id;
-        const username = body.member?.user?.username || body.user?.username;
+        const username = body.member?.user?.username || body.user?.username || userId;
 
-        if (!serverId) {
-          return ephemeral('🚫 Unable to identify server.');
+        if (!serverId || !userId) {
+          return ephemeral('🚫 Unable to identify user or server.');
         }
 
-        if (!userId) {
-          return ephemeral('🚫 Unable to identify user.');
+        const wallet = await resolveSpmtPointsWallet({
+          serverId,
+          userId,
+          source: 'discord',
+          metadata: { username, displayName: body.member?.nick || username },
+        });
+
+        if (!wallet) {
+          return ephemeral('⚠️ Canonical SPMT XP is temporarily unavailable.');
         }
 
-        const leaderboardRef = db.collection('servers').doc(serverId).collection('leaderboard');
-        const userDoc = await leaderboardRef.doc(userId).get();
-
-        if (!userDoc.exists) {
-          return ephemeral(`🛰️ **${username}**, you haven't earned any points yet! Start participating to climb the leaderboard! 🚀`);
-        }
-
-        const userData = userDoc.data();
-        const userPoints = userData?.points || 0;
-        const higherRankedSnapshot = await leaderboardRef.where('points', '>', userPoints).get();
-        const rank = higherRankedSnapshot.size + 1;
-
-        return ephemeral(`📊 **${username}**, you are rank #${rank} with ${userPoints.toLocaleString()} points!\n\n${rank <= 10 ? '🏆 You’re in the top 10! Great job!' : '🔭 Keep earning points to climb higher!'}`);
+        return ephemeral(`📊 **${username}**, you are rank #${wallet.rank} with ${wallet.lifetimePoints.toLocaleString()} lifetime XP and ${wallet.currentPoints.toLocaleString()} spendable XP.`);
       }
 
       if (customId.startsWith('points_info_')) {

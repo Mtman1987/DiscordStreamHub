@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/data/server-init';
+import { resolveSpmtPointsWallet } from '@/lib/spmt-wallet';
 import { verifyKey } from 'discord-interactions';
 import { getDiscordPublicKey } from '@/lib/runtime-config';
 
@@ -27,50 +27,28 @@ export async function POST(request: NextRequest) {
     if (body.type === 3 && body.data.custom_id === 'check_rank') {
       const userId = body.member?.user?.id || body.user?.id;
       const guildId = body.guild_id;
+      const username = body.member?.user?.username || body.user?.username || userId;
 
       if (!userId || !guildId) {
         return NextResponse.json({
           type: 4,
-          data: {
-            content: 'Unable to identify user or server.',
-            flags: 64,
-          },
+          data: { content: 'Unable to identify user or server.', flags: 64 },
         });
       }
 
-      const usersSnapshot = await db.collection('servers').doc(guildId).collection('users').where('discordUserId', '==', userId).limit(1).get();
-
-      if (usersSnapshot.empty) {
-        return NextResponse.json({
-          type: 4,
-          data: {
-            content: 'You are not in the leaderboard yet. Start participating to earn points!',
-            flags: 64,
-          },
-        });
-      }
-
-      const userProfileId = usersSnapshot.docs[0].id;
-      const leaderboardDoc = await db.collection('servers').doc(guildId).collection('leaderboard').doc(userProfileId).get();
-
-      if (!leaderboardDoc.exists) {
-        return NextResponse.json({
-          type: 4,
-          data: {
-            content: 'You have no points yet. Start participating to earn points!',
-            flags: 64,
-          },
-        });
-      }
-
-      const userPoints = leaderboardDoc.data()?.points || 0;
-      const allLeaderboard = await db.collection('servers').doc(guildId).collection('leaderboard').orderBy('points', 'desc').get();
-      const rank = allLeaderboard.docs.findIndex((doc: { id: string }) => doc.id === userProfileId) + 1;
+      const wallet = await resolveSpmtPointsWallet({
+        serverId: guildId,
+        userId,
+        source: 'discord',
+        metadata: { username, displayName: username },
+      });
 
       return NextResponse.json({
         type: 4,
         data: {
-          content: `🏆 **Your Rank:** #${rank}\n📊 **Total Points:** ${userPoints.toLocaleString()}`,
+          content: wallet
+            ? `🏆 **Your Rank:** #${wallet.rank}\n📊 **Lifetime XP:** ${wallet.lifetimePoints.toLocaleString()}`
+            : 'Canonical SPMT XP is temporarily unavailable.',
           flags: 64,
         },
       });
