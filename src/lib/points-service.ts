@@ -245,6 +245,47 @@ export async function awardPoints({
   source,
   metadata,
 }: AwardPointsInput): Promise<AwardPointsResult> {
+  // Legacy DSH leaderboard rows predate canonical SPMT identity and were keyed
+  // by whichever provider ID produced the event. For Twitch events, resolve the
+  // verified linked DSH user document first so Discord + Twitch activity lands
+  // on one human row. Never reconcile by mutable usernames/display names.
+  let canonicalLocalUserId = String(userId || '').trim();
+  let canonicalMetadata = metadata || {};
+  if (source === 'twitch' && canonicalLocalUserId) {
+    const linkedUsers = await db
+      .collection('servers')
+      .doc(serverId)
+      .collection('users')
+      .where('twitchId', '==', canonicalLocalUserId)
+      .limit(2)
+      .get()
+      .catch(() => null);
+
+    if (linkedUsers && linkedUsers.size === 1) {
+      const linkedDoc = linkedUsers.docs[0];
+      const linked = linkedDoc.data() || {};
+      canonicalLocalUserId = String(linkedDoc.id);
+      canonicalMetadata = {
+        ...canonicalMetadata,
+        twitchId: String(userId),
+        twitchLogin:
+          String((canonicalMetadata as any).twitchLogin || linked.twitchLogin || (canonicalMetadata as any).username || '').trim(),
+      };
+    } else if (linkedUsers && linkedUsers.size > 1) {
+      console.error('[DSH] Refusing ambiguous Twitch points identity', {
+        serverId,
+        twitchId: canonicalLocalUserId,
+        matches: linkedUsers.docs.map((doc: any) => doc.id),
+      });
+      return {
+        pointsAwarded: 0,
+        settingsSnapshot: await fetchLeaderboardSettings(serverId),
+      };
+    }
+  }
+
+  userId = canonicalLocalUserId;
+  metadata = canonicalMetadata;
   const settings = await fetchLeaderboardSettings(serverId);
   const pointsToAward = calculatePointsFromSettings(
     eventType,
