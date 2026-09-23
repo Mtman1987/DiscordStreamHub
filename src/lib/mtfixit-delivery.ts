@@ -5,6 +5,7 @@ import { sendOwnerDiscordDm } from './owner-dm-service';
 
 const DEFAULT_ROTATOR_URL = 'https://mtman-machine-rotator.fly.dev';
 const DELIVERY_POLL_MS = 10_000;
+const RESUME_ERROR_BACKOFF_MS = 30_000;
 const activeResumes = new Set<string>();
 
 export type MtFixItDeliveryRecord = {
@@ -124,10 +125,23 @@ export async function resumePendingMtFixItDeliveries(
     void (async () => {
       try {
         for (;;) {
-          const state = await currentOutcome(record);
+          let state: Awaited<ReturnType<typeof currentOutcome>>;
+          try {
+            state = await currentOutcome(record);
+          } catch (error) {
+            console.warn(`[MtFixItDelivery] transient resume poll failed job=${record.jobId}; retrying:`, safe(error));
+            await delay(RESUME_ERROR_BACKOFF_MS);
+            continue;
+          }
           if (state.outcome && state.outcome !== record.lastOutcome) {
-            await notifyResumedOwner(record, state.outcome, state.resolution);
-            await send(record, state.outcome);
+            try {
+              await notifyResumedOwner(record, state.outcome, state.resolution);
+              await send(record, state.outcome);
+            } catch (error) {
+              console.warn(`[MtFixItDelivery] resumed chat delivery failed job=${record.jobId}; retrying:`, safe(error));
+              await delay(RESUME_ERROR_BACKOFF_MS);
+              continue;
+            }
             record.lastOutcome = state.outcome;
             if (state.terminal) record.status = 'final';
             await save(record);
@@ -135,9 +149,9 @@ export async function resumePendingMtFixItDeliveries(
           if (state.terminal) return;
           await delay(DELIVERY_POLL_MS);
         }
-      } catch (error) {
-        console.warn(`[MtFixItDelivery] resume failed job=${record.jobId}:`, safe(error));
-      } finally { activeResumes.delete(record.jobId); }
+      } finally {
+        activeResumes.delete(record.jobId);
+      }
     })();
   }
   return records.length;
