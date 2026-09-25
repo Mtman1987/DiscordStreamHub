@@ -155,7 +155,7 @@ export async function resumePendingMtFixItDeliveries(
             } catch (error) {
               // Deleted or inaccessible Discord channels cannot receive a retry
               // after restart. Preserve the outcome and alert the owner instead.
-              if (source !== 'discord' || !/Discord Athena reply failed: 404.*"code"\\s*:\\s*10003/.test(safe(error))) throw error;
+              if (source !== 'discord' || !/Discord Athena reply failed: 404.*"code"\s*:\s*10003/.test(safe(error))) throw error;
               await sendOwnerDiscordDm({
                 message: `MtFixIt job **${record.jobId}** reached **${state.outcome}**, but its original Discord channel is unavailable. The reporter was not notified; choose a new channel or contact them directly.`,
               });
