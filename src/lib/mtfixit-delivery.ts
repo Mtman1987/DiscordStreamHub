@@ -150,7 +150,17 @@ export async function resumePendingMtFixItDeliveries(
           const state = await currentOutcome(record);
           if (state.outcome && state.outcome !== record.lastOutcome) {
             await notifyResumedOwner(record, state.outcome, state.resolution);
-            await send(record, state.outcome);
+            try {
+              await send(record, state.outcome);
+            } catch (error) {
+              // Deleted or inaccessible Discord channels cannot receive a retry
+              // after restart. Preserve the outcome and alert the owner instead.
+              if (source !== 'discord' || !/Discord Athena reply failed: 404.*"code"\\s*:\\s*10003/.test(safe(error))) throw error;
+              await sendOwnerDiscordDm({
+                message: `MtFixIt job **${record.jobId}** reached **${state.outcome}**, but its original Discord channel is unavailable. The reporter was not notified; choose a new channel or contact them directly.`,
+              });
+              console.warn(`[MtFixItDelivery] Discord channel unavailable; outcome delivered to owner job=${record.jobId}`);
+            }
             record.lastOutcome = state.outcome;
             if (state.terminal) record.status = 'final';
             await save(record);
