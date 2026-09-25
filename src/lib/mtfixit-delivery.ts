@@ -2,6 +2,7 @@ import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { MtFixItPublicOutcome, MtFixItSource } from './mtfixit-contract';
 import { sendOwnerDiscordDm } from './owner-dm-service';
+import { clearSpmtServiceTokenCache, getSpmtServiceToken } from './spmt-service-token';
 
 const DEFAULT_ROTATOR_URL = 'https://mtman-machine-rotator.fly.dev';
 const DELIVERY_POLL_MS = 10_000;
@@ -67,16 +68,38 @@ export async function listPendingMtFixItDeliveries(source: MtFixItSource): Promi
   } catch { return []; }
 }
 
-async function rotatorRequest(path: string, init: RequestInit = {}) {
-  const key = sharedKey(); if (!key) throw new Error('MtFixIt shared key unavailable');
+async function sendRotatorRequest(path: string, init: RequestInit, authHeaders: Record<string, string>) {
   const response = await fetch(`${rotatorBase()}${path}`, {
     ...init,
-    headers: { accept: 'application/json', 'x-dsh-mtfixit-key': key, ...(init.body ? { 'content-type': 'application/json' } : {}), ...(init.headers || {}) },
+    headers: { accept: 'application/json', ...(init.body ? { 'content-type': 'application/json' } : {}), ...authHeaders, ...(init.headers || {}) },
     cache: 'no-store', signal: AbortSignal.timeout(20_000),
   });
   const payload = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(payload?.error || `Rotator HTTP ${response.status}`);
-  return payload;
+  return { response, payload };
+}
+
+async function rotatorRequest(path: string, init: RequestInit = {}) {
+  try {
+    const token = await getSpmtServiceToken(['athena:write']);
+    let result = await sendRotatorRequest(path, init, { Authorization: `Bearer ${token}` });
+    if (result.response.status === 401 || result.response.status === 403) {
+      clearSpmtServiceTokenCache();
+      const refreshed = await getSpmtServiceToken(['athena:write']);
+      result = await sendRotatorRequest(path, init, { Authorization: `Bearer ${refreshed}` });
+    }
+    if (result.response.ok) return result.payload;
+    if (result.response.status !== 401 && result.response.status !== 403) {
+      throw new Error(result.payload?.error || `Rotator HTTP ${result.response.status}`);
+    }
+  } catch (error) {
+    console.warn('[MtFixItDelivery] SPMT service OAuth unavailable; compatibility fallback may be used:', safe(error));
+  }
+
+  const key = sharedKey();
+  if (!key) throw new Error('SPMT service OAuth failed and no legacy DSH-to-rotator compatibility credential is configured');
+  const result = await sendRotatorRequest(path, init, { 'x-dsh-mtfixit-key': key });
+  if (!result.response.ok) throw new Error(result.payload?.error || `Rotator HTTP ${result.response.status}`);
+  return result.payload;
 }
 
 async function currentOutcome(record: MtFixItDeliveryRecord): Promise<{ outcome?: MtFixItPublicOutcome; terminal?: boolean; resolution?: any }> {
