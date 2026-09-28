@@ -48,16 +48,17 @@ test('builds a DSH-owned rotator request without publication authority', () => {
 test('public replies match the conversational Athena lifecycle without exposing internals', () => {
   for (const outcome of ['accepted', 'fixed', 'waiting-review', 'no-change', 'failed'] as const) {
     const reply = mtFixItPublicReply(outcome);
-    assert.match(reply, /Athena/i);
+    assert.ok(reply.trim().length > 20);
     assert.doesNotMatch(reply, /Athena\s+Coder/i);
     assert.doesNotMatch(reply, /\bowner\b/i);
     assert.doesNotMatch(reply, /mtfix_[a-z0-9_-]+/i);
+    assert.doesNotMatch(reply, /exception|token|secret|http\s+\d+/i);
   }
+  assert.match(mtFixItPublicReply('accepted'), /^I[’']/i);
   assert.match(mtFixItPublicReply('accepted'), /snapshot/i);
-  assert.match(mtFixItPublicReply('accepted'), /message you back here/i);
-  assert.match(mtFixItPublicReply('waiting-review'), /mtman/i);
+  assert.match(mtFixItPublicReply('accepted'), /come back here/i);
+  assert.match(mtFixItPublicReply('waiting-review'), /my ChatGPT review pass/i);
   assert.match(mtFixItPublicReply('usage'), /!mtfixit/i);
-  assert.doesNotMatch(mtFixItPublicReply('failed'), /exception|token|secret|http\s+\d+/i);
 });
 
 test('mtfixit Commlink evidence is ecosystem-global and never requires a tenant id', async () => {
@@ -104,6 +105,7 @@ test('orchestrator notifies mtman at start, gates new fixes, and reports success
   assert.match(text, /mtfixit_approve:\$\{jobId\}/);
   assert.match(text, /mtfixit_deny:\$\{jobId\}/);
   assert.match(text, /resolution\.status === 'awaiting_approval'/);
+  assert.match(text, /resolution\.status === 'awaiting_chatgpt'/);
   assert.match(text, /resolution\.status === 'deployed'/);
   assert.match(text, /outcome: 'fixed'/);
   assert.match(text, /outcome: 'waiting-review'/);
