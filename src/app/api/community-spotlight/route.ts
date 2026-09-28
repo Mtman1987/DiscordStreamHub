@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getHardcodedGuildId } from '@/lib/runtime-config';
+import { getStreamsByLogins } from '@/lib/twitch-api-service';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,6 +13,10 @@ type LiveCommunityUser = {
   twitchLogin: string | null;
   avatarUrl: string | null;
   group: string;
+  streamTitle?: string | null;
+  gameName?: string | null;
+  viewerCount?: number | null;
+  startedAt?: string | null;
 };
 
 function mapUser(doc: { id: string; data: () => any }): LiveCommunityUser {
@@ -30,7 +35,23 @@ export async function GET() {
     const usersSnap = await db.collection('servers').doc(SERVER_ID).collection('users')
       .where('isOnline', '==', true)
       .get();
-    const users = usersSnap.docs.map(mapUser);
+    const candidates = usersSnap.docs.map(mapUser);
+    const logins = candidates.map((user) => String(user.twitchLogin || '').trim()).filter(Boolean);
+    const liveByLogin = logins.length ? await getStreamsByLogins(logins) : new Map<string, any>();
+    const users = candidates
+      .map((user) => {
+        const login = String(user.twitchLogin || '').toLowerCase();
+        const stream = login ? liveByLogin.get(login) : null;
+        if (!stream) return null;
+        return {
+          ...user,
+          streamTitle: stream.title || null,
+          gameName: stream.game_name || null,
+          viewerCount: Number.isFinite(Number(stream.viewer_count)) ? Number(stream.viewer_count) : null,
+          startedAt: stream.started_at || null,
+        };
+      })
+      .filter((user): user is LiveCommunityUser => Boolean(user));
 
     const spotlightDoc = await db.collection('servers').doc(SERVER_ID).collection('spotlight').doc('current').get();
     const spotlightData = spotlightDoc.exists ? spotlightDoc.data() : null;
@@ -51,9 +72,9 @@ export async function GET() {
         twitchLogin: spotlightUser.twitchLogin,
         gifUrl: spotlightData.gifUrl || spotlightData.cardGifUrl || null,
         avatarUrl: spotlightData.avatarUrl || spotlightUser.avatarUrl || null,
-        streamTitle: spotlightData.streamTitle || null,
-        gameTitle: spotlightData.gameTitle || null,
-        viewerCount: spotlightData.viewerCount ?? null,
+        streamTitle: spotlightUser.streamTitle || spotlightData.streamTitle || null,
+        gameTitle: spotlightUser.gameName || spotlightData.gameTitle || null,
+        viewerCount: spotlightUser.viewerCount ?? spotlightData.viewerCount ?? null,
         group: spotlightUser.group || spotlightData.group || null,
         currentIndex: spotlightData.currentIndex ?? null,
         updatedAt: spotlightData.updatedAt || spotlightData.lastUpdatedAt || null,
