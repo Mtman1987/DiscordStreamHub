@@ -8,6 +8,8 @@ const FALLBACK_AVATAR = 'https://spacemountain.live/assets/space-logo-main.png';
 
 interface FormattedLeaderboardEntry {
   username: string;
+  discordUsername?: string;
+  twitchUsername?: string;
   points: number;
   rank: number;
   avatarUrl: string;
@@ -130,6 +132,9 @@ function LeaderboardComponent({ branding, mode = 'image', cycleSeconds = 0, show
 
                 <div className="min-w-0">
                   <div className="truncate text-4xl font-black tracking-tight text-cyan-50 drop-shadow-lg">{entry.username}</div>
+                  {entry.discordUsername ? (
+                    <div className="truncate text-lg font-bold tracking-wide text-indigo-200">Discord: @{entry.discordUsername}</div>
+                  ) : null}
                 </div>
               </div>
 

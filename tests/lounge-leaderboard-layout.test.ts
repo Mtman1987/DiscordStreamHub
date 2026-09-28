@@ -10,3 +10,14 @@ test('Lounge leaderboard favors five large readable rows', () => {
   assert.match(source, /text-4xl font-black/);
   assert.doesNotMatch(source, /Join \{branding\.serverName\} to climb the ranks/);
 });
+
+
+test('Lounge leaderboard prefers verified Discord identity when linked', () => {
+  const route = fs.readFileSync('src/app/api/headless/leaderboard/[serverId]/route.ts', 'utf8');
+  const client = fs.readFileSync('src/app/headless/leaderboard/[serverId]/page-client.tsx', 'utf8');
+  assert.match(route, /bySpmtUserId/);
+  assert.match(route, /byTwitchLogin/);
+  assert.match(route, /discordUserId \? 'discord-linked' : 'spmt'/);
+  assert.match(route, /discordAvatar/);
+  assert.match(client, /Discord: @\{entry\.discordUsername\}/);
+});
