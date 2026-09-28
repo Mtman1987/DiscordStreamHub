@@ -36,10 +36,10 @@ export async function GET() {
       .where('isOnline', '==', true)
       .get();
     const candidates = usersSnap.docs.map(mapUser);
-    const logins = candidates.map((user) => String(user.twitchLogin || '').trim()).filter(Boolean);
+    const logins = candidates.map((user: LiveCommunityUser) => String(user.twitchLogin || '').trim()).filter(Boolean);
     const liveByLogin = logins.length ? await getStreamsByLogins(logins) : new Map<string, any>();
     const users = candidates
-      .map((user) => {
+      .map((user: LiveCommunityUser) => {
         const login = String(user.twitchLogin || '').toLowerCase();
         const stream = login ? liveByLogin.get(login) : null;
         if (!stream) return null;
@@ -51,7 +51,7 @@ export async function GET() {
           startedAt: stream.started_at || null,
         };
       })
-      .filter((user): user is LiveCommunityUser => Boolean(user));
+      .filter((user: LiveCommunityUser | null): user is LiveCommunityUser => Boolean(user));
 
     const spotlightDoc = await db.collection('servers').doc(SERVER_ID).collection('spotlight').doc('current').get();
     const spotlightData = spotlightDoc.exists ? spotlightDoc.data() : null;
