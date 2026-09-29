@@ -497,7 +497,7 @@ async function recordLiveStream(twitchLogin) {
     });
 
     const page = await browser.newPage();
-    await page.setViewport({ width: 1280, height: 720 });
+    await page.setViewport({ width: 640, height: 360 });
     await page.goto(`https://player.twitch.tv/?channel=${twitchLogin}&parent=localhost&muted=true`, {
       waitUntil: 'networkidle2', timeout: 30000,
     });
@@ -536,16 +536,19 @@ async function recordLiveStream(twitchLogin) {
       await fs.mkdir(frameDir, { recursive: true });
 
       try {
-        const fps = 10;
-      const totalFrames = fps * 60; // full 60-second fallback clip
+        // Keep the 60-second fallback while generating a small GIF up front.
+        // The old 480px/10fps render exceeded the upload budget and cost
+        // another 90-second FFmpeg pass on the single-CPU clip worker.
+        const fps = 6;
+        const totalFrames = fps * 60;
         for (let f = 0; f < totalFrames; f++) {
-          const frame = await page.screenshot({ type: 'png', clip: { x: 0, y: 0, width: 1280, height: 720 } });
+          const frame = await page.screenshot({ type: 'png', clip: { x: 0, y: 0, width: 640, height: 360 } });
           await fs.writeFile(path.join(frameDir, `frame_${String(f).padStart(5, '0')}.png`), frame);
           await new Promise(r => setTimeout(r, 1000 / fps));
         }
 
-        await execAsync(`ffmpeg -y -framerate ${fps} -i "${path.join(frameDir, 'frame_%05d.png')}" -vf "fps=${fps},scale=480:-1:flags=lanczos,palettegen" "${palette}"`);
-        await execAsync(`ffmpeg -y -framerate ${fps} -i "${path.join(frameDir, 'frame_%05d.png')}" -i "${palette}" -filter_complex "fps=${fps},scale=480:-1:flags=lanczos[x];[x][1:v]paletteuse" -loop 0 "${tempGif}"`);
+        await execAsync(`ffmpeg -y -framerate ${fps} -i "${path.join(frameDir, 'frame_%05d.png')}" -vf "fps=${fps},scale=320:-1:flags=fast_bilinear,palettegen=max_colors=96" "${palette}"`);
+        await execAsync(`ffmpeg -y -framerate ${fps} -i "${path.join(frameDir, 'frame_%05d.png')}" -i "${palette}" -filter_complex "fps=${fps},scale=320:-1:flags=fast_bilinear[x];[x][1:v]paletteuse" -loop 0 "${tempGif}"`);
 
         gifs.push(await fs.readFile(tempGif));
         console.log(`[ClipWorker] Recorded GIF ${i + 1}/2 for ${twitchLogin}`);
