@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getChatTagApiBase, getDiscordClientId, getHearMeOutUrl, getStreamweaverUrl } from '@/lib/runtime-config';
+import { getChatTagApiBase, getDiscordClientId, getHardcodedGuildId, getHearMeOutUrl, getStreamweaverUrl } from '@/lib/runtime-config';
 import { getChatTagServiceSecret } from '@/lib/runtime-secrets';
 import { normalizePublicSpmtCommand, type PublicSpmtCommand } from '@/lib/discord-spmt-command';
 import { parseMtFixItCommand } from '@/lib/mtfixit-contract';
@@ -131,6 +131,7 @@ export async function POST(request: NextRequest) {
   const message = String(data?.message || data?.content || '');
   const channelId = String(data?.channelId || '');
   const guildId = String(data?.guildId || data?.serverId || '');
+  const effectiveGuildId = guildId || getHardcodedGuildId();
   const messageId = String(data?.messageId || '');
   const userId = String(data?.userId || data?.author?.id || '').trim();
   const isBotAuthor = Boolean(data?.author?.bot || data?.user?.bot || data?.member?.user?.bot);
@@ -156,7 +157,10 @@ export async function POST(request: NextRequest) {
     messagePreview: message.slice(0, 120),
   });
 
-  if (!channelId || !guildId || isDirectMessage || isBotAuthor) {
+  if (!channelId || isBotAuthor || (!effectiveGuildId && isSpmtOptOut)) {
+    return NextResponse.json({ success: true, skipped: 'missing-command-context' });
+  }
+  if ((!guildId || isDirectMessage) && !isSpmtOptOut) {
     return NextResponse.json({ success: true, skipped: 'not-public-human-message' });
   }
 
@@ -177,7 +181,7 @@ export async function POST(request: NextRequest) {
   if (isSpmtOptOut) {
     if (!userId) return NextResponse.json({ error: 'Missing Discord user identity' }, { status: 400 });
     const result = await handleSpmtOptOut({
-      guildId,
+      guildId: effectiveGuildId,
       channelId,
       userId,
       displayName: String(data?.displayName || data?.userName || data?.author?.username || 'user'),
