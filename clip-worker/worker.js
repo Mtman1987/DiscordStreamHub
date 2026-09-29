@@ -536,11 +536,11 @@ async function recordLiveStream(twitchLogin) {
       await fs.mkdir(frameDir, { recursive: true });
 
       try {
-        // Keep the 60-second fallback while generating a small GIF up front.
-        // The old 480px/10fps render exceeded the upload budget and cost
+        // Capture a 45-second fallback at 10 fps and generate a small GIF up front.
+        // The old 480px render exceeded the upload budget and cost
         // another 90-second FFmpeg pass on the single-CPU clip worker.
-        const fps = 6;
-        const totalFrames = fps * 60;
+        const fps = 10;
+        const totalFrames = fps * 45;
         for (let f = 0; f < totalFrames; f++) {
           const frame = await page.screenshot({ type: 'png', clip: { x: 0, y: 0, width: 640, height: 360 } });
           await fs.writeFile(path.join(frameDir, `frame_${String(f).padStart(5, '0')}.png`), frame);
