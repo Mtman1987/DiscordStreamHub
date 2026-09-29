@@ -488,6 +488,34 @@ class TwitchChatService {
     return db.collection('servers').doc(this.serverId!).collection('twitchChatBlacklist');
   }
 
+  private async purgeExpiredBlacklistProfiles(now = Date.now()): Promise<void> {
+    if (!this.serverId) return;
+    const snapshot = await this.blacklistCollection().get();
+    for (const doc of snapshot.docs as Array<{ id: string; data: () => any; ref: any }>) {
+      const data = doc.data() || {};
+      const deleteAfter = Date.parse(String(data.deleteAfter || ''));
+      if (!Number.isFinite(deleteAfter) || deleteAfter > now || data.purgedAt) continue;
+
+      const purgedAt = new Date(now).toISOString();
+      await doc.ref.set({
+        channel: normalizeChannel(data.channel || doc.id),
+        reason: data.reason || 'twitch-msg-banned',
+        permanent: true,
+        noContact: true,
+        userNotificationState: data.userNotificationState || 'suppressed-existing-blacklist',
+        firstDetectedAt: data.firstDetectedAt || data.quarantinedAt || purgedAt,
+        quarantinedAt: data.quarantinedAt || data.firstDetectedAt || purgedAt,
+        deleteAfter: data.deleteAfter,
+        purgedAt,
+        streamweaverSyncedAt: data.streamweaverSyncedAt || null,
+        chatTagSyncedAt: data.chatTagSyncedAt || null,
+        notificationSentAt: data.notificationSentAt || null,
+        completedAt: data.completedAt || null,
+      });
+      console.log(`[TwitchChat] Purged expired quarantine profile for #${normalizeChannel(data.channel || doc.id)}; permanent no-contact tombstone retained`);
+    }
+  }
+
   private async getBlacklistedChannels(): Promise<Set<string>> {
     if (!this.serverId) return new Set();
     const snapshot = await this.blacklistCollection().get();
@@ -549,6 +577,7 @@ class TwitchChatService {
 
   private async reconcilePendingBlacklists(): Promise<void> {
     if (!this.serverId) return;
+    await this.purgeExpiredBlacklistProfiles();
     const snapshot = await this.blacklistCollection().get();
     for (const doc of snapshot.docs as Array<{ id: string; data: () => any }>) {
       const channel = normalizeChannel(doc.data()?.channel || doc.id);
