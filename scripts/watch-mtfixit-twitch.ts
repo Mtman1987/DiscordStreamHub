@@ -11,6 +11,7 @@ const CHANNEL_REFRESH_MS = 60_000;
 const TOKEN_RETRY_MS = 5 * 60_000;
 const CHANNEL_RETRY_BASE_MS = 60_000;
 const CHANNEL_RETRY_MAX_MS = 30 * 60_000;
+const TWITCH_BAN_QUARANTINE_MS = 90 * 24 * 60 * 60 * 1000;
 
 type RetryState = { attempts: number; nextAt: number };
 type LiveChannel = { channel: string; tenantId?: string };
@@ -36,11 +37,45 @@ function scheduleRetry(retries: Map<string, RetryState>, channel: string) {
   retries.set(channel, { attempts, nextAt: Date.now() + delay }); return delay;
 }
 
+async function getBlacklistedChannels(): Promise<Set<string>> {
+  const snapshot = await db.collection('servers').doc(serverId).collection('twitchChatBlacklist').get();
+  return new Set(snapshot.docs.map((doc: any) => normalizeChannel(doc.data()?.channel || doc.id)).filter(Boolean));
+}
+
+function isBanNotice(error: unknown): boolean {
+  const text = errorText(error).toLowerCase();
+  return text.includes('msg_banned') || text.includes('banned from this channel') || text.includes('permanently banned');
+}
+
+async function recordBannedChannel(channel: string, detail: unknown): Promise<void> {
+  const normalized = normalizeChannel(channel); if (!normalized) return;
+  const ref = db.collection('servers').doc(serverId).collection('twitchChatBlacklist').doc(normalized);
+  const snapshot = await ref.get();
+  const nowMs = Date.now(); const now = new Date(nowMs).toISOString();
+  await ref.set({
+    channel: normalized,
+    reason: 'twitch-msg-banned',
+    noticeDetail: errorText(detail).slice(0, 500),
+    firstDetectedAt: snapshot.data()?.firstDetectedAt || now,
+    lastDetectedAt: now,
+    permanent: true,
+    quarantinedAt: snapshot.data()?.quarantinedAt || now,
+    deleteAfter: snapshot.data()?.deleteAfter || new Date(nowMs + TWITCH_BAN_QUARANTINE_MS).toISOString(),
+    userNotificationState: snapshot.data()?.userNotificationState || (snapshot.exists ? 'suppressed-existing-blacklist' : 'pending'),
+    noContact: snapshot.data()?.noContact ?? snapshot.exists,
+  }, { merge: true });
+  console.warn(`[MtFixIt:Twitch] Blacklisted #${normalized} after Twitch reported msg_banned; no more join retries`);
+}
+
 async function getLiveChannels(): Promise<LiveChannel[]> {
-  const users = await db.collection('servers').doc(serverId).collection('users').get(); const channels = new Map<string, LiveChannel>();
+  const [users, blacklisted] = await Promise.all([
+    db.collection('servers').doc(serverId).collection('users').get(),
+    getBlacklistedChannels(),
+  ]);
+  const channels = new Map<string, LiveChannel>();
   for (const user of users.docs) {
     const state = await user.ref.collection('shoutoutState').doc('current').get(); if (!state.exists || !state.data()?.isLive) continue;
-    const data = user.data() || {}; const channel = normalizeChannel(data.twitchLogin); if (!channel) continue;
+    const data = user.data() || {}; const channel = normalizeChannel(data.twitchLogin); if (!channel || blacklisted.has(channel)) continue;
     channels.set(channel, { channel, tenantId: resolveTwitchMtFixItTenantId(undefined, data.twitchId) });
   }
   return [...channels.values()];
@@ -70,7 +105,15 @@ async function syncChannels(client: tmi.Client, joined: Set<string>, retries: Ma
     if (joined.has(channel)) { retries.delete(channel); continue; }
     const retry = retries.get(channel); if (retry && retry.nextAt > Date.now()) continue;
     try { await client.join(channel); joined.add(channel); retries.delete(channel); console.log(`[MtFixIt:Twitch] Joined #${channel}`); }
-    catch (error) { const delay = scheduleRetry(retries, channel); console.warn(`[MtFixIt:Twitch] Join #${channel} deferred for ${Math.round(delay / 1000)}s: ${errorText(error)}`); }
+    catch (error) {
+      if (isBanNotice(error)) {
+        await recordBannedChannel(channel, error);
+        retries.delete(channel);
+        continue;
+      }
+      const delay = scheduleRetry(retries, channel);
+      console.warn(`[MtFixIt:Twitch] Join #${channel} deferred for ${Math.round(delay / 1000)}s: ${errorText(error)}`);
+    }
   }
   for (const channel of [...joined]) {
     if (live.has(channel)) continue;
@@ -118,7 +161,15 @@ async function runWatcher() {
   console.log(`[MtFixIt:Twitch] Connected as ${credentials.username}; watching ${joined.size} live channel(s).`);
   await resumePendingMtFixItDeliveries('twitch', async (record, outcome) => {
     const channel = normalizeChannel(record.channelId);
-    if (!joined.has(channel)) await client.join(channel).catch(() => undefined);
+    const blacklisted = await getBlacklistedChannels();
+    if (blacklisted.has(channel)) return;
+    if (!joined.has(channel)) {
+      try { await client.join(channel); }
+      catch (error) {
+        if (isBanNotice(error)) await recordBannedChannel(channel, error);
+        return;
+      }
+    }
     await client.say(`#${channel}`, mtFixItPublicReply(outcome));
   }).then((count) => { if (count) console.log(`[MtFixIt:Twitch] Resumed ${count} pending MtFixIt delivery record(s).`); });
   const timer = setInterval(() => syncChannels(client, joined, retries, tenantByChannel).catch((error) => console.warn('[MtFixIt:Twitch] Channel list refresh deferred:', errorText(error))), CHANNEL_REFRESH_MS); timer.unref?.();
