@@ -73,7 +73,7 @@ export function buildTwitchBanUserDm(snapshot: TwitchBanProfileSnapshot): string
     '',
     'If you do not want SPMT bots or the SPMT system in your channel, send `spmt opt-out` to the SPMT bot on Discord. That permanently opts the linked Twitch channel out so the bots and automated services stop trying to join or contact the channel.',
     '',
-    'If you do not opt out, this is treated as a ban rather than an opt-out: the channel stays quarantined and mtman1987 remains excluded from automated participation until access is manually restored.',
+    'If you do not opt out, this is treated as an ongoing ban rather than an opt-out: the channel stays quarantined, and mtman1987 will also remain blocked from that Twitch channel/account until you manually restore access.',
     '',
     'This notice is sent once. Existing blacklist entries are not contacted again.',
   ].join('\n');
