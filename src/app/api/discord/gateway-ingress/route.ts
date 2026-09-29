@@ -3,7 +3,7 @@ import { getChatTagApiBase, getDiscordClientId, getHearMeOutUrl, getStreamweaver
 import { getChatTagServiceSecret } from '@/lib/runtime-secrets';
 import { normalizePublicSpmtCommand, type PublicSpmtCommand } from '@/lib/discord-spmt-command';
 import { parseMtFixItCommand } from '@/lib/mtfixit-contract';
-import { postSignalSeekerPanel } from '@/lib/signal-seeker-service';
+import { postCommandSignalDrop, postSignalSeekerPanel } from '@/lib/signal-seeker-service';
 import { recordRelayChatActivity } from '@/lib/relay-presence';
 
 export const dynamic = 'force-dynamic';
@@ -109,8 +109,21 @@ export async function POST(request: NextRequest) {
   if (isSignalSeekerCommand) {
     try {
       const panel = await postSignalSeekerPanel({ guildId, channelId });
-      trace(traceId, 'delivery', { destination: 'dsh-signal-seekers', ok: true, messageId: panel?.id || null });
-      return NextResponse.json({ success: true, traceId, messageId, signalSeekers: true });
+      const signal = await postCommandSignalDrop({ guildId, channelId, channelName: String(data?.channelName || channelId) });
+      trace(traceId, 'delivery', {
+        destination: 'dsh-signal-command',
+        ok: true,
+        panelMessageId: panel?.id || null,
+        signalMessageId: signal.messageId,
+        dropId: signal.dropId,
+      });
+      return NextResponse.json({
+        success: true,
+        traceId,
+        messageId,
+        signalSeekers: true,
+        signalDrop: { dropId: signal.dropId, messageId: signal.messageId, expiresAt: signal.expiresAt },
+      });
     } catch (error) {
       trace(traceId, 'delivery', { destination: 'dsh-signal-seekers', ok: false, error: error instanceof Error ? error.message : String(error) });
       return NextResponse.json({ error: 'Unable to open the Signal Seeker journey' }, { status: 502 });

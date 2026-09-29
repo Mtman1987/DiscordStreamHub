@@ -1,7 +1,14 @@
+import { randomUUID } from 'node:crypto';
 import { db } from '@/lib/db';
 
 const DISCORD_API = 'https://discord.com/api/v10';
 const ROLE_NAME = 'Signal Seeker';
+export const SIGNAL_DROP_TTL_MS = 10 * 60 * 1000;
+const COMMAND_SIGNAL_CLUES = [
+  'A hidden carrier is breaking through the static. The transmission is open.',
+  'A Signal crossed the network and left a trail through the noise.',
+  'The mountain answered. A narrow transmission is holding for a few more minutes.',
+];
 
 function botToken() {
   const token = String(process.env.DISCORD_BOT_TOKEN || '').trim();
@@ -98,6 +105,86 @@ export async function postSignalSeekerPanel(input: { guildId: string; channelId:
       allowed_mentions: { parse: [] },
     }),
   });
+}
+
+
+async function deleteSignalMessage(channelId: string, messageId: string) {
+  const response = await fetch(`${DISCORD_API}/channels/${channelId}/messages/${messageId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bot ${botToken()}` },
+  }).catch(() => null);
+  if (response && !response.ok && response.status !== 404) {
+    console.error(`[SignalDrop] Timed deletion failed (${response.status}) for ${channelId}/${messageId}`);
+  }
+}
+
+export async function postSignalDrop(input: {
+  guildId: string;
+  channelId: string;
+  channelName?: string;
+  clue?: string;
+  botName?: string;
+  avatarUrl?: string;
+  source?: 'command' | 'internal';
+}) {
+  const roleId = await ensureSignalSeekerRole(input.guildId).catch((error) => {
+    console.error('[SignalDrop] Unable to resolve Signal Seeker role:', error);
+    return '';
+  });
+  const dropId = randomUUID();
+  const clue = String(input.clue || COMMAND_SIGNAL_CLUES[Math.floor(Math.random() * COMMAND_SIGNAL_CLUES.length)]).trim().slice(0, 1800);
+  const message = await discord(`/channels/${input.channelId}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({
+      ...(roleId ? { content: `<@&${roleId}> a Signal is ready to open.` } : {}),
+      embeds: [{
+        author: { name: String(input.botName || 'StreamWeaver').slice(0, 80), ...(input.avatarUrl ? { icon_url: input.avatarUrl } : {}) },
+        title: '📡 UNIDENTIFIED SIGNAL',
+        description: 'A carrier is waiting behind the static. Open the Signal before it fades.',
+        color: 0x5865f2,
+        footer: { text: 'Signal opens on demand • expires in 10 minutes' },
+        timestamp: new Date().toISOString(),
+      }],
+      components: [{
+        type: 1,
+        components: [{
+          type: 2,
+          style: 1,
+          label: 'OPEN SIGNAL',
+          custom_id: `signal_intercept:${dropId}`,
+          emoji: { name: '📡' },
+        }],
+      }],
+      allowed_mentions: { parse: [], roles: roleId ? [roleId] : [] },
+    }),
+  });
+  if (!message?.id) throw new Error('Discord did not return the Signal message');
+  const createdAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + SIGNAL_DROP_TTL_MS).toISOString();
+  await db.collection('signalDrops').doc(dropId).set({
+    id: dropId,
+    guildId: input.guildId,
+    channelId: input.channelId,
+    channelName: String(input.channelName || input.channelId),
+    messageId: String(message.id),
+    clue,
+    botName: String(input.botName || 'StreamWeaver'),
+    source: input.source || 'internal',
+    createdAt,
+    expiresAt,
+    opens: 0,
+  });
+  const timer = setTimeout(() => {
+    deleteSignalMessage(input.channelId, String(message.id)).catch((error) => {
+      console.error('[SignalDrop] Timed deletion crashed:', error);
+    });
+  }, SIGNAL_DROP_TTL_MS);
+  timer.unref?.();
+  return { id: String(message.id), dropId, messageId: String(message.id), expiresAt };
+}
+
+export async function postCommandSignalDrop(input: { guildId: string; channelId: string; channelName?: string }) {
+  return postSignalDrop({ ...input, source: 'command' });
 }
 
 export async function findDiscordMemberByTwitch(guildId: string, twitchUserId: string, twitchUsername: string) {

@@ -1,20 +1,6 @@
-import { randomUUID } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
 import { getServiceToServiceSecrets, hasAuthorizedBearerToken } from '@/lib/runtime-secrets';
-import { ensureSignalSeekerRole } from '@/lib/signal-seeker-service';
-
-const SIGNAL_DROP_TTL_MS = 10 * 60 * 1000;
-
-async function deleteSignalMessage(channelId: string, messageId: string, botToken: string) {
-  const response = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages/${messageId}`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bot ${botToken}` },
-  }).catch(() => null);
-  if (response && !response.ok && response.status !== 404) {
-    console.error(`[SignalDrop] Timed deletion failed (${response.status}) for ${channelId}/${messageId}`);
-  }
-}
+import { postSignalDrop } from '@/lib/signal-seeker-service';
 
 export async function POST(request: NextRequest) {
   if (!hasAuthorizedBearerToken(request.headers.get('authorization'), getServiceToServiceSecrets())) {
@@ -27,43 +13,21 @@ export async function POST(request: NextRequest) {
   const clue = String(input.clue || '').trim().slice(0, 1800);
   const botName = String(input.botName || 'StreamWeaver').trim().slice(0, 80);
   const avatarUrl = String(input.avatarUrl || '').trim();
-  if (!guildId || !channelId || !clue) return NextResponse.json({ error: 'guildId, channelId, and clue are required' }, { status: 400 });
-  const botToken = String(process.env.DISCORD_BOT_TOKEN || '').trim();
-  if (!botToken) return NextResponse.json({ error: 'Discord bot token is unavailable' }, { status: 503 });
-  const dropId = randomUUID();
-  const signalSeekerRoleId = await ensureSignalSeekerRole(guildId).catch((error) => {
-    console.error('[SignalDrop] Unable to resolve Signal Seeker role:', error);
-    return '';
-  });
-  const response = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
-    method: 'POST',
-    headers: { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      ...(signalSeekerRoleId ? { content: `<@&${signalSeekerRoleId}> a new Signal has appeared.` } : {}),
-      embeds: [{
-        author: { name: botName, ...(avatarUrl ? { icon_url: avatarUrl } : {}) },
-        title: '📡 UNIDENTIFIED SIGNAL',
-        description: clue,
-        color: 0x5865f2,
-        footer: { text: 'Signal anomaly • Discord identity verified on intercept' },
-        timestamp: new Date().toISOString(),
-      }],
-      components: [{ type: 1, components: [{ type: 2, style: 1, label: 'INTERCEPT SIGNAL', custom_id: `signal_intercept:${dropId}`, emoji: { name: '📡' } }] }],
-      allowed_mentions: { parse: [], roles: signalSeekerRoleId ? [signalSeekerRoleId] : [] },
-    }),
-  });
-  const message = await response.json().catch(() => null);
-  if (!response.ok || !message?.id) return NextResponse.json({ error: `Discord post failed (${response.status})` }, { status: 502 });
-  const expiresAt = new Date(Date.now() + SIGNAL_DROP_TTL_MS).toISOString();
-  await db.collection('signalDrops').doc(dropId).set({
-    id: dropId, guildId, channelId, channelName, messageId: String(message.id), clue, botName,
-    createdAt: new Date().toISOString(), expiresAt, claims: 0,
-  });
-  const deletionTimer = setTimeout(() => {
-    deleteSignalMessage(channelId, String(message.id), botToken).catch((error) => {
-      console.error('[SignalDrop] Timed deletion crashed:', error);
+  if (!guildId || !channelId || !clue) {
+    return NextResponse.json({ error: 'guildId, channelId, and clue are required' }, { status: 400 });
+  }
+  try {
+    const posted = await postSignalDrop({
+      guildId,
+      channelId,
+      channelName,
+      clue,
+      botName,
+      avatarUrl,
+      source: 'internal',
     });
-  }, SIGNAL_DROP_TTL_MS);
-  deletionTimer.unref?.();
-  return NextResponse.json({ ok: true, dropId, messageId: String(message.id), expiresAt });
+    return NextResponse.json({ ok: true, dropId: posted.dropId, messageId: posted.messageId, expiresAt: posted.expiresAt });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Discord Signal post failed' }, { status: 502 });
+  }
 }
