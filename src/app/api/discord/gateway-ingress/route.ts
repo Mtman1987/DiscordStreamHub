@@ -167,7 +167,7 @@ export async function POST(request: NextRequest) {
   if (userId) {
     recordRelayChatActivity({
       userId,
-      guildId,
+      guildId: effectiveGuildId,
       username: data?.author?.username || data?.userName,
       displayName: data?.displayName || data?.userName,
       channelId,
