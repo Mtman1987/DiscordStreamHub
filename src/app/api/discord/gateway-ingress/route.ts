@@ -5,6 +5,8 @@ import { normalizePublicSpmtCommand, type PublicSpmtCommand } from '@/lib/discor
 import { parseMtFixItCommand } from '@/lib/mtfixit-contract';
 import { postCommandSignalDrop, postSignalSeekerPanel } from '@/lib/signal-seeker-service';
 import { recordRelayChatActivity } from '@/lib/relay-presence';
+import { db } from '@/lib/db';
+import { sendDiscordMessage } from '@/lib/discord-bot-service';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,6 +45,71 @@ function withForwardedSpmtMessage(body: any, command: PublicSpmtCommand) {
   return { ...body, message: command.forwardMessage, content: command.forwardMessage, originalSpmtMessage: command.originalMessage };
 }
 
+async function handleSpmtOptOut(input: {
+  guildId: string;
+  channelId: string;
+  userId: string;
+  displayName: string;
+}) {
+  const userRef = db.collection('servers').doc(input.guildId).collection('users').doc(input.userId);
+  let userSnap = await userRef.get();
+  let user = userSnap.exists ? (userSnap.data() || {}) : null;
+
+  if (!user) {
+    const users = await db.collection('servers').doc(input.guildId).collection('users').get();
+    const match = users.docs.find((doc: any) => {
+      const data = doc.data() || {};
+      return String(data.discordUserId || '').trim() === input.userId;
+    });
+    if (match) {
+      userSnap = match;
+      user = match.data() || {};
+    }
+  }
+
+  const twitchLogin = String(user?.twitchLogin || user?.twitchUsername || '').trim().toLowerCase().replace(/^#/, '');
+  if (!twitchLogin) {
+    await sendDiscordMessage(input.channelId, {
+      content: `@${input.displayName} I could not find a linked Twitch channel to opt out. Link the Twitch account first, or ask an SPMT admin to remove it manually.`,
+    }).catch(() => null);
+    return { ok: false, reason: 'no-linked-twitch' };
+  }
+
+  const now = new Date().toISOString();
+  await db.collection('servers').doc(input.guildId).collection('twitchChatBlacklist').doc(twitchLogin).set({
+    channel: twitchLogin,
+    reason: 'user-opt-out',
+    permanent: true,
+    noContact: true,
+    userNotificationState: 'user-opted-out',
+    firstDetectedAt: now,
+    lastDetectedAt: now,
+    quarantinedAt: now,
+    completedAt: now,
+  }, { merge: true });
+
+  const chatTagBase = getChatTagApiBase().replace(/\/$/, '');
+  const chatTagSecret = getChatTagServiceSecret();
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  if (chatTagSecret) headers['x-bot-secret'] = chatTagSecret;
+  const blacklist = await postJson(
+    `${chatTagBase}/api/bot/blacklist`,
+    { channel: twitchLogin, source: 'user-opt-out' },
+    headers,
+    8_000,
+  );
+
+  if (!blacklist.ok) {
+    return { ok: false, reason: 'chat-tag-blacklist-failed', twitchLogin, blacklist };
+  }
+
+  await sendDiscordMessage(input.channelId, {
+    content: `@${input.displayName} opt-out confirmed for Twitch channel **${twitchLogin}**. SPMT bots and automated join/contact attempts will stay blocked unless you explicitly opt back in later.`,
+  }).catch(() => null);
+
+  return { ok: true, twitchLogin };
+}
+
 export async function POST(request: NextRequest) {
   const traceId = request.headers.get('x-discord-trace-id') || crypto.randomUUID();
   const configuredBotToken = process.env.DISCORD_BOT_TOKEN;
@@ -75,6 +142,7 @@ export async function POST(request: NextRequest) {
   const isStreamweaverSignalCommand = /^!signal(?:bot)?(?:\s|$)/i.test(message.trim());
   const isSignalSeekerCommand = /^!signal\s*$/i.test(message.trim());
   const isMtFixItCommand = parseMtFixItCommand(message) !== null;
+  const isSpmtOptOut = /^@?spmt\s+opt(?:-|\s*)out\s*$/i.test(message.trim());
 
   trace(traceId, 'ingress', {
     guildId: guildId || null,
@@ -104,6 +172,18 @@ export async function POST(request: NextRequest) {
       voiceChannelName: data?.voiceChannelName,
       observedAt: new Date().toISOString(),
     });
+  }
+
+  if (isSpmtOptOut) {
+    if (!userId) return NextResponse.json({ error: 'Missing Discord user identity' }, { status: 400 });
+    const result = await handleSpmtOptOut({
+      guildId,
+      channelId,
+      userId,
+      displayName: String(data?.displayName || data?.userName || data?.author?.username || 'user'),
+    });
+    trace(traceId, 'delivery', { destination: 'spmt-opt-out', ...result });
+    return NextResponse.json({ success: result.ok, traceId, messageId, optOut: result }, { status: result.ok ? 200 : 502 });
   }
 
   if (isSignalSeekerCommand) {
