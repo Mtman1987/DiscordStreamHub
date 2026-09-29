@@ -1,4 +1,4 @@
-import { SPMT_BASE_URL } from './spmt-session';
+import { SPMT_INTERNAL_BASE_URL } from './spmt-session';
 
 type ServiceToken = { token: string; expiresAt: number; scopes: string[] };
 const cached = new Map<string, ServiceToken>();
@@ -22,7 +22,7 @@ export async function getSpmtServiceToken(scopes: string[]): Promise<string> {
   const mint = (async () => {
     const clientSecret = String(process.env.DSH_CLIENT_SECRET || '').trim();
     if (!clientSecret) throw new Error('DSH SPMT OAuth client secret is not configured');
-    const response = await fetch(`${SPMT_BASE_URL}/api/oauth/token`, {
+    const response = await fetch(`${SPMT_INTERNAL_BASE_URL}/api/oauth/token`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', accept: 'application/json' },
       body: JSON.stringify({

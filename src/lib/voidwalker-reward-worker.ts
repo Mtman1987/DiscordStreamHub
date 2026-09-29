@@ -1,6 +1,6 @@
 import { db } from '@/lib/db';
 import { getHardcodedGuildId } from '@/lib/runtime-config';
-import { SPMT_BASE_URL } from '@/lib/spmt-session';
+import { SPMT_INTERNAL_BASE_URL } from '@/lib/spmt-session';
 import { clearSpmtServiceTokenCache, getSpmtServiceToken } from '@/lib/spmt-service-token';
 import { applyVoidwalkerRole } from './voidwalker-role';
 
@@ -12,15 +12,41 @@ let lastError: string | null = null;
 let deliveredCount = 0;
 let lastBatchClaimed = 0;
 
+const SPMT_RETRY_DELAYS_MS = [250, 750];
+
+function retryableSpmtStatus(status: number): boolean {
+  return status === 401 || status === 403 || status === 429 || status >= 500;
+}
+
 async function spmt(path: string, body: unknown) {
-  const token = await getSpmtServiceToken(['identity:write']);
-  const response = await fetch(`${SPMT_BASE_URL}/api/internal/easter-eggs/discord-rewards/${path}`, {
-    method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body), cache: 'no-store', signal: AbortSignal.timeout(10_000),
-  });
-  if (response.status === 401 || response.status === 403) clearSpmtServiceTokenCache();
-  if (!response.ok) throw new Error(`SPMT Discord reward ${path} failed (${response.status})`);
-  return response.json();
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= SPMT_RETRY_DELAYS_MS.length; attempt += 1) {
+    let response: Response;
+    try {
+      const token = await getSpmtServiceToken(['identity:write']);
+      response = await fetch(`${SPMT_INTERNAL_BASE_URL}/api/internal/easter-eggs/discord-rewards/${path}`, {
+        method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body), cache: 'no-store', signal: AbortSignal.timeout(10_000),
+      });
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error('SPMT Discord reward request failed');
+      if (attempt === SPMT_RETRY_DELAYS_MS.length) throw lastError;
+      await new Promise((resolve) => setTimeout(resolve, SPMT_RETRY_DELAYS_MS[attempt]));
+      continue;
+    }
+
+    if (response.status === 401 || response.status === 403) clearSpmtServiceTokenCache();
+    if (response.ok) return response.json();
+
+    lastError = new Error(`SPMT Discord reward ${path} failed (${response.status})`);
+    if (!retryableSpmtStatus(response.status) || attempt === SPMT_RETRY_DELAYS_MS.length) {
+      throw lastError;
+    }
+    await new Promise((resolve) => setTimeout(resolve, SPMT_RETRY_DELAYS_MS[attempt]));
+  }
+
+  throw lastError || new Error('SPMT Discord reward request failed');
 }
 
 async function discord(path: string, init: RequestInit = {}) {

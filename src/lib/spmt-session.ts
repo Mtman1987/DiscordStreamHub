@@ -2,6 +2,7 @@ import { getHardcodedGuildId } from '@/lib/runtime-config';
 
 export const DSH_SPMT_COOKIE = 'dsh_spmt_session';
 export const SPMT_BASE_URL = String(process.env.SPMT_BASE_URL || 'https://spmt.live').replace(/\/$/, '');
+export const SPMT_INTERNAL_BASE_URL = String(process.env.SPMT_INTERNAL_BASE_URL || 'https://spmt-live.fly.dev').replace(/\/$/, '');
 
 export type DshSpmtSession = {
   spmtUserId?: string;
