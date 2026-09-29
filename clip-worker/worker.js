@@ -6,12 +6,12 @@
  * Loop:
  *   1. Ask DSH which streamers need clips  (GET /api/clips/needed)
  *   2. For each streamer, fetch Twitch clips via GraphQL
- *   3. Download MP4, convert to GIF at full quality (480px, 12fps)
+ *   3. Stream a bounded-quality MP4 to disk, convert to GIF (320px, 12fps)
  *   4. Push finished GIF to DSH                    (POST /api/clips/upload)
  *   5. Sleep, repeat
  *
  * If GraphQL fails, falls back to Puppeteer live-stream recording.
- * Runs one conversion at a time so it never OOMs.
+ * Runs one conversion at a time to bound memory use.
  */
 
 const { exec } = require('child_process');
@@ -22,6 +22,8 @@ const { existsSync, mkdirSync } = fsSync;
 const os = require('os');
 const path = require('path');
 const http = require('http');
+const { Readable } = require('stream');
+const { pipeline } = require('stream/promises');
 const { prepareGifForUpload } = require('./gif-upload-budget.js');
 
 const execAsync = promisify(exec);
@@ -405,7 +407,9 @@ async function getClipVideoUrl(clipSlug) {
     const data = await res.json();
     const clip = data?.data?.clip;
     if (!clip?.videoQualities?.length) return null;
-    const best = clip.videoQualities.sort((a, b) => parseInt(b.quality) - parseInt(a.quality))[0];
+    // The GIF is only 320px wide; downloading a 1080p MP4 wastes memory and CPU.
+    const qualities = clip.videoQualities.slice().sort((a, b) => Number(b.quality) - Number(a.quality));
+    const best = qualities.find(item => Number(item.quality) <= 480) || qualities.at(-1);
     return {
       url: best.sourceURL,
       token: clip.playbackAccessToken?.value,
@@ -455,21 +459,24 @@ async function convertClipToGif(clipUrl, clipId, streamerName) {
         Origin: 'https://www.twitch.tv',
       },
     });
-    clearTimeout(timeout);
-
-    if (!mp4Res.ok) {
+    if (!mp4Res.ok || !mp4Res.body) {
+      clearTimeout(timeout);
       console.log(`[ClipWorker] Download failed: ${mp4Res.status}`);
       return null;
     }
 
-    const buf = Buffer.from(await mp4Res.arrayBuffer());
-    await fs.writeFile(tempMp4, buf);
-    console.log(`[ClipWorker] Downloaded ${(buf.length / 1024 / 1024).toFixed(1)}MB`);
+    try {
+      await pipeline(Readable.fromWeb(mp4Res.body), fsSync.createWriteStream(tempMp4), { signal: controller.signal });
+    } finally {
+      clearTimeout(timeout);
+    }
+    const downloaded = await fs.stat(tempMp4);
+    console.log(`[ClipWorker] Downloaded ${(downloaded.size / 1024 / 1024).toFixed(1)}MB`);
 
-    // Convert — full quality, 480px, 12fps
+    // Use the generated palette in the second pass instead of generating it again.
     console.log(`[ClipWorker] Converting to GIF...`);
-    await execAsync(`ffmpeg -y -i "${tempMp4}" -vf "fps=12,scale=480:-1:flags=lanczos,palettegen" "${palette}"`);
-    await execAsync(`ffmpeg -y -i "${tempMp4}" -i "${palette}" -filter_complex "fps=12,scale=480:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" -loop 0 "${tempGif}"`);
+    await execAsync(`ffmpeg -y -threads 1 -i "${tempMp4}" -vf "fps=12,scale=320:-1:flags=fast_bilinear,palettegen=max_colors=96" "${palette}"`);
+    await execAsync(`ffmpeg -y -threads 1 -i "${tempMp4}" -i "${palette}" -filter_complex_threads 1 -filter_complex "fps=12,scale=320:-1:flags=fast_bilinear[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=5" -loop 0 "${tempGif}"`);
 
     const gifBuf = await fs.readFile(tempGif);
     console.log(`[ClipWorker] GIF ready: ${(gifBuf.length / 1024).toFixed(0)}KB`);
