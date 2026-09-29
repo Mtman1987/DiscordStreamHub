@@ -22,11 +22,16 @@ test('random Signal drops ping only the opt-in role', () => {
   assert.match(drop, /roles: signalSeekerRoleId \? \[signalSeekerRoleId\] : \[\]/);
 });
 
-test('Signal drops delete and stop accepting claims after ten minutes', () => {
-  assert.match(drop, /SIGNAL_DROP_TTL_MS = 10 \* 60 \* 1000/);
-  assert.match(drop, /method: 'DELETE'/);
+test('Signal drops retain one hour of access and recover expiry after restart', () => {
+  const cleanup = fs.readFileSync('src/lib/signal-drop-cleanup.ts', 'utf8');
+  assert.match(drop, /SIGNAL_DROP_TTL_MS/);
+  assert.match(drop, /flags: SILENT_MESSAGE_FLAG/);
+  assert.match(drop, /signalAlertPayload/);
+  assert.match(cleanup, /'DELETE'/);
+  assert.match(cleanup, /status: 'expired'/);
   assert.match(drop, /expiresAt/);
-  assert.match(interactions, /Signal faded after 10 minutes/);
+  assert.match(interactions, /signalDropExpired\(drop.expiresAt\)/);
+  assert.match(interactions, /signalHuntClue\(clicks\)/);
 });
 
 test('Signal win response explains the unlocked reward', () => {

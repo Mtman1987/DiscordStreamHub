@@ -24,7 +24,8 @@
     "test:banners": "node --experimental-strip-types --test tests/banner-role-contract.test.ts",
     "test:nebula-gameplay": "node --import tsx --test tests/nebula-gameplay-rotation.test.ts",
     "test:applications": "node --experimental-strip-types --test tests/application-flow.test.ts",
-    "test:voidwalker": "node --import tsx --test tests/voidwalker-role.test.ts"
+    "test:voidwalker": "node --import tsx --test tests/voidwalker-role.test.ts",
+    "test:signal-hunt": "node --import tsx --test tests/signal-hunt.test.ts tests/signal-seeker-contract.test.ts tests/signal-drop-lifecycle.test.ts"
   },
   "dependencies": {
     "@cfworker/json-schema": "^4.1.1",

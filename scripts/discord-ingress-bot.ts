@@ -12,6 +12,7 @@ import { getDiscordIngressTimeoutMs } from '../src/lib/discord-ingress-timeout';
 import { mtFixItPublicReply } from '../src/lib/mtfixit-contract';
 import { resumePendingMtFixItDeliveries } from '../src/lib/mtfixit-delivery';
 import { sendDiscordMtFixItMessage } from '../src/lib/mtfixit-discord-delivery';
+import { startSignalDropCleanup } from '../src/lib/signal-drop-cleanup';
 
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const DSH_INGRESS_URL = (
@@ -158,6 +159,7 @@ async function main() {
   client.once('clientReady', (readyClient) => {
     readyClient.user.setPresence({ status: 'online', activities: [{ name: PRESENCE_TEXT, type: ActivityType.Watching }] });
     console.log(`[DiscordIngress] READY as ${readyClient.user.tag}`);
+    startSignalDropCleanup();
     console.log(`[DiscordIngress] Presence: ${PRESENCE_TEXT}`);
     console.log(`[DiscordIngress] DSH endpoint: ${DSH_INGRESS_URL}/api/discord/gateway-ingress`);
     const publishCurrentVoiceStates = () => {

@@ -88,9 +88,10 @@ export async function postSignalSeekerPanel(input: { guildId: string; channelId:
   return discord(`/channels/${input.channelId}/messages`, {
     method: 'POST',
     body: JSON.stringify({
+      flags: 4096,
       embeds: [{
         title: '📡 Signal Seekers',
-        description: 'Join the hunt for all three hidden Space Mountain eggs. Signal Seekers are pinged when a new Signal appears. You can leave whenever you want.',
+        description: 'Join the hunt for all three hidden Space Mountain eggs. Signals appear every 2–5 hours and stay for one hour. Intercept again for clues to the other eggs. The Signal itself is silent; the Signal Seeker role alert arrives in Nebula Arcade with a link to its location. Set Nebula Arcade to Only @mentions for role alerts, or Nothing for a quiet hunt using mention badges. Keep your usual notification settings elsewhere. You can leave whenever you want.',
         color: 0x5865f2,
         footer: { text: 'No app login is required. Discord already knows who you are.' },
       }],
