@@ -6,9 +6,10 @@ import { getHardcodedAdminTwitchId, getStreamweaverUrl } from './runtime-config'
 import { isExplicitAthenaInvocation } from './athena-visitor-gate';
 import { blacklistChatTagChannel, fetchTagData } from './chat-tag-service';
 import { sendOwnerDiscordDm } from './owner-dm-service';
-import { buildTwitchBanOwnerDm, isTwitchBanNotice, type TwitchBanProfileSnapshot } from './twitch-ban-blacklist';
+import { buildTwitchBanOwnerDm, buildTwitchBanUserDm, isTwitchBanNotice, type TwitchBanProfileSnapshot } from './twitch-ban-blacklist';
 
 const ATHENA_OWNER_WINDOW_MS = 10 * 60 * 1000;
+const TWITCH_BAN_QUARANTINE_MS = 90 * 24 * 60 * 60 * 1000;
 
 type AthenaChannelAccess = {
   ownerWindowUntil: number;
@@ -513,7 +514,9 @@ class TwitchChatService {
   private async persistAndFinishBlacklist(channel: string, detail: string): Promise<void> {
     const ref = this.blacklistCollection().doc(channel);
     const snapshot = await ref.get();
-    const now = new Date().toISOString();
+    const nowMs = Date.now();
+    const now = new Date(nowMs).toISOString();
+    const existing = snapshot.exists;
     await ref.set({
       channel,
       reason: 'twitch-msg-banned',
@@ -521,6 +524,10 @@ class TwitchChatService {
       firstDetectedAt: snapshot.data()?.firstDetectedAt || now,
       lastDetectedAt: now,
       permanent: true,
+      quarantinedAt: snapshot.data()?.quarantinedAt || now,
+      deleteAfter: snapshot.data()?.deleteAfter || new Date(nowMs + TWITCH_BAN_QUARANTINE_MS).toISOString(),
+      userNotificationState: snapshot.data()?.userNotificationState || (existing ? 'suppressed-existing-blacklist' : 'pending'),
+      noContact: snapshot.data()?.noContact ?? existing,
     }, { merge: true });
 
     this.joinedChannels.delete(channel);
@@ -581,6 +588,34 @@ class TwitchChatService {
         await ref.set({ chatTagSyncedAt: new Date().toISOString() }, { merge: true });
       } catch (error) {
         errors.push(`Chat Tag: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
+    record = (await ref.get()).data() || {};
+    if (
+      record.streamweaverSyncedAt
+      && record.chatTagSyncedAt
+      && record.userNotificationState === 'pending'
+      && !record.userNotificationAttemptedAt
+    ) {
+      const attemptedAt = new Date().toISOString();
+      await ref.set({ userNotificationAttemptedAt: attemptedAt }, { merge: true });
+      if (profile.discordUserId) {
+        try {
+          const delivery = await this.sendUserDiscordDm(profile.discordUserId, buildTwitchBanUserDm(profile));
+          await ref.set({
+            userNotificationState: 'sent',
+            userNotificationSentAt: new Date().toISOString(),
+            userNotificationMessageId: delivery.messageId,
+          }, { merge: true });
+        } catch (error) {
+          await ref.set({
+            userNotificationState: 'failed-once',
+            userNotificationError: String(error instanceof Error ? error.message : error).slice(0, 500),
+          }, { merge: true });
+        }
+      } else {
+        await ref.set({ userNotificationState: 'skipped-no-discord-link' }, { merge: true });
       }
     }
 
@@ -674,6 +709,30 @@ class TwitchChatService {
       .map((entry: any) => new Date(entry?.timestamp).getTime())
       .filter((timestamp: number) => Number.isFinite(timestamp));
     return matches.length > 0 ? new Date(Math.min(...matches)).toISOString() : null;
+  }
+
+  private async sendUserDiscordDm(discordUserId: string, message: string): Promise<{ messageId: string | null }> {
+    const botToken = String(process.env.DISCORD_BOT_TOKEN || '').trim();
+    if (!botToken || !discordUserId) throw new Error('Discord bot token or user identity is unavailable.');
+    const opened = await fetch('https://discord.com/api/v10/users/@me/channels', {
+      method: 'POST',
+      headers: { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ recipient_id: discordUserId }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!opened.ok) throw new Error(`Could not open user DM: ${opened.status}`);
+    const dm = await opened.json().catch(() => null) as any;
+    const channelId = String(dm?.id || '').trim();
+    if (!channelId) throw new Error('Discord did not return a DM channel.');
+    const sent = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+      method: 'POST',
+      headers: { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: String(message || '').slice(0, 1900) }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!sent.ok) throw new Error(`Could not send user DM: ${sent.status}`);
+    const payload = await sent.json().catch(() => null) as any;
+    return { messageId: String(payload?.id || '').trim() || null };
   }
 
   private async fetchDiscordJoinDate(discordUserId: string): Promise<string | null> {
