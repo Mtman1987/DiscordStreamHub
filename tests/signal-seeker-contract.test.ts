@@ -6,6 +6,7 @@ const service = fs.readFileSync('src/lib/signal-seeker-service.ts', 'utf8');
 const ingress = fs.readFileSync('src/app/api/discord/gateway-ingress/route.ts', 'utf8');
 const interactions = fs.readFileSync('src/app/api/discord/interactions/route.ts', 'utf8');
 const drop = fs.readFileSync('src/app/api/internal/signal/drop/route.ts', 'utf8');
+const buildPatch = fs.readFileSync('scripts/patch-signal-shoutout.mjs', 'utf8');
 
 test('bare Discord !signal posts both Signal Seeker controls and one Signal', () => {
   assert.match(service, /ROLE_NAME = 'Signal Seeker'/);
@@ -42,4 +43,5 @@ test('Signal button opens the clue without an identity lookup or egg roll', () =
   assert.doesNotMatch(handler, /claimDiscordSignalEgg/);
   assert.doesNotMatch(handler, /grandfatherDiscordIdentity/);
   assert.doesNotMatch(handler, /SIGNAL EGG ACQUIRED/);
+  assert.match(buildPatch, /source\.includes\('\*\*SIGNAL OPENED\*\*'\)/);
 });
