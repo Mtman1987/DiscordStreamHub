@@ -3,7 +3,9 @@ import { join } from 'path';
 import { existsSync } from 'fs';
 import { getStoragePath } from './runtime-config';
 
-const STORAGE_PATH = getStoragePath();
+const STORAGE_PATH = process.env.DSH_BUILD_DB === '1'
+  ? join(process.cwd(), '.next-build-data', String(process.pid), 'clips')
+  : getStoragePath();
 
 class LocalStorageService {
   private storagePath: string;
