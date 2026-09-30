@@ -133,12 +133,20 @@ class TwitchApiService {
 
   async getStreamByLogin(login: string): Promise<TwitchStream | null> {
     try {
-      const data = await this.makeApiCall(`streams?user_login=${login}`);
-      return data.data[0] || null;
+      return await this.getStreamByLoginStrict(login);
     } catch (error) {
       console.error(`Error fetching stream for ${login}:`, error);
       return null;
     }
+  }
+
+  async getStreamByLoginStrict(login: string): Promise<TwitchStream | null> {
+    const normalized = String(login || '').trim().toLowerCase();
+    if (!/^[a-z0-9_]{1,25}$/.test(normalized)) {
+      throw new Error('Invalid Twitch login');
+    }
+    const data = await this.makeApiCall(`streams?user_login=${encodeURIComponent(normalized)}`);
+    return data.data[0] || null;
   }
 
   async getClipsForUser(userId: string, limit: number = 20): Promise<TwitchClip[]> {
@@ -303,6 +311,10 @@ export async function getStreamByUserId(userId: string): Promise<TwitchStream | 
 
 export async function getStreamByLogin(login: string): Promise<TwitchStream | null> {
   return twitchApiService.getStreamByLogin(login);
+}
+
+export async function getStreamByLoginStrict(login: string): Promise<TwitchStream | null> {
+  return twitchApiService.getStreamByLoginStrict(login);
 }
 
 export async function getClipsForUser(userId: string, limit: number = 5): Promise<TwitchClip[]> {
