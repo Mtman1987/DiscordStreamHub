@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { readdir } from 'node:fs/promises';
+import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { getAppUrl, getStoragePath } from '@/lib/runtime-config';
 
@@ -20,11 +20,14 @@ export async function GET(request: NextRequest) {
         .filter((entry) => entry.isDirectory() && LOGIN.test(entry.name) && !RESERVED.has(entry.name.toLowerCase()))
         .map((entry) => entry.name).slice(0, 100);
     const base = getAppUrl().replace(/\/$/, '');
-    const gifs: { user: string; url: string }[] = [];
+    const gifs: { user: string; url: string; bytes: number }[] = [];
     for (const user of directories) {
       const files = (await readdir(join(storage, user)).catch(() => [] as string[]))
         .filter((file) => GIF.test(file)).sort().reverse().slice(0, 4);
-      for (const file of files) gifs.push({ user, url: `${base}/api/media/${user}/${file}` });
+      for (const file of files) {
+        const info = await stat(join(storage, user, file)).catch(() => null);
+        if (info?.isFile() && info.size > 0) gifs.push({ user, url: `${base}/api/media/${user}/${file}`, bytes: info.size });
+      }
       if (gifs.length >= 100) break;
     }
     return NextResponse.json({ gifs: gifs.slice(0, 100) }, {
