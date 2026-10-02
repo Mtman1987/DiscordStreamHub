@@ -984,6 +984,21 @@ class TwitchPollingService {
 
   private async getLinkedTwitchUsers(serverId: string): Promise<Array<{ twitchLogin: string; discordUserId: string }>> {
     try {
+      const twitchOnlyCommunityMembers = [
+        { discordUserId: 'twitch_only_krashoutkrissy', twitchLogin: 'krashoutkrissy', username: 'krashoutkrissy', displayName: 'krashoutkrissy', group: 'Community' },
+      ];
+
+      for (const member of twitchOnlyCommunityMembers) {
+        await db.collection('servers').doc(serverId).collection('users').doc(member.discordUserId).set({
+          twitchLogin: member.twitchLogin,
+          username: member.username,
+          displayName: member.displayName,
+          group: member.group,
+          twitchOnly: true,
+          updatedAt: new Date().toISOString(),
+        }, { merge: true });
+      }
+
       const usersSnapshot = await db.collection('servers').doc(serverId).collection('users').get();
       const linkedUsers: Array<{ twitchLogin: string; discordUserId: string }> = [];
 
