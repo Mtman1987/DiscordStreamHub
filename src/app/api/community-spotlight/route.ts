@@ -59,6 +59,11 @@ export async function GET() {
       ? users.find((user: LiveCommunityUser) => user.id === spotlightData.userId)
       : users.find((user: LiveCommunityUser) => user.twitchLogin?.toLowerCase() === String(spotlightData?.twitchLogin || '').toLowerCase());
 
+    // Keep live playback independent of Discord message/artwork rotation.
+    // An offline saved record must not blank the player while others are live.
+    const liveSelection = spotlightUser || users.slice().sort((a: LiveCommunityUser, b: LiveCommunityUser) => String(a.twitchLogin).localeCompare(String(b.twitchLogin)))[Math.floor(Date.now() / 600_000) % Math.max(1, users.length)];
+    const selectedData = spotlightUser ? spotlightData : null;
+
     return NextResponse.json({
       source: 'discord-stream-hub',
       serverId: SERVER_ID,
@@ -67,23 +72,23 @@ export async function GET() {
       // Never expose a stale/offline spotlight record to the browser-source
       // player. A full-screen Twitch embed for an offline channel paints an
       // opaque black surface over the rest of the Community Lounge.
-      spotlight: spotlightData && spotlightUser ? {
-        userId: spotlightUser.id,
-        twitchLogin: spotlightUser.twitchLogin,
-        gifUrl: spotlightData.gifUrl || spotlightData.cardGifUrl || null,
-        avatarUrl: spotlightData.avatarUrl || spotlightUser.avatarUrl || null,
-        streamTitle: spotlightUser.streamTitle || spotlightData.streamTitle || null,
-        gameTitle: spotlightUser.gameName || spotlightData.gameTitle || null,
-        viewerCount: spotlightUser.viewerCount ?? spotlightData.viewerCount ?? null,
-        group: spotlightUser.group || spotlightData.group || null,
-        currentIndex: spotlightData.currentIndex ?? null,
-        updatedAt: spotlightData.updatedAt || spotlightData.lastUpdatedAt || null,
-        user: spotlightUser,
+      spotlight: liveSelection ? {
+        userId: liveSelection.id,
+        twitchLogin: liveSelection.twitchLogin,
+        gifUrl: selectedData?.gifUrl || selectedData?.cardGifUrl || null,
+        avatarUrl: selectedData?.avatarUrl || liveSelection.avatarUrl || null,
+        streamTitle: liveSelection.streamTitle || selectedData?.streamTitle || null,
+        gameTitle: liveSelection.gameName || selectedData?.gameTitle || null,
+        viewerCount: liveSelection.viewerCount ?? selectedData?.viewerCount ?? null,
+        group: liveSelection.group || selectedData?.group || null,
+        currentIndex: selectedData?.currentIndex ?? null,
+        updatedAt: selectedData?.updatedAt || selectedData?.lastUpdatedAt || null,
+        user: liveSelection,
       } : null,
     }, {
       headers: {
         'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 'public, max-age=30',
+        'Cache-Control': 'no-store',
       },
     });
   } catch (error: any) {
