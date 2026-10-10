@@ -93,75 +93,49 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
     async function hydrateSession() {
       try {
-        const cachedSpmtIdentity = Boolean(
-          window.localStorage.getItem('spmtUserId') ||
-          window.localStorage.getItem('spmtToken') ||
-          window.localStorage.getItem('dshAuthMode') === 'spmt'
-        );
-        const spmtResponse = await fetch('/api/auth/spmt-session', {
-          cache: 'no-store',
-          credentials: 'include',
-        }).catch(() => null);
-        const spmtData = spmtResponse?.ok ? await spmtResponse.json() : null;
-        if (spmtData?.success && spmtData.session) {
-          for (const [key, value] of Object.entries(spmtData.session)) {
-            if (value !== undefined && value !== null && value !== '') {
-              window.localStorage.setItem(key, String(value));
-            }
-          }
-        } else if (cachedSpmtIdentity && window.parent === window) {
-          dshSessionKeys.forEach((key) => window.localStorage.removeItem(key));
-        }
-
-        const existingServerId = window.localStorage.getItem('discordServerId');
-        const existingUserId = window.localStorage.getItem('discordUserId');
-        const hasSpmtIdentity = Boolean(spmtData?.success && spmtData.session?.spmtUserId);
-        const searchParams = new URLSearchParams(window.location.search);
-        const queryServerId = searchParams.get('serverId') || searchParams.get('guildId') || searchParams.get('discordServerId');
-        const restoreParams = new URLSearchParams();
-        if (queryServerId || existingServerId) restoreParams.set('serverId', queryServerId || existingServerId || '');
-        if (existingUserId) restoreParams.set('userId', existingUserId);
-        const query = restoreParams.toString() ? `?${restoreParams.toString()}` : '';
-        const response = await fetch(`/api/auth/restore-session${query}`, { cache: 'no-store' });
+        const response = await fetch('/api/auth/spmt-session', {
+          cache: 'no-store', credentials: 'include',
+        });
         const data = response.ok ? await response.json() : null;
-
         if (cancelled) return;
-
-        if (data?.success && data.serverId) {
-          window.localStorage.setItem('discordServerId', data.serverId);
-          if (data.serverName) window.localStorage.setItem('serverName', data.serverName);
-          if (data.iconUrl) window.localStorage.setItem('serverIconUrl', data.iconUrl);
-          if (!hasSpmtIdentity || data.userMatched) {
-            if (data.discordUserId || data.userId) window.localStorage.setItem('discordUserId', data.discordUserId || data.userId);
-            if (data.twitchUsername) window.localStorage.setItem('twitchUsername', data.twitchUsername);
-            if (data.discordUsername) window.localStorage.setItem('discordUsername', data.discordUsername);
-            if (data.discordDisplayName) window.localStorage.setItem('discordDisplayName', data.discordDisplayName);
-            if (data.discordAvatar) window.localStorage.setItem('discordAvatar', data.discordAvatar);
-            window.localStorage.setItem('isAdmin', data.isAdmin ? 'true' : 'false');
-          }
-          if (window.localStorage.getItem('discordUserId') || hasSpmtIdentity) {
-            window.localStorage.setItem('isLoggedIn', 'true');
-            window.dispatchEvent(new Event('dsh-session-restored'));
+        if (!data?.success || !data.session?.spmtUserId) {
+          if (response.status >= 500 && window.localStorage.getItem('spmtUserId')) {
             setSessionReady(true);
             return;
           }
-        }
-
-        if (existingUserId || hasSpmtIdentity || window.localStorage.getItem('isLoggedIn') === 'true') {
-          setSessionReady(true);
+          dshSessionKeys.forEach(key => window.localStorage.removeItem(key));
+          window.localStorage.removeItem('discordServerId');
+          router.replace('/login?next=' + encodeURIComponent(pathname || '/dashboard'));
           return;
         }
-
-        const nextPath = `${pathname || '/dashboard'}${window.location.search || ''}`;
-        router.replace(`/login?next=${encodeURIComponent(nextPath)}`);
-      } catch (error) {
+        for (const [key, value] of Object.entries(data.session)) {
+          if (value !== undefined && value !== null) window.localStorage.setItem(key, String(value));
+        }
+        if (!data.session.discordServerId) {
+          window.localStorage.removeItem('serverName');
+          window.localStorage.removeItem('serverIconUrl');
+          setSessionReady(true);
+          if (pathname !== '/discord-servers') router.replace('/discord-servers');
+          return;
+        }
+        // The server and identity come from the verified account. URL query
+        // parameters and local user IDs never select the restored account.
+        const restoredResponse = await fetch('/api/auth/restore-session', {
+          cache: 'no-store', credentials: 'include',
+        }).catch(() => null);
+        const restored = restoredResponse?.ok ? await restoredResponse.json() : null;
         if (cancelled) return;
-        if (window.localStorage.getItem('discordServerId') || window.localStorage.getItem('isLoggedIn') === 'true') {
-          setSessionReady(true);
-          return;
+        if (restored?.success) {
+          window.localStorage.setItem('serverName', restored.serverName || '');
+          window.localStorage.setItem('serverIconUrl', restored.iconUrl || '');
+          window.localStorage.setItem('isAdmin', restored.isAdmin ? 'true' : 'false');
         }
-        const nextPath = `${pathname || '/dashboard'}${window.location.search || ''}`;
-        router.replace(`/login?next=${encodeURIComponent(nextPath)}`);
+        window.dispatchEvent(new Event('dsh-session-restored'));
+        setSessionReady(true);
+      } catch {
+        if (cancelled) return;
+        if (window.localStorage.getItem('spmtUserId')) setSessionReady(true);
+        else router.replace('/login?next=' + encodeURIComponent(pathname || '/dashboard'));
       }
     }
 

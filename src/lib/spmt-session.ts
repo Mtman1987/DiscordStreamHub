@@ -1,4 +1,4 @@
-import { getHardcodedGuildId } from '@/lib/runtime-config';
+import { getHardcodedGuildId, getHardcodedAdminDiscordId } from '@/lib/runtime-config';
 
 export const DSH_SPMT_COOKIE = 'dsh_spmt_session';
 export const SPMT_BASE_URL = String(process.env.SPMT_BASE_URL || 'https://spmt.live').replace(/\/$/, '');
@@ -54,7 +54,8 @@ export function buildDshSpmtSession(user: any): DshSpmtSession {
     discordDisplayName: text(user.discordDisplayName, user.discord_display_name, discord.displayName, discord.global_name, user.displayName, user.username),
     discordAvatar: text(user.avatarUrl, user.avatar_url, discord.avatarUrl, discord.avatar_url, twitch.avatarUrl, twitch.avatar_url),
     twitchUsername: text(user.twitchUsername, user.twitch_login, twitch.username, twitch.login),
-    discordServerId: String(getHardcodedGuildId()),
+    discordServerId: text(user.discordServerId, user.discord_server_id) ||
+      (text(user.discordUserId, user.discord_user_id, user.discordId, user.discord_id, discord.id, discord.userId) === getHardcodedAdminDiscordId() ? String(getHardcodedGuildId()) : ''),
     dshAuthMode: 'spmt',
     isLoggedIn: true,
     isAdmin: spmtIdentityIsAdmin(user),
@@ -86,5 +87,9 @@ export async function resolveSpmtSession(token: string, knownIdentity?: any): Pr
     if (!user?.id) throw new Error('SPMT userinfo did not return an identity');
   }
 
-  return { token, session: buildDshSpmtSession(user), identity: user };
+  const session = buildDshSpmtSession(user);
+  const { db } = await import('@/lib/db');
+  const saved = db.get('discordServerConnections', session.spmtUserId!);
+  if (saved?.selectedServerId) session.discordServerId = String(saved.selectedServerId);
+  return { token, session, identity: user };
 }

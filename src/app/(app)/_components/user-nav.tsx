@@ -6,7 +6,8 @@ import { useDataStore, useMemoData, useUser, useDoc } from '@/data';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import { LogOut } from 'lucide-react';
+import Link from 'next/link';
+import { LogOut, Server } from 'lucide-react';
 
 interface UserProfile {
   username: string;
@@ -130,7 +131,7 @@ export function UserNav() {
   const displayServer = serverInfo?.serverName || localServerName || (serverId ? `Server ID: ${serverId}` : 'No server selected');
 
   return (
-    <div className="flex items-center justify-between gap-2">
+    <div className="space-y-3"><Button asChild variant="outline" className="w-full group-data-[collapsed=true]:hidden"><Link href="/discord-servers"><Server className="mr-2 h-4 w-4" />Discord servers</Link></Button><div className="flex items-center justify-between gap-2">
       <div className="flex min-w-0 items-center gap-3">
         <Avatar className="h-9 w-9">
           {avatarUrl && (
@@ -158,6 +159,6 @@ export function UserNav() {
       >
         <LogOut className="h-4 w-4" />
       </Button>
-    </div>
+    </div></div>
   );
 }

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sqliteService } from '@/lib/sqlite-service';
 
+function privateServerPath(path: string): boolean {
+  return ['discordServerOAuth', 'discordServerConnections'].includes(path.split('/').filter(Boolean)[0] || '');
+}
 function isCollectionPath(path: string): boolean {
   return path.split('/').filter(Boolean).length % 2 === 1;
 }
@@ -17,6 +20,8 @@ export async function GET(request: NextRequest) {
     if (!path) {
       return badRequest('Missing path');
     }
+
+    if (privateServerPath(path)) return NextResponse.json({ error: 'Use the authenticated Discord server connection API.' }, { status: 403 });
 
     if (isCollectionPath(path)) {
       const limitParam = url.searchParams.get('limit');
@@ -52,6 +57,8 @@ export async function POST(request: NextRequest) {
       return badRequest('Missing path');
     }
 
+    if (privateServerPath(path)) return NextResponse.json({ error: 'Use the authenticated Discord server connection API.' }, { status: 403 });
+
     if (isCollectionPath(path)) {
       const result = sqliteService.addDoc(path, data || {});
       return NextResponse.json({ success: true, id: result.id });
@@ -73,6 +80,7 @@ export async function PATCH(request: NextRequest) {
       return badRequest('Missing path');
     }
 
+    if (privateServerPath(path)) return NextResponse.json({ error: 'Use the authenticated Discord server connection API.' }, { status: 403 });
     const existing = sqliteService.getDoc(path);
     if (existing.exists) {
       sqliteService.updateDoc(path, data || {});
@@ -96,6 +104,7 @@ export async function DELETE(request: NextRequest) {
       return badRequest('Missing path');
     }
 
+    if (privateServerPath(path)) return NextResponse.json({ error: 'Use the authenticated Discord server connection API.' }, { status: 403 });
     sqliteService.deleteDoc(path);
     return NextResponse.json({ success: true });
   } catch (error) {

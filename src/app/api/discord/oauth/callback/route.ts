@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, ensureDb } from '@/lib/db';
-import { createHmac } from 'crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
+import { serverAccount } from '@/lib/discord-server-connections';
 import { getAppUrl, getDiscordClientId, getHearMeOutUrl } from '@/lib/runtime-config';
 
 const DSH_REDIRECT_SECRET = process.env.DSH_REDIRECT_SECRET || '';
@@ -85,6 +86,50 @@ export async function GET(request: NextRequest) {
   const oauthErrorDescription = searchParams.get('error_description');
   const publicUrl = getPublicUrl(request);
   const isHearMeOut = state === 'hearmeout';
+
+  if (state?.startsWith('dsh-servers:')) {
+    const expected = request.cookies.get('dsh_discord_server_state')?.value || '';
+    const finish = (error?: string) => {
+      const url = new URL('/discord-servers', publicUrl);
+      if (error) url.searchParams.set('error', error);
+      const response = NextResponse.redirect(url);
+      response.cookies.set('dsh_discord_server_state', '', { httpOnly: true, path: '/', maxAge: 0 });
+      return response;
+    };
+    const receivedBytes = Buffer.from(state);
+    const expectedBytes = Buffer.from(expected);
+    if (!expected || receivedBytes.length !== expectedBytes.length || !timingSafeEqual(receivedBytes, expectedBytes)) {
+      return finish('Discord authorization expired. Start again.');
+    }
+    if (oauthError || !code) return finish('Discord authorization was not completed.');
+    try {
+      const session = await serverAccount(request);
+      const { clientId, clientSecret } = getDiscordOAuthConfig();
+      if (!clientId || !clientSecret) return finish('Discord authorization is not configured.');
+      const response = await fetch('https://discord.com/api/oauth2/token', {
+        method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, code,
+          grant_type: 'authorization_code', redirect_uri: publicUrl + '/api/discord/oauth/callback' }),
+        signal: AbortSignal.timeout(12_000),
+      });
+      const tokens = await response.json();
+      if (!response.ok || !tokens.access_token) return finish('Discord authorization failed. Start again.');
+      const profile = await fetch('https://discord.com/api/v10/users/@me', {
+        headers: { Authorization: 'Bearer ' + tokens.access_token }, signal: AbortSignal.timeout(10_000),
+      });
+      const discord = await profile.json();
+      if (!profile.ok || !discord.id) return finish('Unable to verify your Discord account.');
+      if (session.discordUserId && session.discordUserId !== discord.id) {
+        return finish('Connect the Discord account linked to your SPMT account.');
+      }
+      db.set('discordServerOAuth', session.spmtUserId!, {
+        discordUserId: discord.id, access_token: tokens.access_token, refresh_token: tokens.refresh_token,
+        scope: tokens.scope, expires_at: Date.now() + tokens.expires_in * 1000,
+      });
+      return finish();
+    } catch { return finish('Unable to connect Discord. Try again.'); }
+  }
+
 
   if (oauthError) {
     if (isHearMeOut) {
