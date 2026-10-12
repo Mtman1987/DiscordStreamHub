@@ -13,7 +13,8 @@ test('nuke channel settings has a real JSON API route', async () => {
   assert.match(route, /\/messages\/bulk-delete/);
   assert.match(route, /mode === 'until'/);
   assert.match(route, /author\?\.id/);
-  assert.match(route, /getHardcodedGuildId/);
+  assert.match(route, /requireGuildManagement/);
+  assert.doesNotMatch(route, /getHardcodedGuildId/);
 });
 
 test('browser database writes fail loudly instead of reporting false success', async () => {

@@ -11,7 +11,7 @@ export function botInstallUrl(clientId: string, guildId?: string) {
   url.search = new URLSearchParams({
     client_id: clientId, scope: 'bot applications.commands', integration_type: '0',
     // View/send messages, embeds, attachments, history, reactions, connect/speak.
-    permissions: '3263552',
+    permissions: (BigInt('3263552') | (BigInt(1) << BigInt(13)) | (BigInt(1) << BigInt(34)) | (BigInt(1) << BigInt(35)) | (BigInt(1) << BigInt(38))).toString(),
   }).toString();
   if (guildId) { url.searchParams.set('guild_id', guildId); url.searchParams.set('disable_guild_select', 'true'); }
   return url.toString();

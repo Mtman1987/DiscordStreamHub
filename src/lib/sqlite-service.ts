@@ -62,6 +62,7 @@ export class SQLiteService {
     ensureStorage();
     this.db = new Database(DB_PATH);
     this.db.pragma('journal_mode = WAL');
+    this.db.pragma('busy_timeout = 5000');
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS docs (
         path TEXT PRIMARY KEY,
@@ -240,6 +241,30 @@ export class SQLiteService {
         doc_id = excluded.doc_id,
         data = excluded.data
     `).run(row);
+  }
+
+  // Merge nested channel maps in a transaction; shallow document merge loses siblings.
+  mergeDocMaps(path: string, maps: Record<string, Record<string, any>>, fields: Record<string, any> = {}): void {
+    this.db.transaction(() => {
+      const existing = this.getDoc(path).data || {};
+      const next = { ...existing, ...fields };
+      for (const [key, additions] of Object.entries(maps)) next[key] = { ...(existing[key] || {}), ...additions };
+      this.setDoc(path, next);
+    }).immediate();
+  }
+
+  claimLease(key: string, owner: string, ttlMs = 120_000): boolean {
+    this.db.exec('CREATE TABLE IF NOT EXISTS operation_leases (key TEXT PRIMARY KEY, owner TEXT NOT NULL, expires INTEGER NOT NULL)');
+    const result = this.db.prepare(`
+      INSERT INTO operation_leases (key, owner, expires) VALUES (?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET owner=excluded.owner, expires=excluded.expires
+      WHERE operation_leases.expires < ? OR operation_leases.owner = excluded.owner
+    `).run(key, owner, Date.now() + ttlMs, Date.now());
+    return result.changes === 1;
+  }
+
+  releaseLease(key: string, owner: string): void {
+    this.db.prepare('DELETE FROM operation_leases WHERE key = ? AND owner = ?').run(key, owner);
   }
 
   addDoc(path: string, data: any): { id: string } {

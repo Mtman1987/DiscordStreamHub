@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getHardcodedGuildId } from '@/lib/runtime-config';
-import { DSH_SPMT_COOKIE, resolveSpmtSession } from '@/lib/spmt-session';
+import { requireGuildManagement, channelPermissions } from '@/lib/discord-guild-access';
+import { sameOrigin, ServerConnectionError } from '@/lib/discord-server-connections';
 
 const DISCORD_API = 'https://discord.com/api/v10';
 const DISCORD_EPOCH = 1420070400000;
@@ -58,13 +58,6 @@ async function discordRequest(path: string, token: string, init: RequestInit = {
   }
 
   throw new Error('Discord request retry loop exhausted');
-}
-
-async function requireDshAdmin(request: NextRequest) {
-  const token = request.cookies.get(DSH_SPMT_COOKIE)?.value || '';
-  if (!token) return null;
-  const resolved = await resolveSpmtSession(token).catch(() => null);
-  return resolved?.session?.isAdmin ? resolved.session : null;
 }
 
 async function deleteOne(channelId: string, messageId: string, token: string) {
@@ -133,11 +126,11 @@ async function deleteSelected(channelId: string, ids: string[], token: string) {
 
 export async function POST(request: NextRequest) {
   try {
-    const admin = await requireDshAdmin(request);
-    if (!admin) return jsonError('DSH admin session required for channel deletion', 403);
+    sameOrigin(request);
 
     const body = await request.json().catch(() => null) as {
       channelId?: string;
+      guildId?: string;
       mode?: NukeMode;
       untilMessageId?: string;
     } | null;
@@ -158,11 +151,19 @@ export async function POST(request: NextRequest) {
       const detail = await channelResponse.text().catch(() => channelResponse.statusText);
       return jsonError(`Discord could not open that channel (${channelResponse.status}): ${detail.slice(0, 200)}`, channelResponse.status);
     }
-    const channel = await channelResponse.json() as { guild_id?: string; name?: string };
+    const channel = await channelResponse.json() as { guild_id?: string; name?: string; type?: number; parent_id?: string; permission_overwrites?: any[] };
     const guildId = String(channel.guild_id || '');
-    if (!guildId || guildId !== String(getHardcodedGuildId())) {
-      return jsonError('That channel is not part of the configured Space Mountain Discord server', 403);
+    if (!guildId || guildId !== String(body?.guildId || '')) return jsonError('Choose a channel in the selected server.', 403);
+    if (![0, 2, 5, 10, 11, 12, 13].includes(Number(channel.type))) return jsonError('Choose a message channel or thread, not a category/forum parent.', 400);
+    const { guild, member } = await requireGuildManagement(request, guildId);
+    let permissionChannel: any = channel;
+    if ([10, 11, 12].includes(Number(channel.type)) && channel.parent_id) {
+      const parentResponse = await discordRequest('/channels/' + channel.parent_id, botToken);
+      if (!parentResponse.ok) return jsonError('Cannot verify parent channel permissions.', 403);
+      permissionChannel = await parentResponse.json();
     }
+    const permissions = channelPermissions(guild, member, permissionChannel);
+    if ((permissions & BigInt('8')) === BigInt(0) && (permissions & BigInt('8192')) === BigInt(0)) return jsonError('Manage Messages permission in this channel is required.', 403);
 
     if (mode === 'until') {
       const targetResponse = await discordRequest(`/channels/${channelId}/messages/${untilMessageId}`, botToken);
@@ -206,7 +207,7 @@ export async function POST(request: NextRequest) {
       }
 
       const selected = mode === 'bot'
-        ? candidates.filter(message => String(message.author?.id || '') === botId)
+        ? candidates.filter(message => Boolean(message.author?.bot) || String(message.author?.id || '') === botId)
         : candidates;
 
       if (selected.length > 0) {
@@ -226,10 +227,10 @@ export async function POST(request: NextRequest) {
     }
 
     log.push(`Finished: ${deleted} deleted${failed ? `, ${failed} failed` : ''}.`);
-    return NextResponse.json({ success: failed === 0, deleted, failed, log, reachedTarget });
+    return NextResponse.json({ success: failed === 0 && reachedTarget, deleted, failed, log, reachedTarget, ...(failed ? { error: String(failed) + ' messages could not be deleted. See cleanup log.' } : !reachedTarget ? { error: 'Stop message was not reached; cleanup is incomplete.' } : {}) });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error('[API /nuke-channel] failed:', error);
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    return NextResponse.json({ success: false, error: message }, { status: error instanceof ServerConnectionError ? error.status : 500 });
   }
 }

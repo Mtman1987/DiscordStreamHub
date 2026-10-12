@@ -41,6 +41,7 @@ export function DiscordSyncSettings({ serverId: propServerId }: { serverId?: str
   React.useEffect(() => {
     const id = propServerId || localStorage.getItem('discordServerId');
     setServerId(id);
+    setNukeChannel('');
   }, [propServerId]);
 
   React.useEffect(() => {
@@ -200,7 +201,7 @@ export function DiscordSyncSettings({ serverId: propServerId }: { serverId?: str
               <Label>Channel</Label>
               <Select value={nukeChannel} onValueChange={setNukeChannel}>
                 <SelectTrigger><SelectValue placeholder="Choose a channel" /></SelectTrigger>
-                <SelectContent>{channels.map(ch => <SelectItem key={ch.id} value={ch.id}>#{ch.name}</SelectItem>)}</SelectContent>
+                <SelectContent>{channels.filter(ch => [0, 2, 5, 10, 11, 12, 13].includes(Number(ch.type))).map(ch => <SelectItem key={ch.id} value={ch.id}>#{ch.name}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
@@ -233,7 +234,7 @@ export function DiscordSyncSettings({ serverId: propServerId }: { serverId?: str
             onClick={async () => {
               if (!nukeChannel || !serverId) return;
               const channelName = channels.find(c => c.id === nukeChannel)?.name || nukeChannel;
-              const modeLabel = nukeMode === 'all' ? 'ALL messages' : 'bot messages';
+              const modeLabel = nukeMode === 'all' ? 'ALL messages' : nukeMode === 'until' ? 'messages newer than the stop message (keeping the stop message)' : 'bot messages';
               if (!confirm(`Delete ${modeLabel} from #${channelName}? This cannot be undone.`)) return;
               setIsNuking(true);
               setNukeLog(['Starting cleanup...']);
@@ -241,14 +242,14 @@ export function DiscordSyncSettings({ serverId: propServerId }: { serverId?: str
                 const res = await fetch('/api/nuke-channel', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ channelId: nukeChannel, mode: nukeMode, untilMessageId: nukeMode === 'until' ? nukeUntilId : undefined }),
+                  body: JSON.stringify({ guildId: serverId, channelId: nukeChannel, mode: nukeMode, untilMessageId: nukeMode === 'until' ? nukeUntilId : undefined }),
                 });
                 const data = await res.json();
                 if (data.success) {
                   setNukeLog(data.log || [`Deleted ${data.deleted} messages`]);
                   toast({ title: 'Channel cleaned!', description: `Deleted ${data.deleted} messages from #${channelName}` });
                 } else {
-                  setNukeLog([`Error: ${data.error}`]);
+                  setNukeLog([...(data.log || []), `Error: ${data.error || 'Cleanup incomplete'}`]);
                   toast({ title: 'Error', description: data.error, variant: 'destructive' });
                 }
               } catch (e) {

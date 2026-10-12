@@ -665,7 +665,7 @@ export async function POST(request: NextRequest) {
       const appOrigin = getPublicBaseUrl(request.nextUrl.origin);
       void fetch(`${appOrigin}/api/discord/forward-to-forum`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-discord-bot-token': process.env.DISCORD_BOT_TOKEN || '' },
         body: JSON.stringify({
           guildId,
           channelId,
@@ -680,6 +680,8 @@ export async function POST(request: NextRequest) {
           stickers,
         }),
         signal: timeoutSignal(8000),
+      }).then(async response => {
+        if (!response.ok && response.status !== 404) console.warn('[DiscordChat] Forum forwarding failed:', response.status, await response.text());
       }).catch((error) => {
         console.warn('[DiscordChat] Forum forward request failed:', error?.message || error);
       });

@@ -41,6 +41,11 @@ export async function accountGuilds(accountId: string, linkedDiscordUserId = '')
 }
 export async function discoveredServers(accountId: string, linkedDiscordUserId = '') {
   const { guilds } = await accountGuilds(accountId, linkedDiscordUserId);
+  for (const guild of guilds) db.set('servers', guild.id, {
+    serverId: guild.id, serverName: guild.name, name: guild.name, botInstalled: true,
+    iconUrl: guild.icon ? 'https://cdn.discordapp.com/icons/' + guild.id + '/' + guild.icon + '.png' : '',
+    updatedAt: new Date().toISOString(),
+  }, { merge: true });
   const selected = db.get('discordServerConnections', accountId)?.selectedServerId || '';
   return guilds.filter((guild: any) => guildAccess(guild).canManage).map((guild: any) => ({
     id: guild.id, name: guild.name, owner: !!guild.owner,

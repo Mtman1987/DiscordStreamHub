@@ -35,6 +35,9 @@ const emptyMapping = (): Mapping => ({ sourceChannelId: '', threadId: '', label:
 
 export function ForwardingForumsSettings() {
   const { toast } = useToast();
+  const [servers, setServers] = React.useState<Array<{ id: string; name: string }>>([]);
+  const [destinationChannels, setDestinationChannels] = React.useState<Array<{ id: string; name: string; type: number }>>([]);
+  const [serverError, setServerError] = React.useState('');
   const [ruleLabel, setRuleLabel] = React.useState('');
   const [sourceServerId, setSourceServerId] = React.useState('');
   const [destinationServerId, setDestinationServerId] = React.useState('');
@@ -48,6 +51,33 @@ export function ForwardingForumsSettings() {
   const [savedRules, setSavedRules] = React.useState<SavedRule[]>([]);
   const [isLoading, setIsLoading] = React.useState(false);
   const [isSaving, setIsSaving] = React.useState(false);
+
+  const refreshServers = React.useCallback(async () => {
+    try {
+      const response = await fetch('/api/discord/servers', { cache: 'no-store' });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Unable to load servers');
+      setServers(data.servers || []); setServerError('');
+    } catch (error) { setServerError(error instanceof Error ? error.message : 'Unable to load servers'); }
+  }, []);
+  React.useEffect(() => {
+    void refreshServers();
+    const focused = () => { void refreshServers(); };
+    window.addEventListener('focus', focused);
+    return () => window.removeEventListener('focus', focused);
+  }, [refreshServers]);
+  React.useEffect(() => {
+    let active = true;
+    setDestinationChannels([]);
+    if (!destinationServerId) return;
+    void fetch('/api/discord/servers/' + encodeURIComponent(destinationServerId) + '/channels', { cache: 'no-store' })
+      .then(async response => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Unable to load channels');
+        if (active) setDestinationChannels(data.channels || []);
+      }).catch(error => { if (active) setServerError(String(error.message || error)); });
+    return () => { active = false; };
+  }, [destinationServerId]);
 
   const loadSavedRules = React.useCallback(async () => {
     try {
@@ -140,11 +170,13 @@ export function ForwardingForumsSettings() {
           labels: labelsObj,
         }),
       });
-      if (!res.ok) throw new Error();
-      toast({ title: 'Saved', description: 'Forwarding rule updated.' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to save');
+      if (data.sync?.errors?.length) throw new Error('Rule saved, but ' + data.sync.errors.length + ' channels need attention: ' + data.sync.errors[0].error);
+      toast({ title: 'Saved', description: 'Channel mirror synchronized: ' + (data.sync?.total || 0) + ' channels.' });
       void loadSavedRules();
-    } catch {
-      toast({ variant: 'destructive', title: 'Failed to save' });
+    } catch (error) {
+      toast({ variant: 'destructive', title: 'Forwarding setup needs attention', description: error instanceof Error ? error.message : 'Failed to save' });
     } finally {
       setIsSaving(false);
     }
@@ -205,6 +237,11 @@ export function ForwardingForumsSettings() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        <div className="flex gap-2">
+          <Button asChild variant="outline"><a href="/api/discord/servers/authorize" target="_blank" rel="noopener noreferrer">Add SPMT to a server</a></Button>
+          <Button variant="outline" onClick={refreshServers}>Refresh servers</Button>
+        </div>
+        {serverError && <p role="alert" className="text-sm text-destructive">{serverError}</p>}
         <div className="space-y-1">
           <Label className="text-xs">Rule Label</Label>
           <Input
@@ -220,20 +257,18 @@ export function ForwardingForumsSettings() {
         <div className="grid gap-3 md:grid-cols-2">
           <div className="space-y-1">
             <Label className="text-xs">Source Server ID</Label>
-            <Input
-              placeholder="123456789012345678"
-              value={sourceServerId}
-              onChange={e => setSourceServerId(e.target.value)}
-            />
+            <Select value={sourceServerId} onValueChange={setSourceServerId}>
+              <SelectTrigger><SelectValue placeholder="Choose source server" /></SelectTrigger>
+              <SelectContent>{servers.map(server => <SelectItem key={server.id} value={server.id}>{server.name}</SelectItem>)}</SelectContent>
+            </Select>
             <p className="text-xs text-muted-foreground">Messages must originate from this Discord server.</p>
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Destination Server ID</Label>
-            <Input
-              placeholder="987654321098765432"
-              value={destinationServerId}
-              onChange={e => setDestinationServerId(e.target.value)}
-            />
+            <Select value={destinationServerId} onValueChange={value => { setDestinationServerId(value); setForumChannelId(''); setSharedThreadId(''); setMappings([emptyMapping()]); }}>
+              <SelectTrigger><SelectValue placeholder="Choose destination server" /></SelectTrigger>
+              <SelectContent>{servers.map(server => <SelectItem key={server.id} value={server.id}>{server.name}</SelectItem>)}</SelectContent>
+            </Select>
             <p className="text-xs text-muted-foreground">Forwarded posts land in this Discord server.</p>
           </div>
         </div>
@@ -257,7 +292,7 @@ export function ForwardingForumsSettings() {
             </SelectContent>
           </Select>
           <p className="text-xs text-muted-foreground">
-            Per-source mode creates a thread the first time a source channel speaks. Shared-thread mode sends all allowed source channels into one destination thread.
+            Per-source mode synchronizes all source channels when saved, then reuses each channel’s permanent thread. Shared-thread mode sends all allowed source channels into one destination thread.
           </p>
         </div>
 
@@ -265,11 +300,11 @@ export function ForwardingForumsSettings() {
           {forwardingMode === 'per-source-thread' ? (
             <>
               <Label className="text-xs">Destination Forum Parent Channel ID</Label>
-              <Input
-                placeholder="1510992840346435744"
-                value={forumChannelId}
-                onChange={e => setForumChannelId(e.target.value)}
-              />
+              <Select value={forumChannelId} onValueChange={setForumChannelId}>
+                <SelectTrigger><SelectValue placeholder="Choose destination forum" /></SelectTrigger>
+                <SelectContent>{destinationChannels.filter(channel => [15, 16].includes(channel.type)).map(channel =>
+                  <SelectItem key={channel.id} value={channel.id}>#{channel.name}</SelectItem>)}</SelectContent>
+              </Select>
               <p className="text-xs text-muted-foreground">
                 This must be a forum or media channel in the destination server.
               </p>
@@ -384,6 +419,18 @@ export function ForwardingForumsSettings() {
             {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
           Save Rule
         </Button>
+        <Button variant="outline" disabled={isSaving || !sourceServerId} onClick={async () => {
+          setIsSaving(true);
+          try {
+            const response = await fetch('/api/settings/forwarding-forums/sync', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sourceServerId }),
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success) throw new Error(data.error || data.sync?.errors?.[0]?.error || 'Sync incomplete');
+            toast({ title: 'Channels synchronized', description: data.sync.created + ' created, ' + data.sync.reused + ' reused.' });
+          } catch (error) { toast({ variant: 'destructive', title: 'Synchronization needs attention', description: String(error instanceof Error ? error.message : error) }); }
+          finally { setIsSaving(false); }
+        }}>Sync Channels</Button>
         </div>
 
         <div className="rounded-md border p-4 space-y-3">

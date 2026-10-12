@@ -1,25 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { sqliteService } from '@/lib/sqlite-service';
+import { ensureMirrorThread, loadForumRule, mirrorChannelAllowed, forumDiscordRequest } from '@/lib/discord-forum-mirror';
 
 const DISCORD_API = 'https://discord.com/api/v10';
 
-async function discordRequest(endpoint: string, options: RequestInit = {}) {
-  const token = process.env.DISCORD_BOT_TOKEN;
-  if (!token) throw new Error('DISCORD_BOT_TOKEN not configured');
-  const res = await fetch(`${DISCORD_API}${endpoint}`, {
-    ...options,
-    headers: {
-      Authorization: `Bot ${token}`,
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
-  });
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Discord API ${res.status}: ${err}`);
-  }
-  return res.status === 204 ? null : res.json();
-}
+const discordRequest = forumDiscordRequest;
 
 /** Resolve a guild ID to a display name (cached in DB, falls back to Discord API). */
 async function getGuildName(guildId: string): Promise<string> {
@@ -49,23 +35,9 @@ async function getChannelName(channelId: string): Promise<string> {
   }
 }
 
-async function getChannelDetails(channelId: string): Promise<any | null> {
-  try {
-    return await discordRequest(`/channels/${channelId}`);
-  } catch {
-    return null;
-  }
+async function getChannelDetails(channelId: string): Promise<any> {
+  return discordRequest(`/channels/${channelId}`);
 }
-
-type ForwardingForumRule = {
-  sourceServerId: string;
-  destinationServerId: string;
-  forumChannelId: string | null;
-  forwardingMode: ForwardingMode;
-  sharedThreadId: string | null;
-  restrictToWhitelist: boolean;
-  sourceChannelWhitelist: string[];
-};
 
 type ForwardedAttachment = {
   url?: string;
@@ -311,79 +283,6 @@ async function mirrorForwardToSpaceMountain(input: {
   }
 }
 
-function getForwardingMappingKey(sourceServerId: string, channelId?: string) {
-  return `${sourceServerId}:${channelId || sourceServerId}`;
-}
-
-async function getForwardedThreadId(sourceServerId: string, channelId?: string): Promise<string | null> {
-  try {
-    const doc = await db
-      .collection('servers')
-      .doc(sourceServerId)
-      .collection('config')
-      .doc('forwardingForums')
-      .get();
-    if (!doc.exists) return null;
-    const mappings = doc.data()?.mappings || {};
-    const mappingKey = getForwardingMappingKey(sourceServerId, channelId);
-    if (mappings[mappingKey]) return mappings[mappingKey];
-    if (channelId && mappings[channelId]) return mappings[channelId];
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-async function getForumRule(sourceServerId: string): Promise<ForwardingForumRule | null> {
-  try {
-    const doc = await db
-      .collection('servers')
-      .doc(sourceServerId)
-      .collection('config')
-      .doc('forwardingForums')
-      .get();
-    if (!doc.exists) return null;
-    const data = doc.data() || {};
-    return {
-      sourceServerId,
-      destinationServerId: typeof data.destinationServerId === 'string' ? data.destinationServerId : '',
-      forumChannelId: typeof data.forumChannelId === 'string' ? data.forumChannelId.trim() : null,
-      forwardingMode: data.forwardingMode === 'single-thread' ? 'single-thread' : 'per-source-thread',
-      sharedThreadId: typeof data.sharedThreadId === 'string' ? data.sharedThreadId.trim() : null,
-      restrictToWhitelist: Boolean(data.restrictToWhitelist),
-      sourceChannelWhitelist: normalizeWhitelist(data.sourceChannelWhitelist),
-    };
-  } catch {
-    return null;
-  }
-}
-
-function buildThreadName(channelName: string, channelId: string) {
-  const cleanChannelName = channelName?.replace(/^#+/, '').trim();
-  const base = cleanChannelName || '';
-  const fallback = channelId ? `channel-${channelId}` : 'discord-forward';
-  return (base || fallback).slice(0, 100);
-}
-
-async function ensureThreadCanReceiveMessages(threadId: string): Promise<boolean> {
-  const details = await getChannelDetails(threadId);
-  if (!details?.id) return false;
-
-  if (details.archived) {
-    try {
-      await discordRequest(`/channels/${threadId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ archived: false }),
-      });
-    } catch (error) {
-      console.warn(`[ForwardForum] Could not unarchive mapped thread ${threadId}:`, error);
-      return false;
-    }
-  }
-
-  return true;
-}
-
 async function resolveForwardingSourceChannel(channelId: string): Promise<{
   sourceChannelId: string;
   sourceChannelName: string;
@@ -417,51 +316,11 @@ async function resolveForwardingSourceChannel(channelId: string): Promise<{
   };
 }
 
-function shouldMirrorMessage(message: string) {
-  const trimmed = message.trim();
-  if (!trimmed) return false;
-  if (/^!/.test(trimmed)) return false;
-  if (/^@?spmt\b/i.test(trimmed)) return false;
-  return true;
-}
-
-type ForwardingMode = 'per-source-thread' | 'single-thread';
-
-function normalizeWhitelist(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.map(item => String(item).trim()).filter(Boolean);
-}
-
-async function createForumThread(
-  forumChannelId: string,
-  payload: {
-    threadName: string;
-    embed: any;
-    components: any[];
-  },
-): Promise<any | null> {
-  const created = await discordRequest(`/channels/${forumChannelId}/threads`, {
-    method: 'POST',
-    body: JSON.stringify({
-      name: payload.threadName,
-      auto_archive_duration: 10080,
-      message: {
-        embeds: [payload.embed],
-        ...(payload.components.length > 0 ? { components: payload.components } : {}),
-        allowed_mentions: { parse: [] },
-      },
-    }),
-  });
-  if (!created?.id) return null;
-  return created;
-}
-
-function isSourceAllowed(channelId: string, whitelist: string[]) {
-  return whitelist.length === 0 || whitelist.includes(channelId);
-}
-
 export async function POST(request: NextRequest) {
+  let messageLease = '';
+  const messageOwner = crypto.randomUUID();
   try {
+    if (!process.env.DISCORD_BOT_TOKEN || request.headers.get('x-discord-bot-token') !== process.env.DISCORD_BOT_TOKEN) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     const raw = await request.text();
     let body: any;
     try {
@@ -498,10 +357,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, skipped: 'empty-message' });
     }
 
-    if (message && !shouldMirrorMessage(message)) {
-      return NextResponse.json({ success: true, skipped: 'command-message' });
-    }
-
     const [guildName, sourceChannel] = await Promise.all([
       getGuildName(guildId),
       resolveForwardingSourceChannel(messageChannelId),
@@ -526,7 +381,7 @@ export async function POST(request: NextRequest) {
     };
 
     if (media.description) {
-      embed.description = media.description;
+      embed.description = media.description.slice(0, 4096);
     }
     if (media.imageUrl) {
       embed.image = { url: media.imageUrl };
@@ -560,109 +415,31 @@ export async function POST(request: NextRequest) {
 
     const components: any[] = [];
 
-    const forumRule = await getForumRule(guildId);
+    const forumRule = loadForumRule(guildId);
     if (!forumRule) {
       return NextResponse.json({ error: 'No forwarding rule configured for this source server' }, { status: 404 });
     }
 
-    const forwardingMode = forumRule.forwardingMode;
-    const sharedThreadId = forumRule.sharedThreadId || '';
-    const restrictToWhitelist = forumRule.restrictToWhitelist;
-    const sourceChannelWhitelist = forumRule.sourceChannelWhitelist;
-
-    if (restrictToWhitelist && channelId && !isSourceAllowed(channelId, sourceChannelWhitelist)) {
-      return NextResponse.json({ success: true, skipped: 'source-channel-not-whitelisted' });
+    if (!mirrorChannelAllowed(forumRule, channelId)) return NextResponse.json({ success: true, skipped: 'source-channel-not-whitelisted' });
+    if (!channelId) return NextResponse.json({ error: 'source channel required' }, { status: 400 });
+    if (forumRule.sourceServerId === forumRule.destinationServerId && channelId === forumRule.forumChannelId) {
+      return NextResponse.json({ success: true, skipped: 'destination-forum' });
     }
-
-    const mappedThreadId = forwardingMode === 'single-thread'
-      ? sharedThreadId || null
-      : await getForwardedThreadId(guildId, channelId || undefined);
-
-    let threadId = mappedThreadId;
-    if (threadId) {
-      const threadUsable = await ensureThreadCanReceiveMessages(threadId);
-      if (!threadUsable) {
-        console.warn(`[ForwardForum] Mapped thread ${threadId} for ${guildId}/${channelId} is not usable; creating a replacement`);
-        threadId = null;
+    if (messageId) {
+      messageLease = 'forum-message:' + guildId + ':' + messageId;
+      for (let attempt = 0; !sqliteService.claimLease(messageLease, messageOwner); attempt++) {
+        if (attempt >= 100) throw new Error('This message is already being forwarded. Retry shortly.');
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
     }
-
-    let createdNewThread = false;
-    let starterMessageId: string | null = null;
-
-    if (!threadId) {
-      if (forwardingMode === 'single-thread') {
-        return NextResponse.json({ error: 'Shared thread ID is required for single-thread mode' }, { status: 400 });
-      }
-
-      if (!forumRule.forumChannelId) {
-        console.log(`[ForwardForum] No forum parent channel configured for source server ${guildId}`);
-        return NextResponse.json({ error: 'No forum parent channel configured for this source server' }, { status: 404 });
-      }
-
-      const forumParent = await getChannelDetails(forumRule.forumChannelId);
-      const forumParentType = Number(forumParent?.type);
-      if (![15, 16].includes(forumParentType)) {
-        console.log(`[ForwardForum] Configured forum parent ${forumRule.forumChannelId} is not a forum/media channel (type=${forumParentType || 'unknown'})`);
-        return NextResponse.json(
-          { error: 'Configured forum parent channel must be a forum or media channel' },
-          { status: 400 },
-        );
-      }
-
-      const threadName = buildThreadName(channelName, channelId);
-      const created = await createForumThread(forumRule.forumChannelId, {
-        threadName,
-        embed,
-        components,
-      });
-
-      if (!created?.id) {
-        console.log(`[ForwardForum] Failed to create forum thread for source ${guildId}/${channelId}`);
-        return NextResponse.json({ error: 'Failed to create forum thread' }, { status: 500 });
-      }
-
-      threadId = created.id;
-      starterMessageId = created.message?.id || created.id || null;
-      createdNewThread = true;
-      const mappingKey = getForwardingMappingKey(guildId, channelId);
-      const label = channelName || guildName || channelId || guildId;
-      await db
-        .collection('servers')
-        .doc(guildId)
-        .collection('config')
-        .doc('forwardingForums')
-        .set({
-          sourceServerId: guildId,
-          destinationServerId: forumRule.destinationServerId,
-          forumChannelId: forumRule.forumChannelId,
-          forwardingMode,
-          sharedThreadId: sharedThreadId || undefined,
-          restrictToWhitelist,
-          sourceChannelWhitelist,
-          mappings: {
-            [mappingKey]: threadId,
-          },
-          labels: {
-            [mappingKey]: label,
-          },
-          updatedAt: new Date().toISOString(),
-        }, { merge: true });
-    }
-
-    // Post to the forum thread
-    const posted = !createdNewThread
-      ? await discordRequest(`/channels/${threadId}/messages`, {
-        method: 'POST',
-        body: JSON.stringify({
-          embeds: [embed],
-          ...(components.length > 0 ? { components } : {}),
-          allowed_mentions: { parse: [] },
-        }),
-      })
-      : null;
-
-    const forwardedMessageId = posted?.id || starterMessageId || threadId;
+    const prior = messageId ? db.get('forwardedMessageIndex', 'origin_' + messageId) : null;
+    if (prior?.forwardedMessageId) return NextResponse.json({ success: true, forwardedMessageId: prior.forwardedMessageId, skipped: 'already-forwarded' });
+    const { threadId } = await ensureMirrorThread(forumRule, { id: channelId, name: channelName });
+    const posted = await discordRequest(`/channels/${threadId}/messages`, {
+      method: 'POST', body: JSON.stringify({ embeds: [embed], allowed_mentions: { parse: [] }, ...(messageId ? { nonce: messageId, enforce_nonce: true } : {}) }),
+    });
+    const forwardedMessageId = posted?.id;
+    const forwardingMode = forumRule.forwardingMode || 'per-source-thread';
 
     // Store mappings so delete events can reconcile forwarded/original message state.
     if (forwardedMessageId) {
@@ -755,5 +532,7 @@ export async function POST(request: NextRequest) {
       { error: error instanceof Error ? error.message : 'Internal server error' },
       { status: 500 },
     );
+  } finally {
+    if (messageLease) sqliteService.releaseLease(messageLease, messageOwner);
   }
 }

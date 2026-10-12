@@ -149,6 +149,22 @@ async function handleMtFixItDecision(interaction: any) {
   return true;
 }
 
+const inventoryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+function refreshInventory(guildId: string, channelId = '') {
+  const key = guildId + ':' + channelId;
+  if (inventoryTimers.has(key)) clearTimeout(inventoryTimers.get(key)!);
+  const timer = setTimeout(() => {
+    inventoryTimers.delete(key);
+    void fetch(`${DSH_INGRESS_URL}/api/discord/server-inventory`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-discord-bot-token': DISCORD_BOT_TOKEN || '' },
+      body: JSON.stringify({ guildId, channelId }), signal: AbortSignal.timeout(60_000),
+    }).then(async response => {
+      if (!response.ok) throw new Error('Server inventory ' + response.status + ': ' + await response.text());
+    }).catch(error => console.warn('[DiscordIngress] Server inventory update failed:', error));
+  }, 1000);
+  timer.unref?.(); inventoryTimers.set(key, timer);
+}
+
 async function main() {
   if (!DISCORD_BOT_TOKEN) throw new Error('DISCORD_BOT_TOKEN is required');
   const client = new Client({
@@ -167,6 +183,7 @@ async function main() {
         }
       }
     };
+    for (const guild of readyClient.guilds.cache.values()) refreshInventory(guild.id);
     publishCurrentVoiceStates();
     const voicePresenceHeartbeat = setInterval(publishCurrentVoiceStates, 60_000);
     voicePresenceHeartbeat.unref?.();
@@ -176,6 +193,13 @@ async function main() {
       if (count) console.log(`[DiscordIngress] Resumed ${count} pending Discord MtFixIt delivery record(s).`);
     }).catch((error) => console.error('[DiscordIngress] Failed to resume MtFixIt deliveries:', error));
   });
+  client.on('guildCreate', guild => refreshInventory(guild.id));
+  client.on('channelCreate', channel => { if ('guild' in channel) refreshInventory(channel.guild.id, channel.id); });
+  client.on('channelUpdate', (_old, channel) => { if ('guild' in channel) refreshInventory(channel.guild.id, channel.id); });
+  client.on('channelDelete', channel => { if ('guild' in channel) refreshInventory(channel.guild.id); });
+  client.on('roleCreate', role => refreshInventory(role.guild.id));
+  client.on('roleUpdate', (_old, role) => refreshInventory(role.guild.id));
+  client.on('roleDelete', role => refreshInventory(role.guild.id));
   client.on('messageCreate', (message) => { forwardMessage(message).catch((error) => console.error(`[DiscordIngress] Failed ${message.id}:`, error)); });
   client.on('voiceStateUpdate', (_oldState, newState) => {
     publishVoicePresence(newState).catch((error) => console.warn(`[DiscordIngress] Voice presence update failed ${newState.guild.id}/${newState.id}:`, error));

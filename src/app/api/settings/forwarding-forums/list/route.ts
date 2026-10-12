@@ -1,5 +1,6 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { serverAccount, discoveredServers, ServerConnectionError } from '@/lib/discord-server-connections';
 
 type ForwardingRule = {
   serverId: string;
@@ -13,13 +14,16 @@ type ForwardingRule = {
   sourceChannelWhitelist?: string[];
 };
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const session = await serverAccount(request);
+    const allowed = new Set((await discoveredServers(session.spmtUserId!, session.discordUserId)).map((server: any) => server.id));
     const serversSnap = await db.collection('servers').get();
     const rules: ForwardingRule[] = [];
 
     for (const serverDoc of serversSnap.docs || []) {
       const serverId = serverDoc.id;
+      if (!allowed.has(serverId)) continue;
       const configDoc = await db.collection('servers').doc(serverId).collection('config').doc('forwardingForums').get();
       if (!configDoc.exists) continue;
 
@@ -40,6 +44,6 @@ export async function GET() {
     return NextResponse.json({ rules });
   } catch (error) {
     console.error('[ForwardingForumsList] GET error:', error);
-    return NextResponse.json({ error: 'Failed to list rules' }, { status: 500 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Failed to list rules' }, { status: error instanceof ServerConnectionError ? error.status : 500 });
   }
 }
