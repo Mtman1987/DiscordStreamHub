@@ -15,6 +15,6 @@ test('installation adds the bot to the exact server instead of commands-only or 
   assert.equal(url.searchParams.get('scope'), 'bot applications.commands');
   assert.equal(url.searchParams.get('integration_type'), '0');
   assert.equal(url.searchParams.get('disable_guild_select'), 'true');
-  assert.notEqual(url.searchParams.get('permissions'), '0');
-  assert.equal(BigInt(url.searchParams.get('permissions')!) & BigInt('8'), BigInt('0'));
+  // One Administrator grant covers current and future ecosystem features.
+  assert.equal(url.searchParams.get('permissions'), '8');
 });
