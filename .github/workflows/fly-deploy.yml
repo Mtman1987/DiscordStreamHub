@@ -116,7 +116,7 @@ jobs:
           npm ci
           node --import tsx --test tests/discord-gateway-spmt-routing.test.ts tests/discord-dm-spmt-routing.test.ts tests/discord-ingress-timeout.test.ts
           DSH_BUILD_DB=1 node --import tsx --test tests/discord-server-account-access.test.ts tests/discord-server-permissions.test.ts tests/discord-bot-server-discovery.test.ts
-          DSH_BUILD_DB=1 node --import tsx --test tests/settings-integrity.test.ts tests/forum-mirror-reliability.test.ts tests/forum-source-loop.test.ts tests/nuke-channel-behavior.test.ts
+          DSH_BUILD_DB=1 node --import tsx --test tests/settings-integrity.test.ts tests/forum-mirror-reliability.test.ts tests/forum-mirror-privacy.test.ts tests/forum-source-loop.test.ts tests/nuke-channel-behavior.test.ts
           npm run test:banners
           npm run test:nebula-gameplay
           npm run test:voidwalker
