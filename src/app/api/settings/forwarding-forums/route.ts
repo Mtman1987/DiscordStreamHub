@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { sqliteService } from '@/lib/sqlite-service';
-import { loadForumRule, rulePath, syncForumChannels, forumDiscordRequest } from '@/lib/discord-forum-mirror';
+import { loadForumRule, rulePath, syncForumChannels, forumDiscordRequest, assertExclusiveMirrorForum } from '@/lib/discord-forum-mirror';
 import { requireGuildManagement } from '@/lib/discord-guild-access';
 import { sameOrigin, ServerConnectionError } from '@/lib/discord-server-connections';
 
@@ -83,6 +83,7 @@ export async function POST(request: NextRequest) {
     if (target.guild_id !== destinationServerId || !(mode === 'single-thread' ? [10, 11, 12] : [15, 16]).includes(Number(target.type))) {
       return NextResponse.json({ error: 'Choose a valid destination forum/thread in the selected destination server' }, { status: 400 });
     }
+    if (mode === 'per-source-thread') assertExclusiveMirrorForum({ sourceServerId, destinationServerId, forumChannelId: targetId });
     const existing = loadForumRule(sourceServerId);
     if (existing && (existing.destinationServerId !== destinationServerId || String(existing.forumChannelId || '') !== (mode === 'per-source-thread' ? targetId : ''))) {
       // Keep historical channel mappings; a changed destination starts a separate identity.
@@ -92,7 +93,7 @@ export async function POST(request: NextRequest) {
     sqliteService.mergeDocMaps(rulePath(sourceServerId), {
       mappings: mappings || {}, labels: labels || {},
     }, {
-      ruleLabel: ruleLabel || sourceServerId + ' → ' + destinationServerId,
+      ruleLabel: ruleLabel || 'Server channel mirror',
       sourceServerId, destinationServerId, forwardingMode: mode,
       forumChannelId: mode === 'per-source-thread' ? targetId : '',
       sharedThreadId: mode === 'single-thread' ? targetId : '',

@@ -244,9 +244,12 @@ export class SQLiteService {
   }
 
   // Merge nested channel maps in a transaction; shallow document merge loses siblings.
-  mergeDocMaps(path: string, maps: Record<string, Record<string, any>>, fields: Record<string, any> = {}): void {
+  mergeDocMaps(path: string, maps: Record<string, Record<string, any>>, fields: Record<string, any> = {}, expected: Record<string, any> = {}): void {
     this.db.transaction(() => {
       const existing = this.getDoc(path).data || {};
+      for (const [key, value] of Object.entries(expected)) {
+        if ((typeof value === 'boolean' ? Boolean(existing[key]) : existing[key]) !== value) throw new Error('Document configuration changed; retry with current settings.');
+      }
       const next = { ...existing, ...fields };
       for (const [key, additions] of Object.entries(maps)) next[key] = { ...(existing[key] || {}), ...additions };
       this.setDoc(path, next);

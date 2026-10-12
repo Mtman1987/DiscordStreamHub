@@ -121,8 +121,8 @@ export function ForwardingForumsSettings() {
         label: (labels as Record<string, string>)[sourceChannelId] || '',
       }));
       setMappings(loaded.length > 0 ? loaded : [emptyMapping()]);
-      setShowAdvancedOverrides(loaded.length > 0);
-      toast({ title: 'Rule loaded', description: `Loaded forwarding rule for ${sourceServerId.trim()}` });
+      setShowAdvancedOverrides(false);
+      toast({ title: 'Rule loaded', description: 'Loaded forwarding rule' });
     } catch {
       toast({ variant: 'destructive', title: 'Failed to load forwarding rule' });
     } finally {
@@ -158,7 +158,7 @@ export function ForwardingForumsSettings() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ruleLabel: ruleLabel.trim() || `${sourceServerId.trim()} → ${destinationServerId.trim()}`,
+          ruleLabel: ruleLabel.trim() || (servers.find(server => server.id === sourceServerId)?.name || 'Source server') + ' → ' + (servers.find(server => server.id === destinationServerId)?.name || 'Destination server'),
           sourceServerId: sourceServerId.trim(),
           destinationServerId: destinationServerId.trim(),
           forumChannelId: forwardingMode === 'per-source-thread' ? forumChannelId.trim() : '',
@@ -233,7 +233,7 @@ export function ForwardingForumsSettings() {
         </CardTitle>
         <CardDescription>
           Set a source server and a destination server explicitly. The rule below defines where messages come from and where they go.
-          If the whitelist is empty, all source channels are allowed. Use the saved rules list below to load or delete existing flows.
+          If the whitelist is empty, all non-forum source channels are allowed. Use the saved rules list below to load or delete existing flows.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -256,7 +256,7 @@ export function ForwardingForumsSettings() {
 
         <div className="grid gap-3 md:grid-cols-2">
           <div className="space-y-1">
-            <Label className="text-xs">Source Server ID</Label>
+            <Label className="text-xs">Source server</Label>
             <Select value={sourceServerId} onValueChange={setSourceServerId}>
               <SelectTrigger><SelectValue placeholder="Choose source server" /></SelectTrigger>
               <SelectContent>{servers.map(server => <SelectItem key={server.id} value={server.id}>{server.name}</SelectItem>)}</SelectContent>
@@ -264,7 +264,7 @@ export function ForwardingForumsSettings() {
             <p className="text-xs text-muted-foreground">Messages must originate from this Discord server.</p>
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Destination Server ID</Label>
+            <Label className="text-xs">Destination server</Label>
             <Select value={destinationServerId} onValueChange={value => { setDestinationServerId(value); setForumChannelId(''); setSharedThreadId(''); setMappings([emptyMapping()]); }}>
               <SelectTrigger><SelectValue placeholder="Choose destination server" /></SelectTrigger>
               <SelectContent>{servers.map(server => <SelectItem key={server.id} value={server.id}>{server.name}</SelectItem>)}</SelectContent>
@@ -299,7 +299,7 @@ export function ForwardingForumsSettings() {
         <div className="space-y-1">
           {forwardingMode === 'per-source-thread' ? (
             <>
-              <Label className="text-xs">Destination Forum Parent Channel ID</Label>
+              <Label className="text-xs">Destination forum</Label>
               <Select value={forumChannelId} onValueChange={setForumChannelId}>
                 <SelectTrigger><SelectValue placeholder="Choose destination forum" /></SelectTrigger>
                 <SelectContent>{destinationChannels.filter(channel => [15, 16].includes(channel.type)).map(channel =>
@@ -318,7 +318,7 @@ export function ForwardingForumsSettings() {
                 onChange={e => setSharedThreadId(e.target.value)}
               />
               <p className="text-xs text-muted-foreground">
-                Use this when every allowed source channel should post into one shared thread.
+                Use this when every allowed non-forum source channel should post into one shared thread.
               </p>
             </>
           )}
@@ -405,7 +405,7 @@ export function ForwardingForumsSettings() {
           </div>
         ) : (
           <div className="rounded-md border p-3 text-xs text-muted-foreground">
-            No per-channel overrides are enabled. With a blank whitelist, every allowed source channel will auto-create or reuse its thread according to the selected mode.
+            No per-channel overrides are enabled. With a blank whitelist, every allowed non-forum source channel will auto-create or reuse its thread according to the selected mode.
           </div>
         )}
 
@@ -447,9 +447,9 @@ export function ForwardingForumsSettings() {
               {savedRules.map(rule => (
                 <div key={rule.sourceServerId} className="flex items-center justify-between gap-3 rounded-md border p-3">
                   <div className="min-w-0 space-y-1">
-                    <div className="font-medium text-sm truncate">{rule.ruleLabel || `${rule.sourceServerId} → ${rule.destinationServerId}`}</div>
+                    <div className="font-medium text-sm truncate">{rule.ruleLabel || 'Server channel mirror'}</div>
                     <div className="text-xs text-muted-foreground truncate">
-                      {rule.sourceServerId} → {rule.destinationServerId}
+                      {servers.find(server => server.id === rule.sourceServerId)?.name || 'Source server'} → {servers.find(server => server.id === rule.destinationServerId)?.name || 'Destination server'}
                       {rule.forwardingMode === 'single-thread' ? ' · shared thread' : ' · per-source threads'}
                     </div>
                   </div>

@@ -287,6 +287,7 @@ async function resolveForwardingSourceChannel(channelId: string): Promise<{
   sourceChannelId: string;
   sourceChannelName: string;
   messageChannelId: string;
+  skipForum?: boolean;
 }> {
   if (!channelId) {
     return {
@@ -306,6 +307,7 @@ async function resolveForwardingSourceChannel(channelId: string): Promise<{
       sourceChannelId: parentId,
       sourceChannelName: parent?.name || parentId,
       messageChannelId: channelId,
+      skipForum: [15, 16].includes(Number(parent?.type)),
     };
   }
 
@@ -313,6 +315,7 @@ async function resolveForwardingSourceChannel(channelId: string): Promise<{
     sourceChannelId: channelId,
     sourceChannelName: details?.name || await getChannelName(channelId),
     messageChannelId: channelId,
+    skipForum: [15, 16].includes(channelType),
   };
 }
 
@@ -361,6 +364,7 @@ export async function POST(request: NextRequest) {
       getGuildName(guildId),
       resolveForwardingSourceChannel(messageChannelId),
     ]);
+    if (sourceChannel.skipForum) return NextResponse.json({ success: true, skipped: 'source-forum-channel' });
     const channelId = sourceChannel.sourceChannelId || messageChannelId;
     const channelName = sourceChannel.sourceChannelName;
 
@@ -416,6 +420,7 @@ export async function POST(request: NextRequest) {
     const components: any[] = [];
 
     const forumRule = loadForumRule(guildId);
+    if (forumRule?.paused) return NextResponse.json({ success: true, skipped: 'forwarding-paused' });
     if (!forumRule) {
       return NextResponse.json({ error: 'No forwarding rule configured for this source server' }, { status: 404 });
     }

@@ -3,7 +3,7 @@ import { sqliteService } from './sqlite-service';
 export type ForumRule = {
   sourceServerId: string; destinationServerId: string; forumChannelId?: string;
   forwardingMode?: string; sharedThreadId?: string; restrictToWhitelist?: boolean;
-  sourceChannelWhitelist?: string[]; mappings?: Record<string, string>; labels?: Record<string, string>;
+  sourceChannelWhitelist?: string[]; paused?: boolean; mappings?: Record<string, string>; labels?: Record<string, string>;
 };
 export class ForumDiscordError extends Error {
   constructor(public status: number, public code: number, message: string) { super(message); }
@@ -33,9 +33,28 @@ export function loadForumRule(guildId: string): ForumRule | null {
 export function mirrorChannelAllowed(rule: ForumRule, channelId: string) {
   return !rule.restrictToWhitelist || !rule.sourceChannelWhitelist?.length || rule.sourceChannelWhitelist.includes(channelId);
 }
-export function mirrorThreadName(name: string, sourceGuildId: string, channelId: string) {
-  const suffix = ' [' + sourceGuildId + ':' + channelId + ']';
-  return (name.replace(/^#+/, '').trim() || 'channel').slice(0, 100 - suffix.length) + suffix;
+export function mirrorThreadName(name: string, _sourceGuildId?: string, _channelId?: string) {
+  return (name.replace(/^#+/, '').trim() || 'channel').slice(0, 100);
+}
+export function assertExclusiveMirrorForum(rule: ForumRule) {
+  for (const sourceId of sqliteService.listDescendantDocumentIds('servers')) {
+    if (sourceId === rule.sourceServerId) continue;
+    const other = loadForumRule(sourceId);
+    if (other?.forwardingMode !== 'single-thread' && other?.destinationServerId === rule.destinationServerId && other?.forumChannelId === rule.forumChannelId) {
+      throw new Error('Each mirrored server needs its own destination forum. Choose a separate forum.');
+    }
+  }
+}
+function friendlyMirrorName(rule: ForumRule, channel: { id: string; name: string; type?: number }) {
+  const list = sqliteService.getDoc('servers/' + rule.sourceServerId + '/config/channels').data?.list || [];
+  const same = list.filter((item: any) => [0, 2, 5, 13].includes(Number(item.type)) && item.name === channel.name);
+  if (!same.some((item: any) => item.id === channel.id)) same.push(channel);
+  if (same.length < 2) return mirrorThreadName(channel.name);
+  const own = same.find((item: any) => item.id === channel.id);
+  const kind = (type: number) => ({ 0: 'text', 2: 'voice', 5: 'announcements', 13: 'stage' }[type] || 'text');
+  const peers = same.filter((item: any) => kind(Number(item.type)) === kind(Number(own?.type))).sort((a: any, b: any) => String(a.id).localeCompare(String(b.id)));
+  const suffix = ' (' + kind(Number(own?.type)) + (peers.length > 1 ? ' ' + (peers.findIndex((item: any) => item.id === channel.id) + 1) : '') + ')';
+  return mirrorThreadName(channel.name).slice(0, 100 - suffix.length) + suffix;
 }
 
 async function allForumThreads(rule: ForumRule, api: DiscordRequest) {
@@ -71,13 +90,16 @@ async function makeUsable(threadId: string, rule: ForumRule, api: DiscordRequest
 // SQLite leases serialize setup, concurrent messages and multiple web processes.
 // A persisted pending marker makes an ambiguous Discord create fail closed.
 // Recovery scans both active and archived threads before any new creation.
-export async function ensureMirrorThread(rule: ForumRule, channel: { id: string; name: string }, api: DiscordRequest = forumDiscordRequest) {
+export async function ensureMirrorThread(rule: ForumRule, channel: { id: string; name: string; type?: number }, api: DiscordRequest = forumDiscordRequest) {
+  if (rule.paused) throw new Error('Forum forwarding is paused while its destination is being reset.');
+  if ([15, 16].includes(Number(channel.type))) throw new Error('Forum and media source channels are excluded from mirroring.');
   if (rule.forwardingMode === 'single-thread') {
     if (!rule.sharedThreadId) throw new Error('Shared destination thread is required');
     await makeUsable(rule.sharedThreadId, rule, api);
     return { threadId: rule.sharedThreadId, created: false };
   }
   if (!rule.forumChannelId) throw new Error('Destination forum channel is required');
+  assertExclusiveMirrorForum(rule);
   const key = rule.destinationServerId + ':' + rule.forumChannelId + ':' + rule.sourceServerId + ':' + channel.id;
   const owner = crypto.randomUUID();
   for (let attempt = 0; !sqliteService.claimLease(key, owner); attempt++) {
@@ -92,81 +114,81 @@ export async function ensureMirrorThread(rule: ForumRule, channel: { id: string;
   const statePath = 'forwardingThreadState/' + key;
   try {
     const latest = loadForumRule(rule.sourceServerId);
-    if (!latest || latest.destinationServerId !== rule.destinationServerId || latest.forumChannelId !== rule.forumChannelId ||
+    if (!latest || latest.paused || latest.destinationServerId !== rule.destinationServerId || latest.forumChannelId !== rule.forumChannelId ||
         latest.forwardingMode === 'single-thread' || !mirrorChannelAllowed(latest, channel.id)) throw new Error('Forwarding configuration changed. Retry with the current rule.');
     const state = sqliteService.getDoc(statePath).data || {};
     const mappingKey = rule.sourceServerId + ':' + channel.id;
+    const threadName = friendlyMirrorName(rule, channel);
     const savedId = latest.mappings?.[mappingKey] || latest.mappings?.[channel.id] || state.threadId;
+    let savedThread: any = null;
     if (savedId) {
-      // Permission failures, rate limits and deleted threads never authorize replacement.
-      const savedThread = await makeUsable(savedId, rule, api);
-      const marker = '[' + rule.sourceServerId + ':' + channel.id + ']';
-      if (String(savedThread.name).endsWith(marker) && savedThread.name !== mirrorThreadName(channel.name, rule.sourceServerId, channel.id)) {
-        await api('/channels/' + savedId, { method: 'PATCH', body: JSON.stringify({ name: mirrorThreadName(channel.name, rule.sourceServerId, channel.id) }) });
+      try { savedThread = await makeUsable(savedId, rule, api); }
+      catch (error) {
+        // A confirmed deleted channel can be replaced. Permission/network errors
+        // never authorize creating a second copy.
+        if (!(error instanceof ForumDiscordError && error.status === 404 && error.code === 10003)) throw error;
       }
-      sqliteService.mergeDocMaps(rulePath(rule.sourceServerId), { mappings: { [mappingKey]: savedId }, labels: { [mappingKey]: channel.name } });
+    }
+    if (savedThread && savedThread.name === threadName && !state.duplicateThreadIds?.length) {
+      sqliteService.mergeDocMaps(rulePath(rule.sourceServerId), { mappings: { [mappingKey]: savedId }, labels: { [mappingKey]: channel.name } }, {}, { destinationServerId: rule.destinationServerId, forumChannelId: rule.forumChannelId, paused: false });
       return { threadId: String(savedId), created: false };
     }
     const parent = await api('/channels/' + rule.forumChannelId);
     if (![15, 16].includes(Number(parent.type)) || parent.guild_id !== rule.destinationServerId) throw new Error('Destination must be a forum/media channel in the selected server');
     const threads = await allForumThreads(rule, api);
-    const marker = '[' + rule.sourceServerId + ':' + channel.id + ']';
-    let matches = threads.filter(thread => String(thread.name).endsWith(marker));
-    if (!matches.length) {
-      // Old shallow map writes lost channel entries, but per-message history still
-      // records the exact source channel and destination thread IDs.
-      const history = sqliteService.getCollection('servers/' + rule.sourceServerId + '/forwardedMessages').docs;
-      const ids = new Set(history.filter((message: any) =>
-        String(message.originSourceChannelId || message.originChannelId) === channel.id &&
-        message.destinationServerId === rule.destinationServerId
-      ).map((message: any) => message.forwardedThreadId));
-      matches = threads.filter(thread => ids.has(thread.id));
-    }
-    if (!matches.length) {
-      // Recover pre-marker threads only when the original bot footer confirms their source.
-      const guild = await api('/guilds/' + rule.sourceServerId);
-      const legacy = threads.filter(thread => thread.name === channel.name || thread.name === latest.labels?.[mappingKey]);
-      for (const thread of legacy) {
-        const starter = await api('/channels/' + thread.id + '/messages/' + thread.id);
-        if (starter.author?.bot && starter.embeds?.some((e: any) => e.footer?.text === guild.name + ' · #' + channel.name)) matches.push(thread);
-      }
-    }
-    // Reuse the oldest confirmed original. Leave later duplicates and their posts
-    // intact, but route all future posts to this one durable channel identity.
+    const bot = await api('/users/@me');
+    const history = sqliteService.getCollection('servers/' + rule.sourceServerId + '/forwardedMessages').docs;
+    const matchingHistory = history.filter((message: any) => String(message.originSourceChannelId || message.originChannelId) === channel.id &&
+      message.destinationServerId === rule.destinationServerId);
+    const historicalIds = new Set(matchingHistory.map((message: any) => message.forwardedThreadId));
+    const foreignIds = new Set(history.filter((message: any) => String(message.originSourceChannelId || message.originChannelId) !== channel.id)
+      .map((message: any) => message.forwardedThreadId));
+    const marker = '[' + rule.sourceServerId + ':' + channel.id + ']'; // Read old names only; never display new IDs.
+    const matches = threads.filter(thread => historicalIds.has(thread.id) || String(thread.name).endsWith(marker) ||
+      (thread.name === threadName && thread.owner_id === bot.id && !foreignIds.has(thread.id)));
+    if (savedThread && !matches.some(thread => thread.id === savedThread.id)) matches.push(savedThread);
     matches.sort((a, b) => BigInt(a.id) < BigInt(b.id) ? -1 : BigInt(a.id) > BigInt(b.id) ? 1 : 0);
-    if (matches.length > 1) console.warn('[ForwardForum] Recovered canonical thread', matches[0].id, 'for', rule.sourceServerId, channel.id, 'from', matches.length, 'historical duplicates');
-    let threadId = matches[0]?.id;
+    let threadId = savedThread?.id || matches[0]?.id;
     let created = false;
+    // Delete redundant bot-owned copies before creating/reusing a canonical thread.
+    // Failure stops synchronization, so it cannot silently leave another copy.
+    const redundantIds = new Set([...matches.filter(thread => thread.id !== threadId).map(thread => thread.id),
+      ...(state.duplicateThreadIds || []).filter((id: string) => id !== threadId)]);
+    for (const duplicateId of redundantIds) {
+      if (leaseLost) throw new Error('Thread synchronization lease was lost.');
+      const duplicate = threads.find(thread => thread.id === duplicateId);
+      if (!duplicate) continue; // A successful full active+archive scan confirms it is absent.
+      if (duplicate.owner_id !== bot.id && !historicalIds.has(duplicateId) && !String(duplicate.name).endsWith(marker)) {
+        throw new Error('A duplicate thread is not bot-owned. Remove or rename it before syncing.');
+      }
+      await api('/channels/' + duplicateId, { method: 'DELETE' });
+    }
     if (!threadId) {
       if (leaseLost || !sqliteService.claimLease(key, owner)) throw new Error('Thread synchronization lease was lost. Retry.');
       if (state.pending) throw new Error('A previous thread creation has an unknown result. Refresh synchronization; no duplicate will be created.');
       sqliteService.setDoc(statePath, { pending: true, sourceServerId: rule.sourceServerId, sourceChannelId: channel.id, startedAt: new Date().toISOString() });
+      const sourceGuild = await api('/guilds/' + rule.sourceServerId);
       let thread;
       try {
         thread = await api('/channels/' + rule.forumChannelId + '/threads', { method: 'POST', body: JSON.stringify({
-          name: mirrorThreadName(channel.name, rule.sourceServerId, channel.id),
-          auto_archive_duration: 10080,
+          name: threadName, auto_archive_duration: 10080,
           ...(parent.available_tags?.length && (Number(parent.flags || 0) & 16) ? { applied_tags: [parent.available_tags.find((t: any) => !t.moderated)?.id || parent.available_tags[0].id] } : {}),
-          message: { content: 'Messages from <#' + channel.id + '> are mirrored here.\nSource: https://discord.com/channels/' + rule.sourceServerId + '/' + channel.id,
+          message: { content: 'Messages from **#' + channel.name + '** in **' + sourceGuild.name + '** are mirrored here.',
             allowed_mentions: { parse: [] } },
         }) });
       } catch (error) {
-        // An explicit 4xx (except timeout) proves no thread was created. Network/5xx is ambiguous.
         if (error instanceof ForumDiscordError && error.status >= 400 && error.status < 500 && error.status !== 408) sqliteService.deleteDoc(statePath);
         throw error;
       }
       if (!thread?.id) throw new Error('Discord did not confirm thread creation');
-      threadId = thread.id;
-      created = true;
+      threadId = thread.id; created = true;
     }
-    sqliteService.setDoc(statePath, { threadId, duplicateThreadIds: matches.slice(1).map(thread => thread.id), pending: false, sourceServerId: rule.sourceServerId, sourceChannelId: channel.id, updatedAt: new Date().toISOString() });
-    sqliteService.mergeDocMaps(rulePath(rule.sourceServerId), { mappings: { [mappingKey]: threadId }, labels: { [mappingKey]: channel.name } });
-    await makeUsable(threadId, rule, api);
+    const usable = await makeUsable(threadId, rule, api);
+    if (usable.name !== threadName) await api('/channels/' + threadId, { method: 'PATCH', body: JSON.stringify({ name: threadName }) });
+    sqliteService.setDoc(statePath, { threadId, duplicateThreadIds: [], pending: false, sourceServerId: rule.sourceServerId, sourceChannelId: channel.id, updatedAt: new Date().toISOString() });
+    sqliteService.mergeDocMaps(rulePath(rule.sourceServerId), { mappings: { [mappingKey]: threadId }, labels: { [mappingKey]: channel.name } }, {}, { destinationServerId: rule.destinationServerId, forumChannelId: rule.forumChannelId, paused: false });
     return { threadId: String(threadId), created };
-  } finally {
-    clearInterval(heartbeat);
-    sqliteService.releaseLease(key, owner);
-  }
+  } finally { clearInterval(heartbeat); sqliteService.releaseLease(key, owner); }
 }
 
 export async function syncForumChannels(rule: ForumRule, api: DiscordRequest = forumDiscordRequest) {
@@ -175,7 +197,8 @@ export async function syncForumChannels(rule: ForumRule, api: DiscordRequest = f
     return { total: 1, created: 0, reused: 1, errors: [] as Array<{ channelId: string; error: string }> };
   }
   const channels = await api('/guilds/' + rule.sourceServerId + '/channels');
-  const sources = channels.filter((c: any) => [0, 2, 5, 13, 15, 16].includes(Number(c.type)) && mirrorChannelAllowed(rule, c.id) &&
+  sqliteService.setDoc('servers/' + rule.sourceServerId + '/config/channels', { list: channels.map((c: any) => ({ id: c.id, name: c.name, type: c.type })) }, true);
+  const sources = channels.filter((c: any) => [0, 2, 5, 13].includes(Number(c.type)) && mirrorChannelAllowed(rule, c.id) &&
     !(rule.sourceServerId === rule.destinationServerId && c.id === rule.forumChannelId));
   let created = 0, reused = 0;
   const errors: Array<{ channelId: string; error: string }> = [];

@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
     sqliteService.setDoc('servers/' + guildId + '/config/roles', { list: roles.map((r: any) => r.name), detailed: roles.map((r: any) => ({ id: r.id, name: r.name })), updatedAt: now }, true);
     const rule = loadForumRule(guildId);
     const channel = channels.find((c: any) => c.id === channelId);
-    if (rule && channel && [0, 2, 5, 13, 15, 16].includes(Number(channel.type)) && mirrorChannelAllowed(rule, channel.id) && channel.id !== rule.forumChannelId) {
+    if (rule && channel && [0, 2, 5, 13].includes(Number(channel.type)) && mirrorChannelAllowed(rule, channel.id) && channel.id !== rule.forumChannelId) {
       await ensureMirrorThread(rule, channel);
     }
     return NextResponse.json({ success: true, serverId: guildId });

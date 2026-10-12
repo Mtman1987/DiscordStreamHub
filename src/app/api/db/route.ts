@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { sqliteService } from '@/lib/sqlite-service';
 
 function privateServerPath(path: string): boolean {
-  return ['discordServerOAuth', 'discordServerConnections', 'forwardingThreadState', 'forwardingRuleHistory', 'discordCleanupJobs'].includes(path.split('/').filter(Boolean)[0] || '');
+  return ['discordServerOAuth', 'discordServerConnections', 'forwardingThreadState', 'forwardingRuleHistory', 'discordCleanupJobs', 'forumMigrations'].includes(path.split('/').filter(Boolean)[0] || '');
 }
 function isCollectionPath(path: string): boolean {
   return path.split('/').filter(Boolean).length % 2 === 1;
