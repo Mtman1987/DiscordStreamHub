@@ -256,6 +256,21 @@ export class SQLiteService {
     }).immediate();
   }
 
+  removeDocMapEntries(path: string, maps: Record<string, string[]>, expected: Record<string, any> = {}): void {
+    this.db.transaction(() => {
+      const existing = this.getDoc(path).data || {};
+      for (const [key, value] of Object.entries(expected)) {
+        if (existing[key] !== value) throw new Error('Document configuration changed.');
+      }
+      for (const [key, entries] of Object.entries(maps)) {
+        const next = { ...(existing[key] || {}) };
+        for (const entry of entries) delete next[entry];
+        existing[key] = next;
+      }
+      this.setDoc(path, existing);
+    }).immediate();
+  }
+
   claimLease(key: string, owner: string, ttlMs = 120_000): boolean {
     this.db.exec('CREATE TABLE IF NOT EXISTS operation_leases (key TEXT PRIMARY KEY, owner TEXT NOT NULL, expires INTEGER NOT NULL)');
     const result = this.db.prepare(`

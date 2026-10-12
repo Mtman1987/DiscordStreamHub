@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sqliteService } from '@/lib/sqlite-service';
-import { forumDiscordRequest, loadForumRule, ensureMirrorThread, mirrorChannelAllowed } from '@/lib/discord-forum-mirror';
+import { forumDiscordRequest, loadForumRule, ensureMirrorThread, mirrorChannelAllowed, removeRestrictedMirror } from '@/lib/discord-forum-mirror';
+import { isPublicMirrorSource } from '@/lib/discord-mirror-privacy';
 export const dynamic = 'force-dynamic';
 export async function POST(request: NextRequest) {
   if (!process.env.DISCORD_BOT_TOKEN || request.headers.get('x-discord-bot-token') !== process.env.DISCORD_BOT_TOKEN) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -16,8 +17,13 @@ export async function POST(request: NextRequest) {
     sqliteService.setDoc('servers/' + guildId + '/config/channels', { list: channels.map((c: any) => ({ id: c.id, name: c.name, type: c.type })), updatedAt: now }, true);
     sqliteService.setDoc('servers/' + guildId + '/config/roles', { list: roles.map((r: any) => r.name), detailed: roles.map((r: any) => ({ id: r.id, name: r.name })), updatedAt: now }, true);
     const rule = loadForumRule(guildId);
+    if (rule) {
+      for (const source of channels) {
+        if ([0, 2, 5, 13].includes(Number(source.type)) && !isPublicMirrorSource(guild, source)) await removeRestrictedMirror(rule, source.id);
+      }
+    }
     const channel = channels.find((c: any) => c.id === channelId);
-    if (rule && channel && [0, 2, 5, 13].includes(Number(channel.type)) && mirrorChannelAllowed(rule, channel.id) && channel.id !== rule.forumChannelId) {
+    if (rule && !rule.paused && channel && isPublicMirrorSource(guild, channel) && [0, 2, 5, 13].includes(Number(channel.type)) && mirrorChannelAllowed(rule, channel.id) && channel.id !== rule.forumChannelId) {
       await ensureMirrorThread(rule, channel);
     }
     return NextResponse.json({ success: true, serverId: guildId });

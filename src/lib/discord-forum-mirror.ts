@@ -1,4 +1,5 @@
 import { sqliteService } from './sqlite-service';
+import { isPublicMirrorSource } from './discord-mirror-privacy';
 
 export type ForumRule = {
   sourceServerId: string; destinationServerId: string; forumChannelId?: string;
@@ -33,6 +34,59 @@ export function loadForumRule(guildId: string): ForumRule | null {
 export function mirrorChannelAllowed(rule: ForumRule, channelId: string) {
   return !rule.restrictToWhitelist || !rule.sourceChannelWhitelist?.length || rule.sourceChannelWhitelist.includes(channelId);
 }
+export async function publicMirrorChannel(guildId: string, channelId: string, api: DiscordRequest = forumDiscordRequest) {
+  const [guild, channel] = await Promise.all([api('/guilds/' + guildId), api('/channels/' + channelId)]);
+  return isPublicMirrorSource(guild, channel);
+}
+
+// Delete only proven destination copies; never touch a source channel.
+// The same lease used by creation prevents a cleanup/create race.
+export async function removeRestrictedMirror(rule: ForumRule, channelId: string, api: DiscordRequest = forumDiscordRequest) {
+  const key = rule.destinationServerId + ':' + rule.forumChannelId + ':' + rule.sourceServerId + ':' + channelId;
+  const owner = crypto.randomUUID();
+  if (!sqliteService.claimLease(key, owner)) throw new Error('Mirror cleanup is busy; forwarding is blocked.');
+  try {
+    const latest = loadForumRule(rule.sourceServerId);
+    if (!latest || latest.destinationServerId !== rule.destinationServerId || latest.forumChannelId !== rule.forumChannelId) throw new Error('Forwarding configuration changed.');
+    const statePath = 'forwardingThreadState/' + key;
+    const state = sqliteService.getDoc(statePath).data || {};
+    const mappingKey = rule.sourceServerId + ':' + channelId;
+    const history = sqliteService.getCollection('servers/' + rule.sourceServerId + '/forwardedMessages').docs.filter((row: any) =>
+      row.destinationServerId === rule.destinationServerId && String(row.originSourceChannelId || row.originChannelId) === channelId);
+    if (rule.forwardingMode === 'single-thread') {
+      for (const row of history) {
+        if (row.forwardedThreadId !== rule.sharedThreadId) continue;
+        await api('/channels/' + row.forwardedThreadId + '/messages/' + row.forwardedMessageId, { method: 'DELETE' }).catch(error => {
+          if (!(error instanceof ForumDiscordError && error.status === 404)) throw error;
+        });
+      }
+    } else {
+      const ids = new Set<string>([latest.mappings?.[mappingKey], latest.mappings?.[channelId], state.threadId,
+        ...(state.duplicateThreadIds || []), ...history.map((row: any) => row.forwardedThreadId)].filter(Boolean));
+      for (const id of ids) {
+        let thread;
+        try { thread = await api('/channels/' + id); }
+        catch (error) { if (error instanceof ForumDiscordError && error.status === 404 && error.code === 10003) continue; throw error; }
+        if (thread.guild_id !== rule.destinationServerId || thread.parent_id !== rule.forumChannelId || ![10, 11, 12].includes(Number(thread.type))) {
+          if (id === latest.mappings?.[mappingKey] || id === latest.mappings?.[channelId] || id === state.threadId) throw new Error('Refusing to delete an unrelated channel during privacy cleanup.');
+          continue; // History can reference a previous destination forum.
+        }
+        await api('/channels/' + id, { method: 'DELETE' });
+      }
+    }
+    sqliteService.removeDocMapEntries(rulePath(rule.sourceServerId), { mappings: [mappingKey, channelId], labels: [mappingKey, channelId] },
+      { destinationServerId: rule.destinationServerId, forumChannelId: rule.forumChannelId });
+    sqliteService.deleteDoc(statePath);
+    for (const row of history) {
+      sqliteService.deleteDoc('servers/' + rule.sourceServerId + '/forwardedMessages/' + row.id);
+      for (const index of ['forwarded_' + row.forwardedMessageId, 'origin_' + row.originMessageId]) {
+        const path = 'forwardedMessageIndex/' + index;
+        if (sqliteService.getDoc(path).data?.forwardedMessageId === row.forwardedMessageId) sqliteService.deleteDoc(path);
+      }
+    }
+  } finally { sqliteService.releaseLease(key, owner); }
+}
+
 export function mirrorThreadName(name: string, _sourceGuildId?: string, _channelId?: string) {
   return (name.replace(/^#+/, '').trim() || 'channel').slice(0, 100);
 }
@@ -93,6 +147,7 @@ async function makeUsable(threadId: string, rule: ForumRule, api: DiscordRequest
 export async function ensureMirrorThread(rule: ForumRule, channel: { id: string; name: string; type?: number }, api: DiscordRequest = forumDiscordRequest) {
   if (rule.paused) throw new Error('Forum forwarding is paused while its destination is being reset.');
   if ([15, 16].includes(Number(channel.type))) throw new Error('Forum and media source channels are excluded from mirroring.');
+  if (!await publicMirrorChannel(rule.sourceServerId, channel.id, api)) throw new Error('Restricted source channels cannot be mirrored publicly.');
   if (rule.forwardingMode === 'single-thread') {
     if (!rule.sharedThreadId) throw new Error('Shared destination thread is required');
     await makeUsable(rule.sharedThreadId, rule, api);
@@ -116,6 +171,7 @@ export async function ensureMirrorThread(rule: ForumRule, channel: { id: string;
     const latest = loadForumRule(rule.sourceServerId);
     if (!latest || latest.paused || latest.destinationServerId !== rule.destinationServerId || latest.forumChannelId !== rule.forumChannelId ||
         latest.forwardingMode === 'single-thread' || !mirrorChannelAllowed(latest, channel.id)) throw new Error('Forwarding configuration changed. Retry with the current rule.');
+    if (!await publicMirrorChannel(rule.sourceServerId, channel.id, api)) throw new Error('Restricted source channels cannot be mirrored publicly.');
     const state = sqliteService.getDoc(statePath).data || {};
     const mappingKey = rule.sourceServerId + ':' + channel.id;
     const threadName = friendlyMirrorName(rule, channel);
@@ -192,13 +248,18 @@ export async function ensureMirrorThread(rule: ForumRule, channel: { id: string;
 }
 
 export async function syncForumChannels(rule: ForumRule, api: DiscordRequest = forumDiscordRequest) {
+  const [channels, guild] = await Promise.all([api('/guilds/' + rule.sourceServerId + '/channels'), api('/guilds/' + rule.sourceServerId)]);
+  for (const channel of channels) {
+    if ([0, 2, 5, 13].includes(Number(channel.type)) && !isPublicMirrorSource(guild, channel)) await removeRestrictedMirror(rule, channel.id, api);
+  }
   if (rule.forwardingMode === 'single-thread') {
-    await ensureMirrorThread(rule, { id: '', name: '' }, api);
+    if (rule.paused) throw new Error('Forum forwarding is paused.');
+    if (!rule.sharedThreadId) throw new Error('Shared destination thread is required');
+    await makeUsable(rule.sharedThreadId, rule, api);
     return { total: 1, created: 0, reused: 1, errors: [] as Array<{ channelId: string; error: string }> };
   }
-  const channels = await api('/guilds/' + rule.sourceServerId + '/channels');
   sqliteService.setDoc('servers/' + rule.sourceServerId + '/config/channels', { list: channels.map((c: any) => ({ id: c.id, name: c.name, type: c.type })) }, true);
-  const sources = channels.filter((c: any) => [0, 2, 5, 13].includes(Number(c.type)) && mirrorChannelAllowed(rule, c.id) &&
+  const sources = channels.filter((c: any) => isPublicMirrorSource(guild, c) && mirrorChannelAllowed(rule, c.id) &&
     !(rule.sourceServerId === rule.destinationServerId && c.id === rule.forumChannelId));
   let created = 0, reused = 0;
   const errors: Array<{ channelId: string; error: string }> = [];

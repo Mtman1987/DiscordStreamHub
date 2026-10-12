@@ -25,8 +25,9 @@ function mock(options: { archived?: boolean; existing?: boolean; failCreate?: bo
     if (path === '/channels/' + rule.forumChannelId) return { id: rule.forumChannelId, guild_id: rule.destinationServerId, type: 15 };
     if (path.endsWith('/threads/active')) return { threads: options.existing && !options.archived ? [thread] : [] };
     if (path.includes('/threads/archived/public')) return { threads: options.existing && options.archived ? [thread] : [], has_more: false };
-    if (path === '/guilds/' + rule.sourceServerId) return { name: 'Source' };
-    if (path === '/guilds/' + rule.sourceServerId + '/channels') return [channel, { id: '440000000000000002', name: 'quiet', type: 0 }, { id: '440000000000000003', name: 'category', type: 4 }, { id: '440000000000000004', name: 'forum', type: 15 }, { id: '440000000000000005', name: 'media', type: 16 }].map(c => ({ type: 0, ...c }));
+    if (path === '/guilds/' + rule.sourceServerId) return { id: rule.sourceServerId, name: 'Source', roles: [{ id: rule.sourceServerId, permissions: '1024' }] };
+    if (path === '/channels/' + channel.id || path === '/channels/440000000000000002') return { ...channel, id: path.split('/').at(-1), type: 0, guild_id: rule.sourceServerId, permission_overwrites: [] };
+    if (path === '/guilds/' + rule.sourceServerId + '/channels') return [channel, { id: '440000000000000002', name: 'quiet', type: 0 }, { id: '440000000000000003', name: 'category', type: 4 }, { id: '440000000000000004', name: 'forum', type: 15 }, { id: '440000000000000005', name: 'media', type: 16 }].map(c => ({ type: 0, guild_id: rule.sourceServerId, permission_overwrites: [], ...c }));
     if (path.endsWith('/threads') && init?.method === 'POST') {
       creates++;
       if (options.failCreate) throw new Error('Connection lost after Discord accepted create');

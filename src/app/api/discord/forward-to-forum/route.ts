@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { sqliteService } from '@/lib/sqlite-service';
-import { ensureMirrorThread, loadForumRule, mirrorChannelAllowed, forumDiscordRequest } from '@/lib/discord-forum-mirror';
+import { ensureMirrorThread, loadForumRule, mirrorChannelAllowed, forumDiscordRequest, publicMirrorChannel, removeRestrictedMirror } from '@/lib/discord-forum-mirror';
 
 const DISCORD_API = 'https://discord.com/api/v10';
 
@@ -288,6 +288,7 @@ async function resolveForwardingSourceChannel(channelId: string): Promise<{
   sourceChannelName: string;
   messageChannelId: string;
   skipForum?: boolean;
+  privateThread?: boolean;
 }> {
   if (!channelId) {
     return {
@@ -308,6 +309,7 @@ async function resolveForwardingSourceChannel(channelId: string): Promise<{
       sourceChannelName: parent?.name || parentId,
       messageChannelId: channelId,
       skipForum: [15, 16].includes(Number(parent?.type)),
+      privateThread: channelType === 12,
     };
   }
 
@@ -365,6 +367,7 @@ export async function POST(request: NextRequest) {
       resolveForwardingSourceChannel(messageChannelId),
     ]);
     if (sourceChannel.skipForum) return NextResponse.json({ success: true, skipped: 'source-forum-channel' });
+    if (sourceChannel.privateThread) return NextResponse.json({ success: true, skipped: 'private-source-thread' });
     const channelId = sourceChannel.sourceChannelId || messageChannelId;
     const channelName = sourceChannel.sourceChannelName;
 
@@ -430,6 +433,10 @@ export async function POST(request: NextRequest) {
     if (forumRule.sourceServerId === forumRule.destinationServerId && channelId === forumRule.forumChannelId) {
       return NextResponse.json({ success: true, skipped: 'destination-forum' });
     }
+    if (!await publicMirrorChannel(guildId, channelId)) {
+      await removeRestrictedMirror(forumRule, channelId);
+      return NextResponse.json({ success: true, skipped: 'restricted-source-channel' });
+    }
     if (messageId) {
       messageLease = 'forum-message:' + guildId + ':' + messageId;
       for (let attempt = 0; !sqliteService.claimLease(messageLease, messageOwner); attempt++) {
@@ -440,6 +447,10 @@ export async function POST(request: NextRequest) {
     const prior = messageId ? db.get('forwardedMessageIndex', 'origin_' + messageId) : null;
     if (prior?.forwardedMessageId) return NextResponse.json({ success: true, forwardedMessageId: prior.forwardedMessageId, skipped: 'already-forwarded' });
     const { threadId } = await ensureMirrorThread(forumRule, { id: channelId, name: channelName });
+    if (!await publicMirrorChannel(guildId, channelId)) {
+      await removeRestrictedMirror(forumRule, channelId);
+      return NextResponse.json({ success: true, skipped: 'restricted-source-channel' });
+    }
     const posted = await discordRequest(`/channels/${threadId}/messages`, {
       method: 'POST', body: JSON.stringify({ embeds: [embed], allowed_mentions: { parse: [] }, ...(messageId ? { nonce: messageId, enforce_nonce: true } : {}) }),
     });
@@ -487,6 +498,10 @@ export async function POST(request: NextRequest) {
 
     console.log(`[ForwardForum] Forwarded message from ${userName} (${guildName}/#${channelName}) → thread ${threadId}`);
 
+    if (!await publicMirrorChannel(guildId, channelId)) {
+      await removeRestrictedMirror(forumRule, channelId);
+      return NextResponse.json({ success: true, skipped: 'restricted-source-channel' });
+    }
     // Also forward directly into the SpaceMountain website forum feed.
     await mirrorForwardToSpaceMountain({
       guildId,
@@ -505,6 +520,10 @@ export async function POST(request: NextRequest) {
       emotes,
     });
 
+    if (!await publicMirrorChannel(guildId, channelId)) {
+      await removeRestrictedMirror(forumRule, channelId);
+      return NextResponse.json({ success: true, skipped: 'restricted-source-channel' });
+    }
     // Keep the older spmt.live mirror for compatibility with the account/forum app.
     try {
       await fetch('https://spmt.live/api/forum/forward', {
