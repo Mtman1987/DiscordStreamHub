@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getChatTagApiBase, getDiscordClientId, getHardcodedGuildId, getHearMeOutUrl, getStreamweaverUrl } from '@/lib/runtime-config';
-import { getChatTagServiceSecret } from '@/lib/runtime-secrets';
+import { getDshClientSecret, getChatTagServiceSecret } from '@/lib/runtime-secrets';
 import { normalizePublicSpmtCommand, type PublicSpmtCommand } from '@/lib/discord-spmt-command';
 import { parseMtFixItCommand } from '@/lib/mtfixit-contract';
 import { postCommandSignalDrop, postSignalSeekerPanel } from '@/lib/signal-seeker-service';
@@ -234,6 +234,17 @@ export async function POST(request: NextRequest) {
   const chatTagHeaders = chatTagServiceSecret
     ? { ...commonHeaders, 'x-bot-secret': chatTagServiceSecret }
     : commonHeaders;
+
+  // VC !say belongs to StreamWeaver's on-demand listener, not the TTS toggle fanout.
+  if (/^!say$/i.test(message.trim()) && String(data.voiceChannelId || '').trim()) {
+    const serviceSecret = getDshClientSecret();
+    const delivery = await postJson(streamweaverUrl, body, {
+      ...commonHeaders,
+      ...(serviceSecret ? { Authorization: 'Bearer ' + serviceSecret } : {}),
+    }, 80_000);
+    trace(traceId, 'delivery', { destination: 'streamweaver-say-voice', ...delivery });
+    return NextResponse.json({ success: delivery.ok, traceId, messageId, deliveries: [delivery] }, { status: delivery.ok ? 200 : 502 });
+  }
 
   const jobs: Array<Promise<any>> = [
     postJson(dshUrl, body, commonHeaders, 12_000).then((result) => ({ destination: 'dsh', ...result })),
