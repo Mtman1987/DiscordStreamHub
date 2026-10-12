@@ -972,7 +972,7 @@ async function main() {
     partials: [Partials.Channel, Partials.Message],
   });
 
-  startSayVoiceServer(client);
+  startSayVoiceServer(client, guildId => Boolean(playbackByGuild.get(guildId)?.bridge));
 
   client.once('clientReady', () => {
     console.log(`[WatchVoice] Logged in as ${client.user?.tag}`);

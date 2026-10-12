@@ -58,3 +58,14 @@ test('muted voice and occupied bot channel fail clearly; empty capture and cance
   const end = await handleSayVoice(c.client, { userId, action: 'cancel', id: cancelled.id }, c.transport);
   assert.equal(end.status, 'cancelled'); assert.equal(end.base64Audio, undefined); assert.equal(c.destroyed(), 1);
 });
+
+test('a bridge enabled during capture keeps receiving when the capture finishes', async () => {
+  const f = fixture(true);
+  let bridgeActive = false;
+  const job = await handleSayVoice(f.client, { userId, action: 'start' }, f.transport, () => bridgeActive);
+  bridgeActive = true;
+  await handleSayVoice(f.client, { userId, action: 'cancel', id: job.id }, f.transport);
+  assert.equal(f.rejoins.length, 1);
+  assert.equal(f.rejoins[0].selfDeaf, false);
+  assert.equal(f.destroyed(), 0);
+});

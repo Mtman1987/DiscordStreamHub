@@ -10,7 +10,7 @@ const jobs = new Map<string, Job>();
 const guildLocks = new Set<string>();
 const startingUsers = new Set<string>();
 const MAX_BYTES = 48000 * 2 * 2 * SAY_VOICE_MAX_MS / 1000;
-export async function handleSayVoice(client: Client, body: any, transport = { getVoiceConnection, joinVoiceChannel, entersState, Decoder: prism.opus.Decoder }) {
+export async function handleSayVoice(client: Client, body: any, transport = { getVoiceConnection, joinVoiceChannel, entersState, Decoder: prism.opus.Decoder }, receivingActive: (guildId: string) => boolean = () => false) {
   const userId = String(body.userId || '');
   if (!/^\d{16,22}$/.test(userId)) throw new Error('A verified Discord user is required.');
   if (body.action !== 'probe' && body.action !== 'start') {
@@ -44,7 +44,7 @@ export async function handleSayVoice(client: Client, body: any, transport = { ge
     clearTimeout(timer); clearTimeout(silence);
     try { opus?.unpipe(decoder); opus?.destroy(); decoder?.destroy(); } catch {}
     if (ownsConnection) connection?.destroy();
-    else if (restoreDeaf && connection?.state.status !== VoiceConnectionStatus.Destroyed) connection?.rejoin({ ...connection.joinConfig, selfDeaf: true });
+    else if (restoreDeaf && !receivingActive(state.guild.id) && connection?.state.status !== VoiceConnectionStatus.Destroyed) connection?.rejoin({ ...connection.joinConfig, selfDeaf: true });
     startingUsers.delete(userId); guildLocks.delete(state.guild.id);
   };
   try {
@@ -83,7 +83,7 @@ export async function handleSayVoice(client: Client, body: any, transport = { ge
   } catch (error) { if (job) { job.status = 'error'; job.error = error instanceof Error ? error.message : 'Voice reception failed.'; } cleanup(); throw error; }
 }
 
-export function startSayVoiceServer(client: Client) {
+export function startSayVoiceServer(client: Client, receivingActive: (guildId: string) => boolean = () => false) {
   // Loopback-only internal transport; the public Next route authenticates service requests.
   const server = createServer(async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
@@ -91,7 +91,7 @@ export function startSayVoiceServer(client: Client) {
     try {
       let raw = '';
       for await (const chunk of req) { raw += chunk.toString(); if (raw.length > 4096) throw new Error('Request too large.'); }
-      res.end(JSON.stringify(await handleSayVoice(client, JSON.parse(raw))));
+      res.end(JSON.stringify(await handleSayVoice(client, JSON.parse(raw), undefined, receivingActive)));
     } catch (error) { res.writeHead(409); res.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Voice listener failed.' })); }
   });
   server.listen(3091, '127.0.0.1');
