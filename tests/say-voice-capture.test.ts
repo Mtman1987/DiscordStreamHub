@@ -69,3 +69,14 @@ test('a bridge enabled during capture keeps receiving when the capture finishes'
   assert.equal(f.rejoins[0].selfDeaf, false);
   assert.equal(f.destroyed(), 0);
 });
+
+test('a bridge sharing the receive stream during capture retains its stream and connection', async () => {
+  const f = fixture();
+  let active = false;
+  const job = await handleSayVoice(f.client, { userId, action: 'start' }, f.transport, () => active, () => active);
+  active = true;
+  await handleSayVoice(f.client, { userId, action: 'cancel', id: job.id }, f.transport);
+  assert.equal(f.opus.destroyed, false);
+  assert.equal(f.destroyed(), 0);
+  f.opus.destroy();
+});
