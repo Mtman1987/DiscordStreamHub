@@ -12,7 +12,7 @@ function failed(error: unknown) {
 export async function GET(request: NextRequest) {
   try {
     const session = await serverAccount(request);
-    return NextResponse.json({ servers: await discoveredServers(session.spmtUserId!) }, { headers: { 'Cache-Control': 'no-store' } });
+    return NextResponse.json({ servers: await discoveredServers(session.spmtUserId!, session.discordUserId) }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) { return failed(error); }
 }
 export async function POST(request: NextRequest) {
@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
     const session = await serverAccount(request);
     const { guildId } = await request.json();
     if (!/^\d{17,20}$/.test(String(guildId || ''))) throw new ServerConnectionError('Select a valid Discord server.');
-    const { guilds, discordUserId } = await accountGuilds(session.spmtUserId!);
+    const { guilds, discordUserId } = await accountGuilds(session.spmtUserId!, session.discordUserId);
     const selected = guilds.find(guild => guild.id === guildId);
     if (!selected || !guildAccess(selected).canManage) throw new ServerConnectionError('You do not have management access to this Discord server.', 403);
     const auth = 'Bot ' + (process.env.DISCORD_BOT_TOKEN || '');

@@ -48,16 +48,16 @@ export default function DiscordServersPage() {
   }
   return <Card className="mx-auto max-w-3xl">
     <CardHeader><CardTitle>Your Discord servers</CardTitle><CardDescription>
-      Connect Discord, choose a server you own or moderate, and install SPMT to use your community tools.
+      Invite SPMT to your server, then choose it here. Servers you own or moderate appear when SPMT is installed.
     </CardDescription></CardHeader>
     <CardContent className="space-y-4">
       <div className="flex flex-wrap gap-2">
-        <Button asChild><a href="/api/discord/servers/authorize">{needsConnect ? 'Connect Discord' : 'Refresh Discord authorization'}</a></Button>
+        <Button asChild><a href="/api/discord/servers/authorize" target="_blank" rel="noopener noreferrer">Connect Discords</a></Button>
         <Button variant="outline" onClick={refresh} disabled={loading}>{loading ? 'Loading…' : 'Refresh servers'}</Button>
       </div>
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       <Input aria-label="Search Discord servers" placeholder="Search your servers…" value={query} onChange={e => setQuery(e.target.value)} />
-      {!loading && !needsConnect && servers.length === 0 && <p className="text-sm text-muted-foreground">No servers with management or moderation permissions were found. Check that you connected the correct Discord account.</p>}
+      {!loading && !needsConnect && servers.length === 0 && <p className="text-sm text-muted-foreground">No installed SPMT servers with management or moderation permissions were found. Click Connect Discords to invite SPMT, then refresh.</p>}
       {servers.filter(s => s.name.toLowerCase().includes(query.toLowerCase())).map(server =>
         <div key={server.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4">
           <div><p className="font-medium">{server.name}</p><p className="text-sm text-muted-foreground">
