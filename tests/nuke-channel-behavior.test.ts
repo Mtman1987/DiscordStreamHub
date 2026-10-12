@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { NextRequest } from 'next/server';
+import { runCleanupBatch, cleanupJob, enqueueCleanup } from '../src/lib/discord-channel-cleanup';
+import { sqliteService } from '../src/lib/sqlite-service';
 import { POST } from '../src/app/api/nuke-channel/route';
 const guildId = '110000000000000099', channelId = '220000000000000099', userId = '330000000000000099';
 const snowflake = (ago = 0) => ((BigInt(Date.now() - ago - 1420070400000) << BigInt(22)) + BigInt(1)).toString();
@@ -35,18 +37,18 @@ async function fixture(run: (calls: Array<{ path: string; method: string; body: 
   try { await run(calls); } finally { globalThis.fetch = original; if (token === undefined) delete process.env.DISCORD_BOT_TOKEN; else process.env.DISCORD_BOT_TOKEN = token; }
 }
 test('tenant moderator can nuke bots in their own server, including other bots; humans remain', async () => fixture(async calls => {
-  const response = await POST(request('bot')); const data = await response.json();
-  assert.equal(response.status, 200); assert.equal(data.success, true); assert.equal(data.deleted, 1);
+  const response = await POST(request('bot')); const accepted = await response.json();
+  assert.equal(response.status, 202); const job = await runCleanupBatch(accepted.jobId); const data = { ...job, success: job?.status === 'completed' }; assert.equal(data.success, true); assert.equal(data.deleted, 1);
   assert.ok(calls.some(c => c.method === 'DELETE' && c.path.endsWith(recent)));
   assert.ok(!calls.some(c => c.method === 'DELETE' && c.path.endsWith(old)));
 }));
 test('all mode individually deletes old messages outside the bulk window', async () => fixture(async calls => {
-  const data = await (await POST(request('all'))).json();
+  const accepted = await (await POST(request('all'))).json(); const data = (await runCleanupBatch(accepted.jobId))!;
   assert.equal(data.deleted, 2);
   assert.ok(calls.some(c => c.method === 'DELETE' && c.path.endsWith(old)));
 }));
 test('until mode keeps the boundary and older messages', async () => fixture(async calls => {
-  const data = await (await POST(request('until', { untilMessageId: boundary }))).json();
+  const accepted = await (await POST(request('until', { untilMessageId: boundary }))).json(); const job = await runCleanupBatch(accepted.jobId); const data = { ...job, success: job?.status === 'completed' };
   assert.equal(data.success, true); assert.equal(data.deleted, 1);
   assert.ok(!calls.some(c => c.method === 'DELETE' && [old, boundary].some(id => c.path.endsWith(id))));
 }, { messages: [{ id: recent }, { id: boundary }, { id: old }] }));
@@ -59,6 +61,34 @@ test('channel-specific permission denial overrides the moderator role', async ()
   assert.equal(response.status, 403); assert.ok(!calls.some(c => c.method === 'DELETE'));
 }, { deny: true }));
 test('partial failures return a useful error and counts', async () => fixture(async () => {
-  const data = await (await POST(request('bot'))).json();
-  assert.equal(data.success, false); assert.equal(data.failed, 1); assert.match(data.error, /could not be deleted/);
+  const accepted = await (await POST(request('bot'))).json(); const job = await runCleanupBatch(accepted.jobId);
+  assert.equal(job?.status, 'failed'); assert.match(job?.error || '', /Discord 403/);
 }, { failDelete: true }));
+
+test('POST only queues cleanup and returns before any deletion or full history request', async () => fixture(async calls => {
+  const response = await POST(request('all')); const data = await response.json();
+  assert.equal(response.status, 202); assert.equal(data.job.status, 'queued');
+  assert.ok(!calls.some(call => call.method === 'DELETE' || call.path.includes('/messages?')));
+  // Mark this isolated scheduling-test job finished so the next test can use the channel.
+  sqliteService.setDoc('discordCleanupJobs/' + data.jobId, { ...data.job, status: 'completed' });
+}));
+test('durable pending message IDs resume after restart; unknown delete responses are retried safely', async () => {
+  const input = { ownerAccountId: 'resume-test', discordUserId: userId, guildId, channelId: '990000000000000099', channelName: 'test', mode: 'all' as const, untilMessageId: '', botId: 'bot' };
+  const job = enqueueCleanup(input);
+  let historyReads = 0, attempts = 0;
+  const api = async (path: string, init?: RequestInit): Promise<any> => {
+    if (path === '/guilds/' + guildId) return { id: guildId, owner_id: userId, roles: [] };
+    if (path.includes('/members/')) return { user: { id: userId }, roles: [] };
+    if (path === '/channels/' + input.channelId) return { guild_id: guildId, type: 0 };
+    if (path.includes('/messages?')) { historyReads++; return [{ id: old }]; }
+    if (init?.method === 'DELETE') { attempts++; if (attempts === 1) throw new Error('socket reset after remote deletion'); return null; }
+    throw new Error(path);
+  };
+  const interrupted = await runCleanupBatch(job.id, api);
+  assert.equal(interrupted?.status, 'queued');
+  assert.deepEqual(cleanupJob(job.id)?.pendingIds, [old]);
+  sqliteService.setDoc('discordCleanupJobs/' + job.id, { ...cleanupJob(job.id), retryAt: 0 });
+  const resumed = await runCleanupBatch(job.id, api);
+  assert.equal(resumed?.status, 'completed'); assert.equal(resumed?.deleted, 1);
+  assert.equal(historyReads, 1); assert.equal(attempts, 2);
+});

@@ -2,126 +2,27 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireGuildManagement, channelPermissions } from '@/lib/discord-guild-access';
 import { sameOrigin, ServerConnectionError } from '@/lib/discord-server-connections';
 
-const DISCORD_API = 'https://discord.com/api/v10';
-const DISCORD_EPOCH = 1420070400000;
-const DISCORD_SNOWFLAKE_SEQUENCE_SIZE = 2 ** 22;
-const BULK_DELETE_MAX_AGE_MS = 13.8 * 24 * 60 * 60 * 1000;
-
+import { enqueueCleanup, cleanupJob, cleanupJobs } from '@/lib/discord-channel-cleanup';
+import { serverAccount } from '@/lib/discord-server-connections';
+export const dynamic = 'force-dynamic';
+function jsonError(error: string, status: number) { return NextResponse.json({ success: false, error }, { status }); }
+function isSnowflake(value: unknown): value is string { return typeof value === 'string' && /^\d{16,22}$/.test(value.trim()); }
+const discordRequest = (path: string, token: string, options?: RequestInit) => fetch('https://discord.com/api/v10' + path, {
+  ...options, headers: { Authorization: 'Bot ' + token, ...(options?.body ? { 'Content-Type': 'application/json' } : {}) },
+  cache: 'no-store', signal: AbortSignal.timeout(10_000),
+});
 type NukeMode = 'bot' | 'all' | 'until';
 
-type DiscordMessage = {
-  id: string;
-  author?: { id?: string; bot?: boolean };
-};
-
-function jsonError(error: string, status: number) {
-  return NextResponse.json({ success: false, error }, { status });
-}
-
-function isSnowflake(value: unknown): value is string {
-  return typeof value === 'string' && /^\d{16,22}$/.test(value.trim());
-}
-
-function snowflakeTimestamp(id: string): number {
-  const numericId = Number(id);
-  if (!Number.isFinite(numericId) || numericId <= 0) return 0;
-  return Math.floor(numericId / DISCORD_SNOWFLAKE_SEQUENCE_SIZE) + DISCORD_EPOCH;
-}
-
-function isBulkDeleteEligible(id: string): boolean {
-  const createdAt = snowflakeTimestamp(id);
-  return createdAt > 0 && Date.now() - createdAt < BULK_DELETE_MAX_AGE_MS;
-}
-
-async function sleep(ms: number) {
-  await new Promise(resolve => setTimeout(resolve, ms));
-}
-
-async function discordRequest(path: string, token: string, init: RequestInit = {}): Promise<Response> {
-  for (let attempt = 0; attempt < 6; attempt += 1) {
-    const response = await fetch(`${DISCORD_API}${path}`, {
-      ...init,
-      headers: {
-        Authorization: `Bot ${token}`,
-        ...(init.body ? { 'Content-Type': 'application/json' } : {}),
-        ...(init.headers || {}),
-      },
-      cache: 'no-store',
-    });
-
-    if (response.status !== 429 || attempt === 5) return response;
-
-    const body = await response.clone().json().catch(() => null) as { retry_after?: number } | null;
-    const headerSeconds = Number(response.headers.get('retry-after') || 0);
-    const retrySeconds = Number(body?.retry_after || headerSeconds || 1);
-    await sleep(Math.min(10_000, Math.max(250, retrySeconds * 1000 + 100)));
-  }
-
-  throw new Error('Discord request retry loop exhausted');
-}
-
-async function deleteOne(channelId: string, messageId: string, token: string) {
-  const response = await discordRequest(`/channels/${channelId}/messages/${messageId}`, token, { method: 'DELETE' });
-  if (response.ok || response.status === 404) return true;
-  const error = await response.text().catch(() => response.statusText);
-  throw new Error(`Discord rejected message ${messageId}: ${response.status} ${error.slice(0, 240)}`);
-}
-
-async function deleteSelected(channelId: string, ids: string[], token: string) {
-  let deleted = 0;
-  let failed = 0;
-  const logs: string[] = [];
-  const recent = ids.filter(isBulkDeleteEligible);
-  const old = ids.filter(id => !isBulkDeleteEligible(id));
-
-  for (let offset = 0; offset < recent.length; offset += 100) {
-    const chunk = recent.slice(offset, offset + 100);
-    if (chunk.length === 1) {
-      try {
-        await deleteOne(channelId, chunk[0], token);
-        deleted += 1;
-      } catch (error) {
-        failed += 1;
-        logs.push(error instanceof Error ? error.message : String(error));
-      }
-      continue;
-    }
-
-    if (chunk.length > 1) {
-      const response = await discordRequest(`/channels/${channelId}/messages/bulk-delete`, token, {
-        method: 'POST',
-        body: JSON.stringify({ messages: chunk }),
-      });
-      if (response.ok) {
-        deleted += chunk.length;
-        continue;
-      }
-
-      const bulkError = await response.text().catch(() => response.statusText);
-      logs.push(`Bulk delete returned ${response.status}; retrying individually. ${bulkError.slice(0, 180)}`);
-      for (const id of chunk) {
-        try {
-          await deleteOne(channelId, id, token);
-          deleted += 1;
-        } catch (error) {
-          failed += 1;
-          logs.push(error instanceof Error ? error.message : String(error));
-        }
-      }
-    }
-  }
-
-  for (const id of old) {
-    try {
-      await deleteOne(channelId, id, token);
-      deleted += 1;
-    } catch (error) {
-      failed += 1;
-      logs.push(error instanceof Error ? error.message : String(error));
-    }
-  }
-
-  return { deleted, failed, logs };
+export async function GET(request: NextRequest) {
+  try {
+    const session = await serverAccount(request);
+    const id = request.nextUrl.searchParams.get('jobId');
+    const guildId = request.nextUrl.searchParams.get('guildId');
+    const job = id ? cleanupJob(id) : cleanupJobs().filter(job => job.ownerAccountId === session.spmtUserId && job.guildId === guildId).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+    if (!job) return NextResponse.json({ success: true, job: null }, { headers: { 'Cache-Control': 'no-store' } });
+    if (job.ownerAccountId !== session.spmtUserId) return jsonError('That cleanup belongs to a different account.', 403);
+    return NextResponse.json({ success: job.status !== 'failed', job, log: job.log, deleted: job.deleted, failed: job.failed, error: job.error }, { headers: { 'Cache-Control': 'no-store' } });
+  } catch (error) { return jsonError(error instanceof Error ? error.message : 'Unable to load cleanup progress', error instanceof ServerConnectionError ? error.status : 500); }
 }
 
 export async function POST(request: NextRequest) {
@@ -155,7 +56,7 @@ export async function POST(request: NextRequest) {
     const guildId = String(channel.guild_id || '');
     if (!guildId || guildId !== String(body?.guildId || '')) return jsonError('Choose a channel in the selected server.', 403);
     if (![0, 2, 5, 10, 11, 12, 13].includes(Number(channel.type))) return jsonError('Choose a message channel or thread, not a category/forum parent.', 400);
-    const { guild, member } = await requireGuildManagement(request, guildId);
+    const { session, guild, member } = await requireGuildManagement(request, guildId);
     let permissionChannel: any = channel;
     if ([10, 11, 12].includes(Number(channel.type)) && channel.parent_id) {
       const parentResponse = await discordRequest('/channels/' + channel.parent_id, botToken);
@@ -176,58 +77,13 @@ export async function POST(request: NextRequest) {
     const botId = String(botIdentity.id || '');
     if (!botId) return jsonError('Discord bot identity did not include an ID', 502);
 
-    let before = '';
-    let deleted = 0;
-    let failed = 0;
-    let pages = 0;
-    let reachedTarget = mode !== 'until';
-    const log: string[] = [`Cleaning #${channel.name || channelId} in ${mode} mode...`];
-
-    while (pages < 10_000) {
-      const query = new URLSearchParams({ limit: '100' });
-      if (before) query.set('before', before);
-      const response = await discordRequest(`/channels/${channelId}/messages?${query.toString()}`, botToken);
-      if (!response.ok) {
-        const detail = await response.text().catch(() => response.statusText);
-        throw new Error(`Could not read channel history: ${response.status} ${detail.slice(0, 240)}`);
-      }
-
-      const messages = await response.json() as DiscordMessage[];
-      if (!Array.isArray(messages) || messages.length === 0) break;
-      pages += 1;
-      before = messages[messages.length - 1].id;
-
-      let candidates = messages;
-      if (mode === 'until') {
-        const stopIndex = messages.findIndex(message => message.id === untilMessageId);
-        if (stopIndex >= 0) {
-          candidates = messages.slice(0, stopIndex);
-          reachedTarget = true;
-        }
-      }
-
-      const selected = mode === 'bot'
-        ? candidates.filter(message => Boolean(message.author?.bot) || String(message.author?.id || '') === botId)
-        : candidates;
-
-      if (selected.length > 0) {
-        const result = await deleteSelected(channelId, selected.map(message => message.id), botToken);
-        deleted += result.deleted;
-        failed += result.failed;
-        log.push(`Page ${pages}: deleted ${result.deleted}${result.failed ? `, failed ${result.failed}` : ''}.`);
-        log.push(...result.logs.slice(0, 8));
-      }
-
-      if (mode === 'until' && reachedTarget) break;
-      if (messages.length < 100) break;
-    }
-
-    if (mode === 'until' && !reachedTarget) {
-      log.push('Warning: the stop message was validated before cleanup but was not encountered during pagination.');
-    }
-
-    log.push(`Finished: ${deleted} deleted${failed ? `, ${failed} failed` : ''}.`);
-    return NextResponse.json({ success: failed === 0 && reachedTarget, deleted, failed, log, reachedTarget, ...(failed ? { error: String(failed) + ' messages could not be deleted. See cleanup log.' } : !reachedTarget ? { error: 'Stop message was not reached; cleanup is incomplete.' } : {}) });
+    // The worker owns deletion; this HTTP request only validates and schedules it.
+    const job = enqueueCleanup({
+      ownerAccountId: session.spmtUserId!, discordUserId: session.discordUserId!,
+      guildId, channelId, channelName: channel.name || channelId,
+      mode: mode!, untilMessageId: mode === 'until' ? untilMessageId : '', botId,
+    });
+    return NextResponse.json({ success: true, accepted: true, jobId: job.id, job, log: job.log }, { status: 202, headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error('[API /nuke-channel] failed:', error);

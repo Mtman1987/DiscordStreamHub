@@ -10,9 +10,9 @@ test('nuke channel settings has a real JSON API route', async () => {
   const route = await source('src/app/api/nuke-channel/route.ts');
   assert.match(route, /export async function POST/);
   assert.match(route, /NextResponse\.json/);
-  assert.match(route, /\/messages\/bulk-delete/);
+  assert.match(await source('src/lib/discord-channel-cleanup.ts'), /\/messages\/bulk-delete/);
   assert.match(route, /mode === 'until'/);
-  assert.match(route, /author\?\.id/);
+  assert.match(await source('src/lib/discord-channel-cleanup.ts'), /author\?\.id/);
   assert.match(route, /requireGuildManagement/);
   assert.doesNotMatch(route, /getHardcodedGuildId/);
 });

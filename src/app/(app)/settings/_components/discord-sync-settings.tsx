@@ -24,6 +24,7 @@ export function DiscordSyncSettings({ serverId: propServerId }: { serverId?: str
   const [manualMode, setManualMode] = React.useState<Record<string, boolean>>({});
   const [nukeChannel, setNukeChannel] = React.useState('');
   const [isNuking, setIsNuking] = React.useState(false);
+  const [nukeJobId, setNukeJobId] = React.useState('');
   const [nukeLog, setNukeLog] = React.useState<string[]>([]);
   const [nukeMode, setNukeMode] = React.useState<'bot' | 'all' | 'until'>('bot');
   const [nukeUntilId, setNukeUntilId] = React.useState('');
@@ -33,6 +34,41 @@ export function DiscordSyncSettings({ serverId: propServerId }: { serverId?: str
   const { data: serverData } = useDbDoc<Record<string, any>>(serverId ? `servers/${serverId}` : null);
   const { data: rolesData } = useDbDoc<{ list: any[]; detailed?: RoleInfo[] }>(serverId ? `servers/${serverId}/config/roles` : null);
   const { data: channelsData } = useDbDoc<{ list: any[] }>(serverId ? `servers/${serverId}/config/channels` : null);
+
+  React.useEffect(() => {
+    setNukeJobId(serverId ? localStorage.getItem('dsh-nuke-job:' + serverId) || '' : '');
+  }, [serverId]);
+  React.useEffect(() => {
+    if (!nukeJobId || !serverId) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    setIsNuking(true);
+    const poll = async () => {
+      try {
+        const response = await fetch('/api/nuke-channel?jobId=' + encodeURIComponent(nukeJobId), { cache: 'no-store', signal: AbortSignal.timeout(8000) });
+        const raw = await response.text();
+        if (!raw.trim()) throw new Error('Reconnecting to saved cleanup progress…');
+        const data = JSON.parse(raw);
+        if (cancelled) return;
+        if (!response.ok || !data.job) throw new Error(data.error || 'Cleanup progress unavailable');
+        const job = data.job;
+        setNukeLog([...(job.log || []), 'Status: ' + job.status + ' · ' + job.deleted + ' deleted' + (job.failed ? ' · ' + job.failed + ' failed' : '')]);
+        if (job.status === 'completed' || job.status === 'failed') {
+          localStorage.removeItem('dsh-nuke-job:' + serverId);
+          setNukeJobId(''); setIsNuking(false);
+          toast({ title: job.status === 'completed' ? 'Channel cleaned!' : 'Cleanup needs attention',
+            description: job.error || 'Deleted ' + job.deleted + ' messages.', ...(job.status === 'failed' ? { variant: 'destructive' as const } : {}) });
+          return;
+        }
+      } catch (error) {
+        if (cancelled) return;
+        setNukeLog(previous => [...previous.slice(-20), 'Progress reconnecting; the cleanup job is saved.']);
+      }
+      if (!cancelled) timer = setTimeout(poll, 1500);
+    };
+    void poll();
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [nukeJobId, serverId, toast]);
 
   React.useEffect(() => {
     if (channelsData?.list) setChannels(channelsData.list);
@@ -244,8 +280,13 @@ export function DiscordSyncSettings({ serverId: propServerId }: { serverId?: str
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ guildId: serverId, channelId: nukeChannel, mode: nukeMode, untilMessageId: nukeMode === 'until' ? nukeUntilId : undefined }),
                 });
-                const data = await res.json();
-                if (data.success) {
+                const raw = await res.text();
+                if (!raw.trim()) throw new Error('The server restarted before replying. Your saved job will be recovered.');
+                const data = JSON.parse(raw);
+                if (data.accepted && data.jobId) {
+                  localStorage.setItem('dsh-nuke-job:' + serverId, data.jobId);
+                  setNukeJobId(data.jobId); setNukeLog(data.log || ['Cleanup queued.']);
+                } else if (data.success) {
                   setNukeLog(data.log || [`Deleted ${data.deleted} messages`]);
                   toast({ title: 'Channel cleaned!', description: `Deleted ${data.deleted} messages from #${channelName}` });
                 } else {
@@ -253,13 +294,19 @@ export function DiscordSyncSettings({ serverId: propServerId }: { serverId?: str
                   toast({ title: 'Error', description: data.error, variant: 'destructive' });
                 }
               } catch (e) {
-                setNukeLog([`Error: ${e}`]);
-                toast({ title: 'Error', description: 'Failed to clean channel', variant: 'destructive' });
+                // Recover a job that was accepted before a deployment interrupted its response.
+                const recovered = await fetch('/api/nuke-channel?guildId=' + encodeURIComponent(serverId), { cache: 'no-store' }).then(response => response.json()).catch(() => null);
+                if (recovered?.job && ['queued', 'running'].includes(recovered.job.status) && recovered.job.channelId === nukeChannel) {
+                  localStorage.setItem('dsh-nuke-job:' + serverId, recovered.job.id); setNukeJobId(recovered.job.id); setNukeLog(recovered.job.log || []);
+                } else {
+                  setNukeLog(['Error: ' + (e instanceof Error ? e.message : String(e))]);
+                  toast({ title: 'Cleanup could not start', description: e instanceof Error ? e.message : 'Retry shortly.', variant: 'destructive' });
+                }
               } finally {
                 setIsNuking(false);
               }
             }}
-            disabled={isNuking || !nukeChannel || (nukeMode === 'until' && !nukeUntilId)}
+            disabled={isNuking || !!nukeJobId || !nukeChannel || (nukeMode === 'until' && !nukeUntilId)}
           >
             {isNuking ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
             {isNuking ? 'Cleaning...' : nukeMode === 'all' ? 'Nuke Everything' : nukeMode === 'until' ? 'Delete Until ID' : 'Nuke Bot Messages'}

@@ -109,6 +109,17 @@ else
   echo "[Startup] Twitch mtfixit watcher disabled because SPMT_API_KEY is not set"
 fi
 
+# Durable channel cleanup runs outside HTTP requests and resumes saved jobs.
+if [ "$DISABLE_STARTUP_SERVICES" != "true" ] && [ -n "$DISCORD_BOT_TOKEN" ]; then
+  (
+    while true; do
+      node --import tsx scripts/nuke-channel-worker.ts
+      echo "[Startup] Channel cleanup worker exited; restarting in 5s"
+      sleep 5
+    done
+  ) &
+fi
+
 # 7. Make the Next server the container's PID 1. This ensures Fly observes the
 # real web process, receives its exit status, and can reach 0.0.0.0:3000.
 export PORT=3000
