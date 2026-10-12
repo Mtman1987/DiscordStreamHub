@@ -1,3 +1,4 @@
+import { startSayVoiceServer } from './say-voice-listener';
 import 'dotenv/config';
 import {
   AudioPlayer,
@@ -970,6 +971,8 @@ async function main() {
     ],
     partials: [Partials.Channel, Partials.Message],
   });
+
+  startSayVoiceServer(client);
 
   client.once('clientReady', () => {
     console.log(`[WatchVoice] Logged in as ${client.user?.tag}`);

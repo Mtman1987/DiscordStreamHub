@@ -21,3 +21,8 @@ test('SPMT and bang commands can outlive the 45 second downstream command route'
 test('an actual bot mention gets command timeout even before text normalization', () => {
   assert.equal(getDiscordIngressTimeoutMs('<@12345> points', true), DISCORD_INGRESS_COMMAND_TIMEOUT_MS);
 });
+
+test('bare say can finish VC capture and transcription; explicit TTS toggles keep normal timing', () => {
+  assert.equal(getDiscordIngressTimeoutMs('!say'), 85_000);
+  assert.equal(getDiscordIngressTimeoutMs('!say on'), 55_000);
+});
