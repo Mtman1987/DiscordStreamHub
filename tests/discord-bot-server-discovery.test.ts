@@ -36,3 +36,19 @@ test('typed usernames are rejected before querying server membership', async () 
   await assert.rejects(botAccountGuilds('thecaptaindash', 'token'), /Link your Discord/);
   await assert.rejects(botAccountGuilds('1136132698746921110', ''), /not configured/);
 });
+
+test('short Discord rate limits are retried before listing servers', async () => {
+  let calls = 0;
+  const fetcher = (async () => ++calls === 1
+    ? new Response(JSON.stringify({ retry_after: 0.001 }), { status: 429 })
+    : new Response('[]', { status: 200 })) as typeof fetch;
+  const result = await botAccountGuilds('1136132698746921110', 'token', fetcher);
+  assert.deepEqual(result.guilds, []);
+  assert.equal(calls, 2);
+});
+test('long Discord rate limits return an actionable refresh message', async () => {
+  let calls = 0;
+  const fetcher = (async () => { calls++; return new Response(JSON.stringify({ retry_after: 60 }), { status: 429 }); }) as typeof fetch;
+  await assert.rejects(botAccountGuilds('1136132698746921110', 'token', fetcher), /Wait a few seconds/);
+  assert.equal(calls, 1);
+});

@@ -8,12 +8,24 @@ export async function botAccountGuilds(discordUserId: string, botToken: string, 
   if (!/^\d{17,20}$/.test(discordUserId)) throw new Error('Link your Discord account in SPMT settings to identify your servers.');
   if (!botToken) throw new Error('SPMT bot is not configured.');
   const get = async (path: string, optionalMember = false) => {
+    for (let attempt = 0; attempt < 3; attempt++) {
     const response = await fetcher('https://discord.com/api/v10' + path, {
       headers: { Authorization: 'Bot ' + botToken }, cache: 'no-store', signal: AbortSignal.timeout(10000),
     });
+    if (response.status === 429) {
+      const limit = await response.json().catch(() => ({}));
+      const retrySeconds = Number(limit.retry_after || response.headers.get('retry-after') || 1);
+      if (attempt < 2 && Number.isFinite(retrySeconds) && retrySeconds <= 5) {
+        await new Promise(resolve => setTimeout(resolve, Math.max(10, retrySeconds * 1000)));
+        continue;
+      }
+      throw new Error('Discord is busy. Wait a few seconds, then refresh servers.');
+    }
     if (optionalMember && [403, 404].includes(response.status)) return null;
     if (!response.ok) throw new Error('Discord server lookup failed (' + response.status + '). Try refreshing servers.');
     return response.json();
+    }
+    throw new Error('Discord is busy. Wait a few seconds, then refresh servers.');
   };
   const installed: any[] = [];
   let after = '';
