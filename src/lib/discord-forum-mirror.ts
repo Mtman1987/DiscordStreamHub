@@ -113,6 +113,16 @@ export async function ensureMirrorThread(rule: ForumRule, channel: { id: string;
     const marker = '[' + rule.sourceServerId + ':' + channel.id + ']';
     let matches = threads.filter(thread => String(thread.name).endsWith(marker));
     if (!matches.length) {
+      // Old shallow map writes lost channel entries, but per-message history still
+      // records the exact source channel and destination thread IDs.
+      const history = sqliteService.getCollection('servers/' + rule.sourceServerId + '/forwardedMessages').docs;
+      const ids = new Set(history.filter((message: any) =>
+        String(message.originSourceChannelId || message.originChannelId) === channel.id &&
+        message.destinationServerId === rule.destinationServerId
+      ).map((message: any) => message.forwardedThreadId));
+      matches = threads.filter(thread => ids.has(thread.id));
+    }
+    if (!matches.length) {
       // Recover pre-marker threads only when the original bot footer confirms their source.
       const guild = await api('/guilds/' + rule.sourceServerId);
       const legacy = threads.filter(thread => thread.name === channel.name || thread.name === latest.labels?.[mappingKey]);
@@ -121,7 +131,10 @@ export async function ensureMirrorThread(rule: ForumRule, channel: { id: string;
         if (starter.author?.bot && starter.embeds?.some((e: any) => e.footer?.text === guild.name + ' · #' + channel.name)) matches.push(thread);
       }
     }
-    if (matches.length > 1) throw new Error('Multiple existing threads match this channel. Select its canonical thread in advanced overrides.');
+    // Reuse the oldest confirmed original. Leave later duplicates and their posts
+    // intact, but route all future posts to this one durable channel identity.
+    matches.sort((a, b) => BigInt(a.id) < BigInt(b.id) ? -1 : BigInt(a.id) > BigInt(b.id) ? 1 : 0);
+    if (matches.length > 1) console.warn('[ForwardForum] Recovered canonical thread', matches[0].id, 'for', rule.sourceServerId, channel.id, 'from', matches.length, 'historical duplicates');
     let threadId = matches[0]?.id;
     let created = false;
     if (!threadId) {
@@ -146,7 +159,7 @@ export async function ensureMirrorThread(rule: ForumRule, channel: { id: string;
       threadId = thread.id;
       created = true;
     }
-    sqliteService.setDoc(statePath, { threadId, pending: false, sourceServerId: rule.sourceServerId, sourceChannelId: channel.id, updatedAt: new Date().toISOString() });
+    sqliteService.setDoc(statePath, { threadId, duplicateThreadIds: matches.slice(1).map(thread => thread.id), pending: false, sourceServerId: rule.sourceServerId, sourceChannelId: channel.id, updatedAt: new Date().toISOString() });
     sqliteService.mergeDocMaps(rulePath(rule.sourceServerId), { mappings: { [mappingKey]: threadId }, labels: { [mappingKey]: channel.name } });
     await makeUsable(threadId, rule, api);
     return { threadId: String(threadId), created };

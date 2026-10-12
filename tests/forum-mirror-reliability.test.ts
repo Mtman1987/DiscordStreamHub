@@ -81,3 +81,21 @@ test('channel overwrite denies cannot be bypassed by a generic moderator role', 
   assert.equal(channelPermissions(guild, member, { permission_overwrites: [{ id: 'user', type: 1, deny: '8192', allow: '0' }] }) & BigInt('8192'), BigInt(0));
   assert.equal(channelPermissions(guild, { user: { id: 'owner' } }, {}) & BigInt('8'), BigInt('8'));
 });
+
+test('lost map recovers the oldest thread from source-ID message history without creating another duplicate', async () => {
+  setup();
+  const m = mock();
+  const first = { id: '550000000000000001', guild_id: rule.destinationServerId, parent_id: rule.forumChannelId, type: 11, name: 'old-name', thread_metadata: { archived: false } };
+  const newer = { ...first, id: '550000000000000002' };
+  for (const thread of [first, newer]) sqliteService.setDoc('servers/' + rule.sourceServerId + '/forwardedMessages/' + thread.id, {
+    forwardedThreadId: thread.id, originSourceChannelId: channel.id, destinationServerId: rule.destinationServerId,
+  });
+  const api = async (path: string, options?: RequestInit) => {
+    if (path.endsWith('/threads/active')) return { threads: [newer, first] };
+    if (path === '/channels/' + first.id) return first;
+    return m.api(path, options);
+  };
+  const result = await ensureMirrorThread(rule, channel, api);
+  assert.equal(result.threadId, first.id);
+  assert.equal(m.counts().creates, 0);
+});
