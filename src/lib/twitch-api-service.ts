@@ -1,5 +1,6 @@
 'use server';
 
+import { createHash } from 'node:crypto';
 import { getTwitchClientId } from '@/lib/runtime-config';
 
 interface TwitchUser {
@@ -45,6 +46,10 @@ class TwitchApiService {
   private clientSecret: string;
   private accessToken: string | null = null;
   private tokenExpiry: number = 0;
+  private tokenFailureUntil = 0;
+  private tokenFailureFingerprint = '';
+  private readonly INVALID_CREDENTIAL_BACKOFF_MS = 12 * 60 * 60 * 1000;
+  private readonly TRANSIENT_TOKEN_BACKOFF_MS = 60 * 1000;
 
   constructor() {
     this.clientId = getTwitchClientId();
@@ -52,8 +57,27 @@ class TwitchApiService {
   }
 
   private async getAccessToken(): Promise<string> {
-    if (this.accessToken && Date.now() < this.tokenExpiry) {
+    const now = Date.now();
+    if (this.accessToken && now < this.tokenExpiry) {
       return this.accessToken;
+    }
+
+    const credentialFingerprint = createHash('sha256')
+      .update(`${this.clientId}:\0${this.clientSecret || ''}`)
+      .digest('hex');
+    if (now < this.tokenFailureUntil && credentialFingerprint === this.tokenFailureFingerprint) {
+      throw new Error('[TwitchAPI] App-token request is in backoff; check Twitch credentials or wait for retry.');
+    }
+    if (credentialFingerprint !== this.tokenFailureFingerprint || now >= this.tokenFailureUntil) {
+      this.tokenFailureUntil = 0;
+      this.tokenFailureFingerprint = '';
+    }
+
+    if (!this.clientId || !this.clientSecret) {
+      this.tokenFailureFingerprint = credentialFingerprint;
+      this.tokenFailureUntil = now + this.INVALID_CREDENTIAL_BACKOFF_MS;
+      console.error('[TwitchAPI] Twitch client ID or secret is not configured; suppressing repeated token requests.');
+      throw new Error('[TwitchAPI] Twitch client credentials are not configured.');
     }
 
     const response = await fetch('https://id.twitch.tv/oauth2/token', {
@@ -70,13 +94,25 @@ class TwitchApiService {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[TwitchAPI] Token request failed:', response.status, errorText);
+      const invalidCredentials = [400, 401, 403].includes(response.status)
+        && /invalid client|client secret|client_id/i.test(errorText);
+      this.tokenFailureFingerprint = credentialFingerprint;
+      this.tokenFailureUntil = Date.now() + (
+        invalidCredentials ? this.INVALID_CREDENTIAL_BACKOFF_MS : this.TRANSIENT_TOKEN_BACKOFF_MS
+      );
+      if (invalidCredentials) {
+        console.error('[TwitchAPI] Twitch rejected the configured app credentials; token requests paused for 12 hours or until credentials change.');
+      } else {
+        console.error('[TwitchAPI] Token request failed:', response.status, response.statusText);
+      }
       throw new Error(`Failed to get Twitch access token: ${response.statusText}`);
     }
 
     const data = await response.json();
     this.accessToken = data.access_token;
     this.tokenExpiry = Date.now() + (data.expires_in * 1000) - 60000; // 1 minute buffer
+    this.tokenFailureUntil = 0;
+    this.tokenFailureFingerprint = '';
 
     return data.access_token;
   }
