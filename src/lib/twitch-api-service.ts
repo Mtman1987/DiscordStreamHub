@@ -327,7 +327,7 @@ class TwitchApiService {
           // Only split a 400 response to isolate a malformed parameter. Auth,
           // rate-limit, server, and network failures must not fan out into many
           // more requests or be interpreted as offline status.
-          const isBadRequest = error instanceof Error && /Twitch API error: 400\\b/.test(error.message);
+          const isBadRequest = error instanceof Error && /Twitch API error: 400\b/.test(error.message);
           if (!isBadRequest) {
             throw error;
           }
