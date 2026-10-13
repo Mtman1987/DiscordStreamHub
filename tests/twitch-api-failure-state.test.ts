@@ -23,3 +23,14 @@ test('Twitch app-token failures use credential-aware backoff to avoid repeated a
   assert.match(source, /App-token request is in backoff/);
   assert.match(source, /if \(!this\.clientId \|\| !this\.clientSecret\)/);
 });
+
+test('Twitch polling initialization remains retryable after a failed startup query', () => {
+  const source = fs.readFileSync('src/lib/twitch-polling-service.ts', 'utf8');
+  const start = source.indexOf('async initialize(): Promise<void>');
+  const end = source.indexOf('private async initializePolling(): Promise<void>', start);
+  assert.notEqual(start, -1, 'initialize method exists');
+  assert.notEqual(end, -1, 'initializePolling boundary exists');
+  const initialize = source.slice(start, end);
+  assert.match(initialize, /await this\.initializePolling\(\);[\s\S]*?this\.initialized = true;/);
+  assert.match(initialize, /catch \(error\)[\s\S]*?this\.initialized = false;[\s\S]*?throw error;/);
+});

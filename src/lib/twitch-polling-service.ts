@@ -40,22 +40,26 @@ class TwitchPollingService {
       console.log('[TwitchPolling] Already initialized');
       return;
     }
-    this.initialized = true;
-    await this.initializePolling();
+
+    try {
+      await this.initializePolling();
+      this.initialized = true;
+    } catch (error) {
+      // Keep initialization retryable after a transient database/query failure.
+      this.initialized = false;
+      console.error('[TwitchPolling] Initialization failed; a later call can retry:', error);
+      throw error;
+    }
   }
 
   private async initializePolling(): Promise<void> {
-    try {
-      const serversSnapshot = await db.collection('servers').where('twitchPollingActive', '==', true).get();
-      for (const doc of serversSnapshot.docs) {
-        const serverId = doc.id;
-        console.log(`[TwitchPolling] Auto-starting polling for server ${serverId}`);
-        await this.startPolling(serverId).catch(err => 
-          console.error(`[TwitchPolling] Failed to start polling for ${serverId}:`, err)
-        );
-      }
-    } catch (error) {
-      console.error('[TwitchPolling] Error initializing polling:', error);
+    const serversSnapshot = await db.collection('servers').where('twitchPollingActive', '==', true).get();
+    for (const doc of serversSnapshot.docs) {
+      const serverId = doc.id;
+      console.log(`[TwitchPolling] Auto-starting polling for server ${serverId}`);
+      await this.startPolling(serverId).catch(err =>
+        console.error(`[TwitchPolling] Failed to start polling for ${serverId}:`, err)
+      );
     }
   }
 
