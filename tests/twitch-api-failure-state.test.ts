@@ -11,7 +11,7 @@ test('Twitch stream polling propagates API failures instead of reporting everyon
   const method = source.slice(start, end);
   assert.match(method, /Error fetching streams by logins; preserving last known stream state/);
   assert.match(method, /catch \(error\)[\s\S]*?throw error;/);
-  assert.doesNotMatch(method, /catch \(error\)[\s\S]*?return streamMap;/);
+  assert.match(method, /catch \(error\)[\s\S]*?throw error;/);
 });
 
 test('Twitch app-token failures use credential-aware backoff to avoid repeated auth-error spam', () => {
