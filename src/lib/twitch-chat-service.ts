@@ -27,6 +27,7 @@ class TwitchChatService {
   private athenaChannelAccess: Map<string, AthenaChannelAccess> = new Map();
   private status: 'idle' | 'starting' | 'connected' | 'waiting-for-live-channels' | 'disabled' | 'error' = 'idle';
   private joinedChannels: Set<string> = new Set();
+  private lastOAuthWarningAt = new Map<string, number>();
   private lastError: string | null = null;
   private lastStartedAt: string | null = null;
   private lastUpdatedAt: string | null = null;
@@ -35,6 +36,14 @@ class TwitchChatService {
   private lastAutoBlacklistedChannel: string | null = null;
   private lastAutoBlacklistedAt: string | null = null;
   private blacklistJobs: Map<string, Promise<void>> = new Map();
+
+  private warnOAuthUnavailable(reason: string, message: string): void {
+    const now = Date.now();
+    const lastWarningAt = this.lastOAuthWarningAt.get(reason) || 0;
+    if (now - lastWarningAt < 60 * 60 * 1000) return;
+    this.lastOAuthWarningAt.set(reason, now);
+    console.warn(message);
+  }
 
   async start(serverId: string) {
     if (this.client) {
@@ -50,7 +59,7 @@ class TwitchChatService {
 
     const botConfig = await db.collection('servers').doc(serverId).collection('config').doc('twitchBotOAuth').get();
     if (!botConfig.exists || (!botConfig.data()?.accessToken && !botConfig.data()?.refreshToken)) {
-      console.warn('[TwitchChat] Bot OAuth not configured — chat monitoring disabled. Re-authorize bot in settings.');
+      this.warnOAuthUnavailable('not-configured', '[TwitchChat] Bot OAuth not configured — chat monitoring disabled. Re-authorize bot in settings.');
       this.status = 'disabled';
       this.lastError = 'Bot OAuth not configured';
       return;
@@ -59,7 +68,7 @@ class TwitchChatService {
     const { botUsername } = botConfig.data()!;
     const validAccessToken = await getValidBotAccessToken(serverId);
     if (!validAccessToken) {
-      console.warn('[TwitchChat] Bot OAuth could not be refreshed — chat monitoring disabled. Re-authorize bot in settings.');
+      this.warnOAuthUnavailable('refresh-failed', '[TwitchChat] Bot OAuth could not be refreshed — chat monitoring disabled. Check Twitch client credentials and bot authorization.');
       this.status = 'disabled';
       this.lastError = 'Bot OAuth could not be refreshed';
       return;
