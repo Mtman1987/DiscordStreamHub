@@ -217,22 +217,26 @@ class TwitchPollingService {
         streamStatuses.set(user.discordUserId, stream);
       }
 
+      // Persist only actual online-state changes. Keep batches below Firestore's
+      // operation limit and create a fresh batch for every commit.
+      const usersNeedingOnlineUpdate = linkedUsers.filter(
+        user => user.isOnline !== !!streamStatuses.get(user.discordUserId)
+      );
+      for (let offset = 0; offset < usersNeedingOnlineUpdate.length; offset += 450) {
+        const batch = db.batch();
+        for (const user of usersNeedingOnlineUpdate.slice(offset, offset + 450)) {
+          batch.update(
+            db.collection('servers').doc(serverId).collection('users').doc(user.discordUserId),
+            { isOnline: !!streamStatuses.get(user.discordUserId) }
+          );
+        }
+        await batch.commit();
+      }
+
       // Process each user with rate limiting
-      const isOnlineBatch = db.batch();
-      let onlineChanges = 0;
       for (const user of linkedUsers) {
         const stream = streamStatuses.get(user.discordUserId);
         const isLive = !!stream;
-        // Update isOnline on user doc so the app UI stays in sync
-        isOnlineBatch.update(
-          db.collection('servers').doc(serverId).collection('users').doc(user.discordUserId),
-          { isOnline: isLive }
-        );
-        onlineChanges++;
-        if (onlineChanges >= 450) {
-          await isOnlineBatch.commit();
-          onlineChanges = 0;
-        }
         const shoutoutState = await this.getShoutoutState(serverId, user.discordUserId);
 
         if (stream) {
@@ -252,11 +256,6 @@ class TwitchPollingService {
             await this.delay(this.DISCORD_RATE_DELAY); // Rate limit Discord calls
           }
         }
-      }
-
-      // Commit any remaining isOnline updates
-      if (onlineChanges > 0) {
-        await isOnlineBatch.commit();
       }
 
       try {
@@ -982,32 +981,46 @@ class TwitchPollingService {
       .collection('shoutoutState').doc('current').set(state);
   }
 
-  private async getLinkedTwitchUsers(serverId: string): Promise<Array<{ twitchLogin: string; discordUserId: string }>> {
+  private async getLinkedTwitchUsers(serverId: string): Promise<Array<{ twitchLogin: string; discordUserId: string; isOnline?: boolean }>> {
     try {
       const twitchOnlyCommunityMembers = [
         { discordUserId: 'twitch_only_krashoutkrissy', twitchLogin: 'krashoutkrissy', username: 'krashoutkrissy', displayName: 'krashoutkrissy', group: 'Community' },
       ];
 
+      const usersCollection = db.collection('servers').doc(serverId).collection('users');
+      let usersSnapshot = await usersCollection.get();
+      let createdSeedMember = false;
+
+      // Seed the Twitch-only community member once. Rewriting this document on
+      // every poll created needless database writes and could overwrite edits.
       for (const member of twitchOnlyCommunityMembers) {
-        await db.collection('servers').doc(serverId).collection('users').doc(member.discordUserId).set({
-          twitchLogin: member.twitchLogin,
-          username: member.username,
-          displayName: member.displayName,
-          group: member.group,
-          twitchOnly: true,
-          updatedAt: new Date().toISOString(),
-        }, { merge: true });
+        const existing = usersSnapshot.docs.find((doc: any) => doc.id === member.discordUserId);
+        if (!existing) {
+          await usersCollection.doc(member.discordUserId).set({
+            twitchLogin: member.twitchLogin,
+            username: member.username,
+            displayName: member.displayName,
+            group: member.group,
+            twitchOnly: true,
+            updatedAt: new Date().toISOString(),
+          }, { merge: true });
+          createdSeedMember = true;
+        }
       }
 
-      const usersSnapshot = await db.collection('servers').doc(serverId).collection('users').get();
-      const linkedUsers: Array<{ twitchLogin: string; discordUserId: string }> = [];
+      if (createdSeedMember) {
+        usersSnapshot = await usersCollection.get();
+      }
+
+      const linkedUsers: Array<{ twitchLogin: string; discordUserId: string; isOnline?: boolean }> = [];
 
       usersSnapshot.forEach((doc: any) => {
         const data = doc.data();
         if (data.twitchLogin) {
           linkedUsers.push({
             twitchLogin: data.twitchLogin,
-            discordUserId: doc.id
+            discordUserId: doc.id,
+            isOnline: typeof data.isOnline === 'boolean' ? data.isOnline : undefined,
           });
         }
       });
