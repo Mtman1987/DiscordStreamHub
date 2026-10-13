@@ -10,8 +10,10 @@ test('Twitch stream polling propagates API failures instead of reporting everyon
   assert.notEqual(end, -1, 'method boundary exists');
   const method = source.slice(start, end);
   assert.match(method, /Error fetching streams by logins; preserving last known stream state/);
-  assert.match(method, /catch \(error\)[\s\S]*?throw error;/);
-  assert.match(method, /catch \(error\)[\s\S]*?throw error;/);
+  const catchBlock = method.match(/catch \(error\) \{([\s\S]*?)\n    \}/);
+  assert.ok(catchBlock, 'failure catch block exists');
+  assert.match(catchBlock[1], /throw error;/);
+  assert.doesNotMatch(catchBlock[1], /return streamMap;/);
 });
 
 test('Twitch app-token failures use credential-aware backoff to avoid repeated auth-error spam', () => {
