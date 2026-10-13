@@ -159,7 +159,7 @@ class TwitchApiService {
       }
 
       console.error(`Twitch API error for ${endpoint}: ${response.status} ${response.statusText} - ${errorText}`);
-      throw new Error(`Twitch API error: ${response.statusText}`);
+      throw new Error(`Twitch API error: ${response.status} ${response.statusText}`);
     }
 
     throw new Error('Twitch API request did not complete');
@@ -324,13 +324,20 @@ class TwitchApiService {
 
           return data.data.length;
         } catch (error) {
+          // Only split a 400 response to isolate a malformed parameter. Auth,
+          // rate-limit, server, and network failures must not fan out into many
+          // more requests or be interpreted as offline status.
+          const isBadRequest = error instanceof Error && /Twitch API error: 400\\b/.test(error.message);
+          if (!isBadRequest) {
+            throw error;
+          }
           if (chunk.length === 1) {
-            console.warn(`[TwitchAPI] Skipping rejected username ${chunk[0]} after Twitch API error:`, error);
+            console.warn(`[TwitchAPI] Skipping rejected username ${chunk[0]} after Twitch API 400 response.`);
             statusMap.set(chunk[0], false);
             return 0;
           }
 
-          console.warn(`[TwitchAPI] Chunk of ${chunk.length} users failed; splitting to isolate bad params.`);
+          console.warn(`[TwitchAPI] Chunk of ${chunk.length} users returned 400; splitting to isolate bad params.`);
           const midpoint = Math.ceil(chunk.length / 2);
           const leftOnline = await checkChunk(chunk.slice(0, midpoint));
           const rightOnline = await checkChunk(chunk.slice(midpoint));
@@ -350,7 +357,8 @@ class TwitchApiService {
       }
 
     } catch (error) {
-      console.error('Error checking stream status:', error);
+      console.error('[TwitchAPI] Stream status check failed; returning the error instead of partial/offline results:', error);
+      throw error;
     }
 
     return statusMap;
