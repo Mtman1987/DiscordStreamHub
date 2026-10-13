@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { createHash } from 'node:crypto';
 import tmi from 'tmi.js';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -9,6 +10,8 @@ import { recordMtFixItOutcome, registerMtFixItDelivery, resumePendingMtFixItDeli
 
 const CHANNEL_REFRESH_MS = 60_000;
 const TOKEN_RETRY_MS = 5 * 60_000;
+const INVALID_OAUTH_RETRY_MS = 12 * 60 * 60_000;
+const OAUTH_UNAVAILABLE_LOG_INTERVAL_MS = 60 * 60_000;
 const CHANNEL_RETRY_BASE_MS = 60_000;
 const CHANNEL_RETRY_MAX_MS = 30 * 60_000;
 const TWITCH_BAN_QUARANTINE_MS = 90 * 24 * 60 * 60 * 1000;
@@ -28,6 +31,11 @@ function readRuntimeConfig(): any {
 const runtimeConfig = readRuntimeConfig();
 const serverId = String(process.env.HARDCODED_GUILD_ID || process.env.NEXT_PUBLIC_HARDCODED_GUILD_ID || process.env.GUILD_ID || runtimeConfig?.publicIds?.hardcodedGuildId || '').trim();
 const twitchClientId = String(process.env.TWITCH_CLIENT_ID || process.env.NEXT_PUBLIC_TWITCH_CLIENT_ID || runtimeConfig?.publicIds?.twitchClientId || '').trim();
+let lastOAuthUnavailableWarningAt = 0;
+
+function twitchCredentialFingerprint(clientId: string, clientSecret: string): string {
+  return createHash('sha256').update(`${clientId}:\0${clientSecret}`).digest('hex');
+}
 
 function normalizeChannel(value: string): string { return String(value || '').trim().toLowerCase().replace(/^#/, ''); }
 function errorText(error: unknown): string { return error instanceof Error ? error.message : String(error || 'unknown error'); }
@@ -82,19 +90,98 @@ async function getLiveChannels(): Promise<LiveChannel[]> {
 }
 
 async function getValidBotCredentials(): Promise<{ username: string; accessToken: string } | null> {
-  const ref = db.collection('servers').doc(serverId).collection('config').doc('twitchBotOAuth'); const snapshot = await ref.get(); if (!snapshot.exists) return null;
-  const data = snapshot.data() || {}; const username = String(data.botUsername || '').trim(); const accessToken = String(data.accessToken || '').trim();
-  const refreshToken = String(data.refreshToken || data.refresh_token || '').trim(); const expiresAt = Number(data.expiresAt || 0);
+  const ref = db.collection('servers').doc(serverId).collection('config').doc('twitchBotOAuth');
+  const snapshot = await ref.get();
+  if (!snapshot.exists) return null;
+
+  const data = snapshot.data() || {};
+  const username = String(data.botUsername || '').trim();
+  const accessToken = String(data.accessToken || '').trim();
+  const refreshToken = String(data.refreshToken || data.refresh_token || '').trim();
+  const expiresAt = Number(data.expiresAt || 0);
+  const clientSecret = String(process.env.TWITCH_CLIENT_SECRET || '').trim();
+  const credentialFingerprint = twitchClientId && clientSecret
+    ? twitchCredentialFingerprint(twitchClientId, clientSecret)
+    : '';
+  const refreshErrorCode = String(data.refreshErrorCode || '').trim();
+  const refreshErrorAt = Number(data.refreshErrorAt || 0);
+
   if (username && accessToken && Date.now() < expiresAt - 5 * 60_000) return { username, accessToken };
-  if (!username || !refreshToken || !twitchClientId || !process.env.TWITCH_CLIENT_SECRET) return null;
+  if (!username || !refreshToken || !twitchClientId || !clientSecret) return null;
+
+  if (
+    refreshErrorCode === 'invalid_refresh_token' &&
+    refreshErrorAt > 0 &&
+    Date.now() - refreshErrorAt < INVALID_OAUTH_RETRY_MS
+  ) {
+    return null;
+  }
+  if (
+    refreshErrorCode === 'invalid_client_credentials' &&
+    credentialFingerprint &&
+    data.clientCredentialFingerprint === credentialFingerprint &&
+    refreshErrorAt > 0 &&
+    Date.now() - refreshErrorAt < INVALID_OAUTH_RETRY_MS
+  ) {
+    return null;
+  }
+
   const response = await fetch('https://id.twitch.tv/oauth2/token', {
-    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ client_id: twitchClientId, client_secret: process.env.TWITCH_CLIENT_SECRET, grant_type: 'refresh_token', refresh_token: refreshToken }), signal: AbortSignal.timeout(15_000),
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: twitchClientId,
+      client_secret: clientSecret,
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+    }),
+    signal: AbortSignal.timeout(15_000),
   });
   const payload = await response.json().catch(() => null) as any;
-  if (!response.ok || !payload?.access_token) { console.error(`[MtFixIt:Twitch] Bot token refresh failed status=${response.status} payload=${JSON.stringify(payload)}`); return null; }
-  const updated = { accessToken: String(payload.access_token), refreshToken: String(payload.refresh_token || refreshToken), expiresAt: Date.now() + Number(payload.expires_in || 3600) * 1000, updatedAt: new Date().toISOString(), refreshErrorCode: null, refreshErrorAt: null, lastRefreshError: null };
-  await ref.set(updated, { merge: true }); return { username, accessToken: updated.accessToken };
+  if (!response.ok || !payload?.access_token) {
+    const reason = String(payload?.message || payload?.error || `HTTP ${response.status}`);
+    const isInvalidRefreshToken = /invalid refresh token/i.test(reason);
+    const isInvalidClientCredentials = [400, 401, 403].includes(response.status)
+      && /invalid client secret|invalid client/i.test(reason);
+    const update: Record<string, unknown> = {
+      updatedAt: new Date().toISOString(),
+      lastRefreshError: reason,
+    };
+    if (isInvalidRefreshToken) {
+      update.refreshErrorCode = 'invalid_refresh_token';
+      update.refreshErrorAt = Date.now();
+      update.accessToken = '';
+      update.expiresAt = 0;
+    } else if (isInvalidClientCredentials) {
+      update.refreshErrorCode = 'invalid_client_credentials';
+      update.refreshErrorAt = Date.now();
+      update.clientCredentialFingerprint = credentialFingerprint;
+      update.accessToken = '';
+      update.expiresAt = 0;
+    }
+    await ref.set(update, { merge: true }).catch(() => {});
+    if (isInvalidClientCredentials) {
+      console.warn('[MtFixIt:Twitch] Twitch client credentials were rejected; suppressing refresh attempts until credentials change or the backoff expires.');
+    } else if (isInvalidRefreshToken) {
+      console.warn('[MtFixIt:Twitch] Twitch refresh token is invalid; reauthorization is required.');
+    } else {
+      console.error(`[MtFixIt:Twitch] Bot token refresh failed status=${response.status} reason=${reason}`);
+    }
+    return null;
+  }
+
+  const updated = {
+    accessToken: String(payload.access_token),
+    refreshToken: String(payload.refresh_token || refreshToken),
+    expiresAt: Date.now() + Number(payload.expires_in || 3600) * 1000,
+    updatedAt: new Date().toISOString(),
+    refreshErrorCode: null,
+    refreshErrorAt: null,
+    lastRefreshError: null,
+    clientCredentialFingerprint: credentialFingerprint,
+  };
+  await ref.set(updated, { merge: true });
+  return { username, accessToken: updated.accessToken };
 }
 
 async function syncChannels(client: tmi.Client, joined: Set<string>, retries: Map<string, RetryState>, tenantByChannel: Map<string, string>) {
@@ -126,7 +213,14 @@ async function syncChannels(client: tmi.Client, joined: Set<string>, retries: Ma
 async function runWatcher() {
   if (!serverId) throw new Error('DSH guild/server ID is not configured.');
   const credentials = await getValidBotCredentials();
-  if (!credentials) { console.warn('[MtFixIt:Twitch] Bot OAuth is unavailable; retrying later.'); setTimeout(() => runWatcher().catch(console.error), TOKEN_RETRY_MS).unref?.(); return; }
+  if (!credentials) {
+    if (Date.now() - lastOAuthUnavailableWarningAt >= OAUTH_UNAVAILABLE_LOG_INTERVAL_MS) {
+      console.warn('[MtFixIt:Twitch] Bot OAuth is unavailable; retrying later.');
+      lastOAuthUnavailableWarningAt = Date.now();
+    }
+    setTimeout(() => runWatcher().catch(console.error), TOKEN_RETRY_MS).unref?.();
+    return;
+  }
   const initialChannels = await getLiveChannels(); const joined = new Set<string>(); const retries = new Map<string, RetryState>();
   const tenantByChannel = new Map<string, string>(initialChannels.filter((entry) => entry.tenantId).map((entry) => [entry.channel, entry.tenantId as string]));
   const client = new tmi.Client({ options: { debug: false }, identity: { username: credentials.username, password: `oauth:${credentials.accessToken}` }, channels: initialChannels.map((entry) => entry.channel).filter(Boolean) });
