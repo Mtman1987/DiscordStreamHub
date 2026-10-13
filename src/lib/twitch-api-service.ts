@@ -48,6 +48,7 @@ class TwitchApiService {
   private tokenExpiry: number = 0;
   private tokenFailureUntil = 0;
   private tokenFailureFingerprint = '';
+  private accessTokenRequest: Promise<string> | null = null;
   private readonly INVALID_CREDENTIAL_BACKOFF_MS = 12 * 60 * 60 * 1000;
   private readonly TRANSIENT_TOKEN_BACKOFF_MS = 60 * 1000;
 
@@ -80,6 +81,23 @@ class TwitchApiService {
       throw new Error('[TwitchAPI] Twitch client credentials are not configured.');
     }
 
+    // Share one token request across concurrent API calls to avoid an auth-request burst.
+    if (this.accessTokenRequest) {
+      return this.accessTokenRequest;
+    }
+
+    const request = this.requestAccessToken(credentialFingerprint);
+    this.accessTokenRequest = request;
+    try {
+      return await request;
+    } finally {
+      if (this.accessTokenRequest === request) {
+        this.accessTokenRequest = null;
+      }
+    }
+  }
+
+  private async requestAccessToken(credentialFingerprint: string): Promise<string> {
     const response = await fetch('https://id.twitch.tv/oauth2/token', {
       method: 'POST',
       headers: {
