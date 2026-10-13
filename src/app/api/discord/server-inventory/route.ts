@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     const { guildId, channelId } = payload as { guildId?: unknown; channelId?: unknown };
     guildIdForLog = String(guildId || '');
     channelIdForLog = String(channelId || '');
-    if (!/^\\d{17,20}$/.test(guildIdForLog)) {
+    if (!/^\d{17,20}$/.test(guildIdForLog)) {
       return NextResponse.json({ error: 'Invalid guild' }, { status: 400 });
     }
 
