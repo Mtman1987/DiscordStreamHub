@@ -19,7 +19,34 @@ export async function serverAccount(request: NextRequest) {
 export function sameOrigin(request: NextRequest) {
   const origin = request.headers.get('origin');
   const requestUrlOrigin = request.nextUrl.origin;
-  if (origin !== requestUrlOrigin) {
+  const host = request.headers.get('host');
+  const forwardedHost = request.headers.get('x-forwarded-host');
+  const forwardedProto = request.headers.get('x-forwarded-proto');
+
+  // Behind Fly Proxy, NextRequest.nextUrl.origin can reflect the container
+  // listener (for example http://0.0.0.0:3000) rather than the public origin.
+  // Accept that origin OR the public origin described by proxy headers, but
+  // only when Fly's forwarded host agrees with the request Host header.
+  let forwardedOrigin: string | null = null;
+  if (
+    host &&
+    forwardedHost &&
+    host === forwardedHost &&
+    !host.includes(',') &&
+    !forwardedHost.includes(',') &&
+    (forwardedProto === 'http' || forwardedProto === 'https')
+  ) {
+    try {
+      const parsed = new URL(`${forwardedProto}://${forwardedHost}`);
+      if (parsed.host === forwardedHost && parsed.origin !== 'null') {
+        forwardedOrigin = parsed.origin;
+      }
+    } catch {
+      // Invalid proxy host values are not trusted.
+    }
+  }
+
+  if (!origin || (origin !== requestUrlOrigin && origin !== forwardedOrigin)) {
     // Log enough context to diagnose proxy/host mismatches without recording
     // cookies, authorization headers, request bodies, or query-string data.
     console.warn('[DSH origin-check] rejected request', JSON.stringify({
@@ -27,11 +54,12 @@ export function sameOrigin(request: NextRequest) {
       path: request.nextUrl.pathname,
       origin: origin || null,
       requestUrlOrigin,
-      host: request.headers.get('host'),
-      forwardedHost: request.headers.get('x-forwarded-host'),
-      forwardedProto: request.headers.get('x-forwarded-proto'),
+      forwardedOrigin,
+      host,
+      forwardedHost,
+      forwardedProto,
       requestId: request.headers.get('x-request-id') || request.headers.get('fly-request-id') || null,
-      reason: 'origin does not match request URL origin',
+      reason: 'origin matches neither request URL origin nor validated forwarded origin',
     }));
     throw new ServerConnectionError('Invalid request origin.', 403);
   }
