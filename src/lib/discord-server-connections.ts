@@ -18,7 +18,23 @@ export async function serverAccount(request: NextRequest) {
 }
 export function sameOrigin(request: NextRequest) {
   const origin = request.headers.get('origin');
-  if (origin !== request.nextUrl.origin) throw new ServerConnectionError('Invalid request origin.', 403);
+  const requestUrlOrigin = request.nextUrl.origin;
+  if (origin !== requestUrlOrigin) {
+    // Log enough context to diagnose proxy/host mismatches without recording
+    // cookies, authorization headers, request bodies, or query-string data.
+    console.warn('[DSH origin-check] rejected request', JSON.stringify({
+      method: request.method,
+      path: request.nextUrl.pathname,
+      origin: origin || null,
+      requestUrlOrigin,
+      host: request.headers.get('host'),
+      forwardedHost: request.headers.get('x-forwarded-host'),
+      forwardedProto: request.headers.get('x-forwarded-proto'),
+      requestId: request.headers.get('x-request-id') || request.headers.get('fly-request-id') || null,
+      reason: 'origin does not match request URL origin',
+    }));
+    throw new ServerConnectionError('Invalid request origin.', 403);
+  }
 }
 export async function discordApi(path: string, authorization: string) {
   const response = await fetch('https://discord.com/api/v10' + path, {
