@@ -197,7 +197,11 @@ class TwitchApiService {
         }
       }
     } catch (error) {
-      console.error('[TwitchAPI] Error fetching streams by logins:', error);
+      // An API/auth failure is not evidence that every streamer is offline.
+      // Propagate the failure so polling callers preserve the last known state
+      // instead of clearing isOnline/shoutouts from an empty result map.
+      console.error('[TwitchAPI] Error fetching streams by logins; preserving last known stream state:', error);
+      throw error;
     }
 
     return streamMap;
