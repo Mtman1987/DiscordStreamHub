@@ -42,3 +42,16 @@ test('Twitch app-token refresh is shared across concurrent API callers', () => {
   assert.match(source, /this\.requestAccessToken\(credentialFingerprint\)/);
   assert.match(source, /finally \{[\s\S]*?if \(this\.accessTokenRequest === request\)[\s\S]*?this\.accessTokenRequest = null;/);
 });
+
+test('Twitch status checks do not fan out or return partial offline results on auth and service failures', () => {
+  const source = fs.readFileSync('src/lib/twitch-api-service.ts', 'utf8');
+  const start = source.indexOf('async checkMultipleStreamsStatus(');
+  const end = source.indexOf('\\n  }\\n}', start);
+  assert.notEqual(start, -1, 'checkMultipleStreamsStatus method exists');
+  assert.notEqual(end, -1, 'method boundary exists');
+  const method = source.slice(start, end);
+  assert.match(method, /Twitch API error: 400/);
+  assert.match(method, /if \(!isBadRequest\) \{\\s*throw error;/);
+  assert.match(method, /Stream status check failed; returning the error instead of partial\/offline results/);
+  assert.match(method, /throw error;/);
+});
