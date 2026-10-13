@@ -13,3 +13,13 @@ test('Twitch stream polling propagates API failures instead of reporting everyon
   assert.match(method, /catch \(error\)[\s\S]*?throw error;/);
   assert.doesNotMatch(method, /catch \(error\)[\s\S]*?return streamMap;/);
 });
+
+test('Twitch app-token failures use credential-aware backoff to avoid repeated auth-error spam', () => {
+  const source = fs.readFileSync('src/lib/twitch-api-service.ts', 'utf8');
+  assert.match(source, /INVALID_CREDENTIAL_BACKOFF_MS = 12 \* 60 \* 60 \* 1000/);
+  assert.match(source, /TRANSIENT_TOKEN_BACKOFF_MS = 60 \* 1000/);
+  assert.match(source, /tokenFailureFingerprint/);
+  assert.match(source, /Twitch rejected the configured app credentials; token requests paused for 12 hours or until credentials change/);
+  assert.match(source, /App-token request is in backoff/);
+  assert.match(source, /if \(!this\.clientId \|\| !this\.clientSecret\)/);
+});
