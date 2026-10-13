@@ -34,3 +34,11 @@ test('Twitch polling initialization remains retryable after a failed startup que
   assert.match(initialize, /await this\.initializePolling\(\);[\s\S]*?this\.initialized = true;/);
   assert.match(initialize, /catch \(error\)[\s\S]*?this\.initialized = false;[\s\S]*?throw error;/);
 });
+
+test('Twitch app-token refresh is shared across concurrent API callers', () => {
+  const source = fs.readFileSync('src/lib/twitch-api-service.ts', 'utf8');
+  assert.match(source, /private accessTokenRequest: Promise<string> \| null = null/);
+  assert.match(source, /if \(this\.accessTokenRequest\) \{[\s\S]*?return this\.accessTokenRequest;/);
+  assert.match(source, /this\.requestAccessToken\(credentialFingerprint\)/);
+  assert.match(source, /finally \{[\s\S]*?if \(this\.accessTokenRequest === request\)[\s\S]*?this\.accessTokenRequest = null;/);
+});
