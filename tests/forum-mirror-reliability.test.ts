@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { sqliteService } from '../src/lib/sqlite-service';
-import { ensureMirrorThread, ForumDiscordError, mirrorThreadName, syncForumChannels, rulePath, type ForumRule } from '../src/lib/discord-forum-mirror';
+import { ensureMirrorThread, ForumDiscordError, forumDiscordRequest, mirrorThreadName, syncForumChannels, rulePath, type ForumRule } from '../src/lib/discord-forum-mirror';
 import { channelPermissions } from '../src/lib/discord-guild-access';
 
 const rule: ForumRule = { sourceServerId: '110000000000000001', destinationServerId: '220000000000000001', forumChannelId: '330000000000000001', forwardingMode: 'per-source-thread' };
@@ -143,4 +143,43 @@ test('an in-flight old-destination operation cannot restore its mappings after a
   sqliteService.setDoc(rulePath(rule.sourceServerId), { ...rule, forumChannelId: 'a-new-destination', mappings: {} });
   assert.throws(() => sqliteService.mergeDocMaps(rulePath(rule.sourceServerId), { mappings: { old: 'old-thread' } }, {}, { forumChannelId: rule.forumChannelId }), /configuration changed/);
   assert.deepEqual(sqliteService.getDoc(rulePath(rule.sourceServerId)).data.mappings, {});
+});
+
+test('Discord GET retries transient network and server failures but never replays POST writes', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalToken = process.env.DISCORD_BOT_TOKEN;
+  process.env.DISCORD_BOT_TOKEN = 'test-token';
+  let getCalls = 0;
+  let postCalls = 0;
+  try {
+    globalThis.fetch = (async () => {
+      getCalls++;
+      if (getCalls === 1) throw new TypeError('fetch failed');
+      if (getCalls === 2) return new Response(JSON.stringify({ message: 'temporary upstream error' }), {
+        status: 503,
+        headers: { 'content-type': 'application/json' },
+      });
+      return new Response(JSON.stringify({ id: 'guild-ok' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    assert.deepEqual(await forumDiscordRequest('/guilds/110000000000000001'), { id: 'guild-ok' });
+    assert.equal(getCalls, 3);
+
+    globalThis.fetch = (async () => {
+      postCalls++;
+      throw new TypeError('fetch failed');
+    }) as typeof fetch;
+    await assert.rejects(
+      forumDiscordRequest('/channels/440000000000000001/messages', { method: 'POST', body: JSON.stringify({ content: 'once only' }) }),
+      /fetch failed/,
+    );
+    assert.equal(postCalls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalToken === undefined) delete process.env.DISCORD_BOT_TOKEN;
+    else process.env.DISCORD_BOT_TOKEN = originalToken;
+  }
 });

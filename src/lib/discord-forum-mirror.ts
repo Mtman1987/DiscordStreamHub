@@ -12,14 +12,35 @@ export class ForumDiscordError extends Error {
 export type DiscordRequest = (path: string, options?: RequestInit) => Promise<any>;
 export const forumDiscordRequest: DiscordRequest = async (path, options = {}) => {
   if (!process.env.DISCORD_BOT_TOKEN) throw new Error('Discord bot is not configured');
+  const method = String(options.method || 'GET').toUpperCase();
+  const retrySafe = method === 'GET' || method === 'HEAD';
+  const retryDelaysMs = [250, 500, 1000];
+
   for (let attempt = 0; attempt < 4; attempt++) {
-    const response = await fetch('https://discord.com/api/v10' + path, {
-      ...options, headers: { Authorization: 'Bot ' + process.env.DISCORD_BOT_TOKEN, 'Content-Type': 'application/json', ...options.headers },
-      cache: 'no-store', signal: AbortSignal.timeout(10_000),
-    });
+    let response: Response;
+    try {
+      response = await fetch('https://discord.com/api/v10' + path, {
+        ...options, headers: { Authorization: 'Bot ' + process.env.DISCORD_BOT_TOKEN, 'Content-Type': 'application/json', ...options.headers },
+        cache: 'no-store', signal: AbortSignal.timeout(10_000),
+      });
+    } catch (error) {
+      // Inventory reads can fail transiently during a deploy or a short Discord/network
+      // stall. Retry only idempotent reads; never replay a message/thread write.
+      if (retrySafe && attempt < 3) {
+        await new Promise(resolve => setTimeout(resolve, retryDelaysMs[attempt]));
+        continue;
+      }
+      throw error;
+    }
+
     const body = response.status === 204 ? null : await response.json().catch(() => null);
     if (response.status === 429 && attempt < 3 && Number(body?.retry_after) <= 5) {
-      await new Promise(resolve => setTimeout(resolve, Math.max(100, Number(body.retry_after) * 1000 + 100))); continue;
+      await new Promise(resolve => setTimeout(resolve, Math.max(100, Number(body.retry_after) * 1000 + 100)));
+      continue;
+    }
+    if (retrySafe && attempt < 3 && (response.status === 408 || response.status >= 500)) {
+      await new Promise(resolve => setTimeout(resolve, retryDelaysMs[attempt]));
+      continue;
     }
     if (!response.ok) throw new ForumDiscordError(response.status, Number(body?.code || 0), 'Discord ' + response.status + ': ' + String(body?.message || response.statusText));
     return body;
