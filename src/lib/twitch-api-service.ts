@@ -64,7 +64,7 @@ class TwitchApiService {
     }
 
     const credentialFingerprint = createHash('sha256')
-      .update(`${this.clientId}:\\0${this.clientSecret || ''}`)
+      .update(`${this.clientId}:\0${this.clientSecret || ''}`)
       .digest('hex');
     if (now < this.tokenFailureUntil && credentialFingerprint === this.tokenFailureFingerprint) {
       throw new Error('[TwitchAPI] App-token request is in backoff; check Twitch credentials or wait for retry.');
