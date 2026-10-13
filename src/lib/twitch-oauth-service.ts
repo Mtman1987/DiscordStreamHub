@@ -1,10 +1,16 @@
 'use server';
 
+import { createHash } from 'node:crypto';
 import { db } from '@/lib/db';
 import { getTwitchClientId } from '@/lib/runtime-config';
 
 const botRefreshInflight = new Map<string, Promise<{ accessToken: string; refreshToken: string; expiresAt: number } | null>>();
 const INVALID_REFRESH_RETRY_MS = 12 * 60 * 60 * 1000;
+const INVALID_CLIENT_RETRY_MS = 12 * 60 * 60 * 1000;
+
+function twitchCredentialFingerprint(clientId: string, clientSecret: string): string {
+  return createHash('sha256').update(`${clientId}:\0${clientSecret}`).digest('hex');
+}
 
 export async function getUserAccessToken(serverId: string): Promise<string | null> {
   try {
@@ -66,6 +72,7 @@ async function refreshTwitchOAuthToken(docPath: string, data: any): Promise<{ ac
     return null;
   }
 
+  const credentialFingerprint = twitchCredentialFingerprint(clientId, clientSecret);
   const response = await fetch('https://id.twitch.tv/oauth2/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -80,6 +87,8 @@ async function refreshTwitchOAuthToken(docPath: string, data: any): Promise<{ ac
   if (!response.ok) {
     const errorText = await response.text();
     const isInvalidRefreshToken = /invalid refresh token/i.test(errorText);
+    const isInvalidClientCredentials = [400, 401, 403].includes(response.status)
+      && /invalid client secret|invalid client/i.test(errorText);
     const updatePayload: Record<string, unknown> = {
       updatedAt: new Date().toISOString(),
       lastRefreshError: errorText,
@@ -91,6 +100,13 @@ async function refreshTwitchOAuthToken(docPath: string, data: any): Promise<{ ac
       updatePayload.accessToken = '';
       updatePayload.expiresAt = 0;
       console.warn('[TwitchOAuth] Refresh token is invalid; suppressing repeated retry spam until reauthorization.');
+    } else if (isInvalidClientCredentials) {
+      updatePayload.refreshErrorCode = 'invalid_client_credentials';
+      updatePayload.refreshErrorAt = Date.now();
+      updatePayload.clientCredentialFingerprint = credentialFingerprint;
+      updatePayload.accessToken = '';
+      updatePayload.expiresAt = 0;
+      console.warn('[TwitchOAuth] Twitch client credentials were rejected; retrying only after credentials change or the backoff expires.');
     } else {
       console.error('[TwitchOAuth] Refresh failed:', errorText);
     }
@@ -114,6 +130,7 @@ async function refreshTwitchOAuthToken(docPath: string, data: any): Promise<{ ac
     refreshErrorCode: null,
     refreshErrorAt: null,
     lastRefreshError: null,
+    clientCredentialFingerprint: credentialFingerprint,
   });
 
   return updated;
@@ -130,6 +147,11 @@ export async function getValidBotAccessToken(serverId: string): Promise<string |
     const refreshErrorCode = String(data.refreshErrorCode || '').trim();
     const refreshErrorAt = Number(data.refreshErrorAt || 0);
     const fiveMinutes = 5 * 60 * 1000;
+    const clientId = getTwitchClientId();
+    const clientSecret = process.env.TWITCH_CLIENT_SECRET || '';
+    const credentialFingerprint = clientId && clientSecret
+      ? twitchCredentialFingerprint(clientId, clientSecret)
+      : '';
 
     if (accessToken && Date.now() < expiresAt - fiveMinutes) {
       return accessToken;
@@ -139,6 +161,16 @@ export async function getValidBotAccessToken(serverId: string): Promise<string |
       refreshErrorCode === 'invalid_refresh_token' &&
       refreshErrorAt > 0 &&
       Date.now() - refreshErrorAt < INVALID_REFRESH_RETRY_MS
+    ) {
+      return null;
+    }
+
+    if (
+      refreshErrorCode === 'invalid_client_credentials' &&
+      credentialFingerprint &&
+      data.clientCredentialFingerprint === credentialFingerprint &&
+      refreshErrorAt > 0 &&
+      Date.now() - refreshErrorAt < INVALID_CLIENT_RETRY_MS
     ) {
       return null;
     }
