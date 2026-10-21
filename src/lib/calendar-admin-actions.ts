@@ -2,7 +2,7 @@
 
 import { format } from 'date-fns';
 import { Timestamp, db } from '@/data/server-init';
-import { refreshCalendarMessage } from '@/lib/calendar-discord-service';
+import { refreshCalendarMessage } from '@/lib/calendar-discord-service-new';
 
 type CaptainLogPayload = {
   serverId: string;

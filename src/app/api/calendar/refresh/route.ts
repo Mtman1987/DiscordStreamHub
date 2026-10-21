@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { refreshCalendarMessage } from '@/lib/calendar-discord-service';
+import { refreshCalendarMessage } from '@/lib/calendar-discord-service-new';
 
 export async function POST(request: NextRequest) {
   try {
