@@ -32,7 +32,8 @@ jobs:
           openssl rand -hex 32 > /tmp/recovery-password
           openssl enc -aes-256-cbc -salt -pbkdf2 -in /tmp/discord-stream-hub-new-data.tar.gz -out /tmp/discord-stream-hub-new-data.tar.gz.enc -pass file:/tmp/recovery-password
           openssl pkeyutl -encrypt -pubin -inkey /tmp/export-public.pem -in /tmp/recovery-password -out /tmp/discord-stream-hub-new-data.key.enc
-          split -b 400000000 -d -a 2 /tmp/discord-stream-hub-new-data.tar.gz.enc /tmp/dsh-part-\n          rm -f /tmp/data.b64 /tmp/discord-stream-hub-new-data.tar.gz /tmp/recovery-password
+          split -b 400000000 -d -a 2 /tmp/discord-stream-hub-new-data.tar.gz.enc /tmp/dsh-part-
+          rm -f /tmp/data.b64 /tmp/discord-stream-hub-new-data.tar.gz /tmp/recovery-password
       - name: Upload encrypted archive part 00
         uses: actions/upload-artifact@v4
         with:
