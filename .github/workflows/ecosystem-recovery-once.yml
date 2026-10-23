@@ -32,13 +32,33 @@ jobs:
           openssl rand -hex 32 > /tmp/recovery-password
           openssl enc -aes-256-cbc -salt -pbkdf2 -in /tmp/discord-stream-hub-new-data.tar.gz -out /tmp/discord-stream-hub-new-data.tar.gz.enc -pass file:/tmp/recovery-password
           openssl pkeyutl -encrypt -pubin -inkey /tmp/export-public.pem -in /tmp/recovery-password -out /tmp/discord-stream-hub-new-data.key.enc
-          rm -f /tmp/data.b64 /tmp/discord-stream-hub-new-data.tar.gz /tmp/recovery-password
-      - name: Upload encrypted data archive
+          split -b 400000000 -d -a 2 /tmp/discord-stream-hub-new-data.tar.gz.enc /tmp/dsh-part-\n          rm -f /tmp/data.b64 /tmp/discord-stream-hub-new-data.tar.gz /tmp/recovery-password
+      - name: Upload encrypted archive part 00
         uses: actions/upload-artifact@v4
         with:
-          name: recovery-discord-stream-hub-new-encrypted
+          name: recovery-discord-stream-hub-part-00
+          path: /tmp/dsh-part-00
+          retention-days: 1
+          if-no-files-found: error
+      - name: Upload encrypted archive part 01
+        uses: actions/upload-artifact@v4
+        with:
+          name: recovery-discord-stream-hub-part-01
+          path: /tmp/dsh-part-01
+          retention-days: 1
+          if-no-files-found: error
+      - name: Upload encrypted archive part 02
+        uses: actions/upload-artifact@v4
+        with:
+          name: recovery-discord-stream-hub-part-02
+          path: /tmp/dsh-part-02
+          retention-days: 1
+          if-no-files-found: error
+      - name: Upload key and file manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: recovery-discord-stream-hub-key-manifest
           path: |
-            /tmp/discord-stream-hub-new-data.tar.gz.enc
             /tmp/discord-stream-hub-new-data.key.enc
             /tmp/discord-stream-hub-new-file-list.txt
           retention-days: 1
