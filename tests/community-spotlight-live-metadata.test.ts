@@ -5,7 +5,8 @@ import assert from 'node:assert/strict';
 test('community spotlight hydrates every live user with current Twitch metadata', () => {
   const route = fs.readFileSync('src/app/api/community-spotlight/route.ts', 'utf8');
   assert.match(route, /getStreamsByLogins/);
-  assert.match(route, /const candidates = usersSnap\.docs\.map\(mapUser\)/);
+  assert.match(route, /const SYSTEM_TWITCH_LOGINS = new Set\(\['spacemountainlive'\]\)/);
+  assert.match(route, /const candidates = usersSnap\.docs\.map\(mapUser\)[\s\S]*?SYSTEM_TWITCH_LOGINS\.has\(user\.twitchLogin\.toLowerCase\(\)\)/);
   assert.match(route, /const liveByLogin = logins\.length \? await getStreamsByLogins\(logins\)/);
   assert.match(route, /if \(!stream\) return null/);
   assert.match(route, /gameName: stream\.game_name \|\| null/);

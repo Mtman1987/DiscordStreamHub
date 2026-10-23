@@ -6,6 +6,7 @@ import { getStreamsByLogins } from '@/lib/twitch-api-service';
 export const dynamic = 'force-dynamic';
 
 const SERVER_ID = getHardcodedGuildId();
+const SYSTEM_TWITCH_LOGINS = new Set(['spacemountainlive']);
 
 type LiveCommunityUser = {
   id: string;
@@ -35,7 +36,8 @@ export async function GET() {
     const usersSnap = await db.collection('servers').doc(SERVER_ID).collection('users')
       .where('isOnline', '==', true)
       .get();
-    const candidates = usersSnap.docs.map(mapUser);
+    const candidates = usersSnap.docs.map(mapUser)
+      .filter((user: LiveCommunityUser) => user.twitchLogin && !SYSTEM_TWITCH_LOGINS.has(user.twitchLogin.toLowerCase()));
     const logins = candidates.map((user: LiveCommunityUser) => String(user.twitchLogin || '').trim()).filter(Boolean);
     const liveByLogin = logins.length ? await getStreamsByLogins(logins) : new Map<string, any>();
     const users = candidates
