@@ -190,10 +190,10 @@ async function readJob(jobId: string): Promise<RotatorJob> {
   return payload as RotatorJob;
 }
 
-export async function decideMtFixIt(jobId: string, action: 'approve' | 'deny'): Promise<MtFixItResolutionState> {
+export async function decideMtFixIt(jobId: string, action: 'approve' | 'deny' | 'pass' | 'fail', feedback = ''): Promise<MtFixItResolutionState> {
   const payload = await rotatorRequest(`/api/dsh/mtfixit/jobs/${encodeURIComponent(jobId)}/resolution`, {
     method: 'POST',
-    body: JSON.stringify({ action }),
+    body: JSON.stringify({ action, feedback }),
   });
   if (!payload?.state?.jobId) throw new Error('Rotator resolution returned no state.');
   return payload.state as MtFixItResolutionState;
