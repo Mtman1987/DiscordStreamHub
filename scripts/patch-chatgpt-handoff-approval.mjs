@@ -45,7 +45,7 @@ patchFile('scripts/discord-ingress-bot.ts', (source) => {
     "console.log(`[DiscordIngress] MtFixIt decision action=${action} job=${jobId} user=${interaction.user.id} state=${state}`);",
     "console.log(`[DiscordIngress] Repair decision kind=${kind} action=${action} job=${jobId} user=${interaction.user.id} state=${state}`);",
   );
-  if (!next.includes('const REPAIR_DECISION = /^(mtfixit|chatgpt)_(approve|deny)')) throw new Error('Discord repair-decision marker missing');
+  if (!next.includes('const REPAIR_DECISION = /^(mtfixit|chatgpt)_(approve|deny')) throw new Error('Discord repair-decision marker missing');
   if (!next.includes('jobId, action, kind')) throw new Error('Discord repair-decision payload marker missing');
   return next;
 });
