@@ -1,10 +1,15 @@
 import 'dotenv/config';
 import {
   ActivityType,
+  ActionRowBuilder,
   Client,
   GatewayIntentBits,
   Message,
+  ModalActionRowComponentBuilder,
+  ModalBuilder,
   Partials,
+  TextInputBuilder,
+  TextInputStyle,
   PermissionFlagsBits,
   VoiceState,
 } from 'discord.js';
@@ -115,6 +120,30 @@ async function publishVoicePresence(state: VoiceState) {
   if (!response.ok) throw new Error(`Relay presence ${response.status}: ${await response.text().catch(() => '')}`);
 }
 
+async function handleMtFixItFeedbackModal(interaction: any) {
+  if (!interaction?.isModalSubmit?.()) return false;
+  const match = String(interaction.customId || '').match(/^mtfixit_fail_reason:([a-zA-Z0-9_-]{8,120})$/);
+  if (!match) return false;
+  if (!DISCORD_BOT_TOKEN) throw new Error('DISCORD_BOT_TOKEN is required');
+  const jobId = match[1];
+  const feedback = String(interaction.fields.getTextInputValue('feedback') || '').trim().slice(0, 2000);
+  await interaction.deferReply({ ephemeral: true });
+  const response = await fetch(`${DSH_INGRESS_URL}/api/internal/mtfixit/decision`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-discord-bot-token': DISCORD_BOT_TOKEN },
+    body: JSON.stringify({ userId: interaction.user.id, jobId, action: 'fail', kind: 'mtfixit', feedback }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  const result = await response.json().catch(() => null);
+  if (!response.ok) {
+    await interaction.editReply(`MtFixIt FAIL feedback could not be recorded: ${String(result?.error || `HTTP ${response.status}`).slice(0, 500)}`);
+    return true;
+  }
+  await interaction.editReply('🔁 Feedback recorded. Athena is retrying with your failure notes as negative evidence.');
+  console.log(`[DiscordIngress] MtFixIt live FAIL feedback recorded job=${jobId} user=${interaction.user.id}`);
+  return true;
+}
+
 async function handleMtFixItDecision(interaction: any) {
   if (!interaction?.isButton?.()) return false;
   const match = String(interaction.customId || '').match(REPAIR_DECISION);
@@ -123,6 +152,22 @@ async function handleMtFixItDecision(interaction: any) {
   const kind = match[1] as 'mtfixit' | 'chatgpt';
   const action = match[2] as 'approve' | 'deny' | 'pass' | 'fail';
   const jobId = match[3];
+  if (action === 'fail' && kind === 'mtfixit') {
+    const input = new TextInputBuilder()
+      .setCustomId('feedback')
+      .setLabel('What still fails in the live app?')
+      .setStyle(TextInputStyle.Paragraph)
+      .setRequired(true)
+      .setMinLength(5)
+      .setMaxLength(1000)
+      .setPlaceholder('Describe the remaining error or what you observed.');
+    const modal = new ModalBuilder()
+      .setCustomId(`mtfixit_fail_reason:${jobId}`)
+      .setTitle('MtFixIt failure feedback')
+      .addComponents(new ActionRowBuilder<ModalActionRowComponentBuilder>().addComponents(input));
+    await interaction.showModal(modal);
+    return true;
+  }
   await interaction.deferUpdate();
   const response = await fetch(`${DSH_INGRESS_URL}/api/internal/mtfixit/decision`, {
     method: 'POST',
@@ -209,7 +254,7 @@ async function main() {
     publishVoicePresence(newState).catch((error) => console.warn(`[DiscordIngress] Voice presence update failed ${newState.guild.id}/${newState.id}:`, error));
   });
   client.on('interactionCreate', (interaction) => {
-    handleMtFixItDecision(interaction).catch(async (error) => {
+    handleMtFixItFeedbackModal(interaction).then((handled) => handled ? true : handleMtFixItDecision(interaction)).catch(async (error) => {
       console.error('[DiscordIngress] MtFixIt interaction failed:', error);
       if (interaction.isRepliable?.()) await interaction.followUp?.({ content: 'MtFixIt could not process that decision. The repair has not been approved.', ephemeral: true }).catch(() => undefined);
     });
