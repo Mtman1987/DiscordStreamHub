@@ -18,6 +18,7 @@ patchFile('src/lib/owner-dm-service.ts', (source) => {
     "if (button.customId && /^mtfixit_(?:approve|deny):[a-zA-Z0-9_-]{8,100}$/.test(button.customId)) {",
     "if (button.customId && /^(?:mtfixit|chatgpt)_(?:approve|deny):[a-zA-Z0-9_-]{8,120}$/.test(button.customId)) {",
   );
+  // Pass/fail IDs are supported alongside the original approval/deny IDs.
   if (!next.includes('(?:mtfixit|chatgpt)_(?:approve|deny')) throw new Error('Owner DM repair-button marker missing');
   return next;
 });
