@@ -137,9 +137,9 @@ async function handleMtFixItDecision(interaction: any) {
   }
   const state = String(result?.state?.status || (action === 'approve' ? (kind === 'chatgpt' ? 'awaiting-chatgpt' : 'deploying') : action === 'pass' ? 'proven-fix' : action === 'fail' ? 'retrying' : 'denied'));
   const suffix = action === 'pass'
-    ? '\\n\\n✅ Live test passed. This repair is recorded as a proven fix.'
+    ? '\n\n✅ Live test passed. This repair is recorded as a proven fix.'
     : action === 'fail'
-      ? '\\n\\n🔁 Live test failed. Athena is recording the negative feedback and starting another repair attempt.'
+      ? '\n\n🔁 Live test failed. Athena is recording the negative feedback and starting another repair attempt.'
       : action === 'approve'
     ? kind === 'chatgpt'
       ? `\n\n✅ mtman approved ChatGPT repair. Packet is now queued for the next hourly ChatGPT pass.`
