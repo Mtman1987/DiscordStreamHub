@@ -22,7 +22,7 @@ const DSH_INGRESS_URL = (
 const PRESENCE_TEXT = process.env.DSH_DISCORD_PRESENCE || 'Powered by Space Mountain';
 
 const VOICE_OWNED_COMMAND = /^!(?:dj|ignore|unignore|ignored|skip|voteskip|wr|watch|add|accept)(?:\s|$)/i;
-const REPAIR_DECISION = /^(mtfixit|chatgpt)_(approve|deny):([a-zA-Z0-9_-]{8,120})$/;
+const REPAIR_DECISION = /^(mtfixit|chatgpt)_(approve|deny|pass|fail):([a-zA-Z0-9_-]{8,120})$/;
 
 function shouldForward(message: Message) {
   if (!message.guild) return false;
@@ -121,7 +121,7 @@ async function handleMtFixItDecision(interaction: any) {
   if (!match) return false;
   if (!DISCORD_BOT_TOKEN) throw new Error('DISCORD_BOT_TOKEN is required');
   const kind = match[1] as 'mtfixit' | 'chatgpt';
-  const action = match[2] as 'approve' | 'deny';
+  const action = match[2] as 'approve' | 'deny' | 'pass' | 'fail';
   const jobId = match[3];
   await interaction.deferUpdate();
   const response = await fetch(`${DSH_INGRESS_URL}/api/internal/mtfixit/decision`, {
@@ -135,8 +135,12 @@ async function handleMtFixItDecision(interaction: any) {
     await interaction.followUp({ content: `MtFixIt ${action} failed: ${String(result?.error || `HTTP ${response.status}`).slice(0, 500)}`, ephemeral: true }).catch(() => undefined);
     return true;
   }
-  const state = String(result?.state?.status || (action === 'approve' ? (kind === 'chatgpt' ? 'awaiting-chatgpt' : 'deploying') : 'denied'));
-  const suffix = action === 'approve'
+  const state = String(result?.state?.status || (action === 'approve' ? (kind === 'chatgpt' ? 'awaiting-chatgpt' : 'deploying') : action === 'pass' ? 'proven-fix' : action === 'fail' ? 'retrying' : 'denied'));
+  const suffix = action === 'pass'
+    ? '\\n\\n✅ Live test passed. This repair is recorded as a proven fix.'
+    : action === 'fail'
+      ? '\\n\\n🔁 Live test failed. Athena is recording the negative feedback and starting another repair attempt.'
+      : action === 'approve'
     ? kind === 'chatgpt'
       ? `\n\n✅ mtman approved ChatGPT repair. Packet is now queued for the next hourly ChatGPT pass.`
       : `\n\n✅ mtman approved this repair. Athena is ${state === 'deployed' ? 'finished deploying it.' : 'merging/deploying it now.'}`
