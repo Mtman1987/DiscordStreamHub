@@ -17,7 +17,7 @@ test('ChatGPT fallback requires the existing mtman Discord approval boundary', (
   assert.match(ingress, /JSON\.stringify\(\{ userId: interaction\.user\.id, jobId, action, kind \}\)/);
   assert.match(route, /Only mtman can approve MtFixIt deployment/);
   assert.match(route, /kind === 'chatgpt'/);
-  assert.match(route, /decideChatGptHandoff\(jobId, action\)/);
+  assert.match(route, /decideChatGptHandoff\(jobId, action as ["']approve["'] \| ["']deny["']\)/);
   assert.match(orchestrator, /awaiting-chatgpt:\(chatgpt-/);
   assert.match(orchestrator, /Approve ChatGPT Repair/);
   assert.match(orchestrator, /chatgpt_approve:/);
