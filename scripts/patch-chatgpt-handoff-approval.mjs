@@ -81,7 +81,7 @@ patchFile('src/app/api/internal/mtfixit/decision/route.ts', (source) => {
 
 patchFile('src/lib/mtfixit-orchestrator.ts', (source) => {
   let next = source;
-  const decisionMarker = "export async function decideMtFixIt(jobId: string, action: 'approve' | 'deny'): Promise<MtFixItResolutionState> {";
+  const decisionMarker = 'export async function decideMtFixIt(jobId: string, action:';
   if (!next.includes('export async function decideChatGptHandoff')) {
     const index = next.indexOf(decisionMarker);
     if (index < 0) throw new Error('MtFixIt decision marker missing');
