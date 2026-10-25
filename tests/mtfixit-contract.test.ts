@@ -120,10 +120,13 @@ test('Discord owns mtfixit before generic command fanout and repair decisions st
   assert.match(mtfixit, /sendDiscordMtFixItMessage/);
   assert.match(discordDelivery, /author: \{ name: 'Athena'/);
   assert.match(decisions, /userId !== getMtmanDiscordId\(\)/);
-  assert.match(bot, /\(mtfixit\|chatgpt\)_\(approve\|deny\)/);
+  assert.match(bot, /\(mtfixit\|chatgpt\)_\(approve\|deny\|pass\|fail\)/);
   assert.match(bot, /kind = match\[1\]/);
   assert.match(bot, /\/api\/internal\/mtfixit\/decision/);
   assert.match(bot, /GatewayIntentBits\.DirectMessages/);
+  assert.match(bot, /mtfixit_fail_reason/);
+  assert.match(bot, /showModal\(modal\)/);
+  assert.match(decisions, /'approve', 'deny', 'pass', 'fail'/);
 });
 
 test('mtfixit original-chat delivery survives DSH self-deploy restarts', () => {
