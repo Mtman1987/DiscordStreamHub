@@ -115,7 +115,7 @@ function buttonComponents(buttons: OwnerDmButton[] | undefined) {
     const legacyUrl = button.customId ? legacyMtFixItApprovalUrl(button.customId) : '';
     const url = directUrl || legacyUrl;
     if (url) return [{ type: 2, style: 5, label, url }];
-    if (button.customId && /^(?:mtfixit|chatgpt)_(?:approve|deny):[a-zA-Z0-9_-]{8,120}$/.test(button.customId)) {
+    if (button.customId && /^(?:mtfixit|chatgpt)_(?:approve|deny|pass|fail):[a-zA-Z0-9_-]{8,120}$/.test(button.customId)) {
       return [{ type: 2, style: button.style || 2, label, custom_id: button.customId }];
     }
     return [];

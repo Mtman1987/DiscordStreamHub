@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { decideMtFixIt } from '@/lib/mtfixit-orchestrator';
+import { decideChatGptHandoff, decideMtFixIt } from '@/lib/mtfixit-orchestrator';
 import { getMtmanDiscordId } from '@/lib/owner-dm-service';
 
 export const dynamic = 'force-dynamic';
@@ -11,16 +11,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const body = await request.json().catch(() => null) as { userId?: unknown; jobId?: unknown; action?: unknown } | null;
+  const body = await request.json().catch(() => null) as { userId?: unknown; jobId?: unknown; action?: unknown; feedback?: unknown; kind?: unknown } | null;
   const userId = String(body?.userId || '').trim();
   const jobId = String(body?.jobId || '').trim();
   const action = String(body?.action || '').trim().toLowerCase();
   if (!userId || userId !== getMtmanDiscordId()) return NextResponse.json({ error: 'Only mtman can approve MtFixIt deployment.' }, { status: 403 });
-  if (!/^[a-zA-Z0-9_-]{8,100}$/.test(jobId)) return NextResponse.json({ error: 'Invalid job ID' }, { status: 400 });
-  if (action !== 'approve' && action !== 'deny') return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
+  if (!/^[a-zA-Z0-9_-]{8,120}$/.test(jobId)) return NextResponse.json({ error: 'Invalid job ID' }, { status: 400 });
+  if (!['approve', 'deny', 'pass', 'fail'].includes(action)) return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
+  const kind = String(body?.kind || 'mtfixit').trim().toLowerCase();
+  if (kind !== 'mtfixit' && kind !== 'chatgpt') return NextResponse.json({ error: 'Invalid repair kind' }, { status: 400 });
+  if (kind === 'chatgpt' && (action === 'pass' || action === 'fail')) return NextResponse.json({ error: 'Live feedback applies only to MtFixIt deployments' }, { status: 400 });
 
   try {
-    const state = await decideMtFixIt(jobId, action);
+    const state = kind === "chatgpt"
+      ? await decideChatGptHandoff(jobId, action as "approve" | "deny")
+      : await decideMtFixIt(jobId, action as "approve" | "deny" | "pass" | "fail", String(body?.feedback || ""));
     return NextResponse.json({ ok: true, state });
   } catch (error) {
     console.error(`[MtFixItDecision] ${action} failed job=${jobId}:`, error);

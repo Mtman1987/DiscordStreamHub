@@ -18,7 +18,8 @@ patchFile('src/lib/owner-dm-service.ts', (source) => {
     "if (button.customId && /^mtfixit_(?:approve|deny):[a-zA-Z0-9_-]{8,100}$/.test(button.customId)) {",
     "if (button.customId && /^(?:mtfixit|chatgpt)_(?:approve|deny):[a-zA-Z0-9_-]{8,120}$/.test(button.customId)) {",
   );
-  if (!next.includes('(?:mtfixit|chatgpt)_(?:approve|deny)')) throw new Error('Owner DM repair-button marker missing');
+  // Pass/fail IDs are supported alongside the original approval/deny IDs.
+  if (!next.includes('(?:mtfixit|chatgpt)_(?:approve|deny')) throw new Error('Owner DM repair-button marker missing');
   return next;
 });
 
@@ -44,7 +45,7 @@ patchFile('scripts/discord-ingress-bot.ts', (source) => {
     "console.log(`[DiscordIngress] MtFixIt decision action=${action} job=${jobId} user=${interaction.user.id} state=${state}`);",
     "console.log(`[DiscordIngress] Repair decision kind=${kind} action=${action} job=${jobId} user=${interaction.user.id} state=${state}`);",
   );
-  if (!next.includes('const REPAIR_DECISION = /^(mtfixit|chatgpt)_(approve|deny)')) throw new Error('Discord repair-decision marker missing');
+  if (!next.includes('const REPAIR_DECISION = /^(mtfixit|chatgpt)_(approve|deny')) throw new Error('Discord repair-decision marker missing');
   if (!next.includes('jobId, action, kind')) throw new Error('Discord repair-decision payload marker missing');
   return next;
 });
@@ -80,7 +81,7 @@ patchFile('src/app/api/internal/mtfixit/decision/route.ts', (source) => {
 
 patchFile('src/lib/mtfixit-orchestrator.ts', (source) => {
   let next = source;
-  const decisionMarker = "export async function decideMtFixIt(jobId: string, action: 'approve' | 'deny'): Promise<MtFixItResolutionState> {";
+  const decisionMarker = 'export async function decideMtFixIt(jobId: string, action:';
   if (!next.includes('export async function decideChatGptHandoff')) {
     const index = next.indexOf(decisionMarker);
     if (index < 0) throw new Error('MtFixIt decision marker missing');
