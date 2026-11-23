@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   verify-dsh-token:
@@ -21,9 +22,41 @@ jobs:
         with:
           node-version: 22
       - name: Authenticate DSH bot token and send a DM-channel proof
+        id: proof
         env:
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
           DISCORD_TEST_CHANNEL_ID: "1416041303707353119"
         run: |
           echo "::add-mask::$DISCORD_BOT_TOKEN"
-          node scripts/verify-discord-actions-secret.mjs
+          set +e
+          node scripts/verify-discord-actions-secret.mjs > proof-output.txt 2>&1
+          status=$?
+          cat proof-output.txt
+          echo "proof_exit=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Publish readable result to the DSH diagnostics issue
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          PROOF_EXIT: ${{ steps.proof.outputs.proof_exit || 'not-run' }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const title = 'DSH Discord token proof results';
+            const body = [
+              'Automated DSH Discord token proof result.',
+              '',
+              '- Workflow: ' + context.serverUrl + '/' + owner + '/' + repo + '/actions/runs/' + context.runId,
+              '- Commit: ' + context.sha,
+              '- Proof exit code: ' + process.env.PROOF_EXIT,
+              '- Target DM channel: 1416041303707353119',
+              '',
+              'The run logs contain the authenticated bot identity and Discord send result. No token value is published here.'
+            ].join('\\n');
+            const found = await github.rest.issues.listForRepo({ owner, repo, state: 'open', per_page: 100 });
+            const existing = found.data.find(issue => issue.title === title);
+            if (existing) {
+              await github.rest.issues.createComment({ owner, repo, issue_number: existing.number, body });
+            } else {
+              await github.rest.issues.create({ owner, repo, title, body });
+            }
