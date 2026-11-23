@@ -2,6 +2,12 @@ name: DSH Discord Actions Token Proof
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - diagnostic/dsh-discord-actions-token-proof
+    paths:
+      - .github/workflows/discord-actions-token-proof.yml
+      - scripts/verify-discord-actions-secret.mjs
 
 permissions:
   contents: read
