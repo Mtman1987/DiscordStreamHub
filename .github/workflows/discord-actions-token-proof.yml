@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - diagnostic/dsh-discord-actions-token-proof
+      - main
     paths:
       - .github/workflows/discord-actions-token-proof.yml
       - scripts/verify-discord-actions-secret.mjs
