@@ -30,7 +30,7 @@ jobs:
             echo 'web=true' >> "$GITHUB_OUTPUT"
             echo 'clip_worker=true' >> "$GITHUB_OUTPUT"
           else
-            if git diff --name-only "$BEFORE_SHA" "$GITHUB_SHA" | grep -Ev '^(clip-worker/|tests/clip-worker-gif-budget.test.cjs$|\.github/workflows/fly-deploy.yml$)'; then
+            if git diff --name-only "$BEFORE_SHA" "$GITHUB_SHA" | grep -Ev '^(clip-worker/|tests/clip-worker-gif-budget.test.cjs$|scripts/verify-discord-actions-secret.mjs$|\.github/workflows/(fly-deploy|discord-actions-token-proof)\.yml$)'; then
               echo 'web=true' >> "$GITHUB_OUTPUT"
             else
               echo 'web=false' >> "$GITHUB_OUTPUT"

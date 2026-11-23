@@ -1,0 +1,29 @@
+name: DSH Discord Actions Token Proof
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - diagnostic/dsh-discord-actions-token-proof
+    paths:
+      - .github/workflows/discord-actions-token-proof.yml
+      - scripts/verify-discord-actions-secret.mjs
+
+permissions:
+  contents: read
+
+jobs:
+  verify-dsh-token:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Authenticate DSH bot token and send a DM-channel proof
+        env:
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          DISCORD_TEST_CHANNEL_ID: "1416041303707353119"
+        run: |
+          echo "::add-mask::$DISCORD_BOT_TOKEN"
+          node scripts/verify-discord-actions-secret.mjs
